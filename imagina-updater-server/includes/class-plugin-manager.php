@@ -176,8 +176,9 @@ class Imagina_Updater_Server_Plugin_Manager {
         for ($i = 0; $i < $zip->numFiles; $i++) {
             $filename = $zip->getNameIndex($i);
 
-            // Buscar archivos .php en el primer nivel del ZIP
-            if (preg_match('/^[^\/]+\.php$/', $filename)) {
+            // Buscar archivos .php en el raíz o dentro de una carpeta (primer nivel)
+            // Acepta: plugin.php o carpeta/plugin.php
+            if (preg_match('/^([^\/]+\.php|[^\/]+\/[^\/]+\.php)$/', $filename)) {
                 $content = $zip->getFromIndex($i);
 
                 // Verificar si tiene los headers de plugin

@@ -1,0 +1,38 @@
+# WordPress
+wp-config.php
+wp-content/uploads/
+wp-content/cache/
+wp-content/backup-db/
+wp-content/backups/
+wp-content/blogs.dir/
+wp-content/upgrade/
+
+# Plugin specific
+*.log
+*.zip
+node_modules/
+vendor/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Composer
+composer.lock
+
+# NPM
+package-lock.json
+yarn.lock
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Environment
+.env
+.env.local

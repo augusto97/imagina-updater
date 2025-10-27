@@ -1,0 +1,102 @@
+<?php
+/**
+ * Gestión de base de datos
+ */
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+class Imagina_Updater_Server_Database {
+
+    /**
+     * Crear tablas necesarias para el plugin
+     */
+    public static function create_tables() {
+        global $wpdb;
+
+        $charset_collate = $wpdb->get_charset_collate();
+
+        // Tabla de API Keys
+        $table_api_keys = $wpdb->prefix . 'imagina_updater_api_keys';
+        $sql_api_keys = "CREATE TABLE IF NOT EXISTS $table_api_keys (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            api_key varchar(64) NOT NULL,
+            site_name varchar(255) NOT NULL,
+            site_url varchar(255) NOT NULL,
+            is_active tinyint(1) NOT NULL DEFAULT 1,
+            created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_used datetime DEFAULT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY api_key (api_key),
+            KEY is_active (is_active)
+        ) $charset_collate;";
+
+        // Tabla de plugins gestionados
+        $table_plugins = $wpdb->prefix . 'imagina_updater_plugins';
+        $sql_plugins = "CREATE TABLE IF NOT EXISTS $table_plugins (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            slug varchar(255) NOT NULL,
+            name varchar(255) NOT NULL,
+            description text,
+            author varchar(255),
+            homepage varchar(255),
+            current_version varchar(50) NOT NULL,
+            file_path varchar(500) NOT NULL,
+            file_size bigint(20) NOT NULL,
+            checksum varchar(64) NOT NULL,
+            uploaded_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY slug (slug),
+            KEY slug_version (slug, current_version)
+        ) $charset_collate;";
+
+        // Tabla de historial de versiones
+        $table_versions = $wpdb->prefix . 'imagina_updater_versions';
+        $sql_versions = "CREATE TABLE IF NOT EXISTS $table_versions (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            plugin_id bigint(20) unsigned NOT NULL,
+            version varchar(50) NOT NULL,
+            file_path varchar(500) NOT NULL,
+            file_size bigint(20) NOT NULL,
+            checksum varchar(64) NOT NULL,
+            changelog text,
+            uploaded_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY plugin_id (plugin_id),
+            KEY plugin_version (plugin_id, version)
+        ) $charset_collate;";
+
+        // Tabla de log de descargas
+        $table_downloads = $wpdb->prefix . 'imagina_updater_downloads';
+        $sql_downloads = "CREATE TABLE IF NOT EXISTS $table_downloads (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            api_key_id bigint(20) unsigned NOT NULL,
+            plugin_id bigint(20) unsigned NOT NULL,
+            version varchar(50) NOT NULL,
+            ip_address varchar(45),
+            user_agent text,
+            downloaded_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY api_key_id (api_key_id),
+            KEY plugin_id (plugin_id),
+            KEY downloaded_at (downloaded_at)
+        ) $charset_collate;";
+
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql_api_keys);
+        dbDelta($sql_plugins);
+        dbDelta($sql_versions);
+        dbDelta($sql_downloads);
+
+        // Guardar versión de la base de datos
+        update_option('imagina_updater_server_db_version', IMAGINA_UPDATER_SERVER_VERSION);
+    }
+
+    /**
+     * Obtener la versión de la base de datos
+     */
+    public static function get_db_version() {
+        return get_option('imagina_updater_server_db_version', '0.0.0');
+    }
+}

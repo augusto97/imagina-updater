@@ -1,0 +1,368 @@
+<?php
+/**
+ * Gestión de plugins y versiones
+ */
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+class Imagina_Updater_Server_Plugin_Manager {
+
+    /**
+     * Obtener el directorio de uploads para plugins
+     */
+    public static function get_upload_dir() {
+        $upload_dir = wp_upload_dir();
+        return $upload_dir['basedir'] . '/imagina-updater-plugins';
+    }
+
+    /**
+     * Subir un nuevo plugin o nueva versión
+     *
+     * @param array $file Archivo ZIP del plugin ($_FILES)
+     * @param string|null $changelog Notas de la versión
+     * @return array|WP_Error
+     */
+    public static function upload_plugin($file, $changelog = null) {
+        // Validar archivo
+        if (!isset($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
+            return new WP_Error('invalid_file', __('Archivo no válido', 'imagina-updater-server'));
+        }
+
+        // Validar que sea un ZIP
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mime = finfo_file($finfo, $file['tmp_name']);
+        finfo_close($finfo);
+
+        if (!in_array($mime, array('application/zip', 'application/x-zip-compressed'))) {
+            return new WP_Error('invalid_type', __('El archivo debe ser un ZIP', 'imagina-updater-server'));
+        }
+
+        // Extraer información del plugin
+        $plugin_data = self::extract_plugin_info($file['tmp_name']);
+
+        if (is_wp_error($plugin_data)) {
+            return $plugin_data;
+        }
+
+        // Mover archivo a directorio seguro
+        $upload_dir = self::get_upload_dir();
+        $filename = sanitize_file_name($plugin_data['slug'] . '-' . $plugin_data['version'] . '.zip');
+        $file_path = $upload_dir . '/' . $filename;
+
+        if (!move_uploaded_file($file['tmp_name'], $file_path)) {
+            return new WP_Error('upload_failed', __('Error al mover el archivo', 'imagina-updater-server'));
+        }
+
+        // Calcular checksum
+        $checksum = hash_file('sha256', $file_path);
+        $file_size = filesize($file_path);
+
+        // Guardar en base de datos
+        global $wpdb;
+        $table_plugins = $wpdb->prefix . 'imagina_updater_plugins';
+        $table_versions = $wpdb->prefix . 'imagina_updater_versions';
+
+        // Verificar si el plugin ya existe
+        $existing = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $table_plugins WHERE slug = %s",
+            $plugin_data['slug']
+        ));
+
+        if ($existing) {
+            // Verificar si la versión es más nueva
+            if (version_compare($plugin_data['version'], $existing->current_version, '<=')) {
+                @unlink($file_path);
+                return new WP_Error('old_version', __('La versión debe ser mayor a la actual', 'imagina-updater-server'));
+            }
+
+            // Guardar versión anterior en historial
+            $wpdb->insert(
+                $table_versions,
+                array(
+                    'plugin_id' => $existing->id,
+                    'version' => $existing->current_version,
+                    'file_path' => $existing->file_path,
+                    'file_size' => $existing->file_size,
+                    'checksum' => $existing->checksum,
+                    'uploaded_at' => $existing->uploaded_at
+                ),
+                array('%d', '%s', '%s', '%d', '%s', '%s')
+            );
+
+            // Actualizar plugin con nueva versión
+            $wpdb->update(
+                $table_plugins,
+                array(
+                    'current_version' => $plugin_data['version'],
+                    'file_path' => $file_path,
+                    'file_size' => $file_size,
+                    'checksum' => $checksum,
+                    'uploaded_at' => current_time('mysql'),
+                    'name' => $plugin_data['name'],
+                    'description' => $plugin_data['description'],
+                    'author' => $plugin_data['author'],
+                    'homepage' => $plugin_data['homepage']
+                ),
+                array('id' => $existing->id),
+                array('%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s'),
+                array('%d')
+            );
+
+            $plugin_id = $existing->id;
+        } else {
+            // Crear nuevo plugin
+            $wpdb->insert(
+                $table_plugins,
+                array(
+                    'slug' => $plugin_data['slug'],
+                    'name' => $plugin_data['name'],
+                    'description' => $plugin_data['description'],
+                    'author' => $plugin_data['author'],
+                    'homepage' => $plugin_data['homepage'],
+                    'current_version' => $plugin_data['version'],
+                    'file_path' => $file_path,
+                    'file_size' => $file_size,
+                    'checksum' => $checksum,
+                    'uploaded_at' => current_time('mysql')
+                ),
+                array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s')
+            );
+
+            $plugin_id = $wpdb->insert_id;
+        }
+
+        // Guardar changelog si se proporcionó
+        if (!empty($changelog)) {
+            $wpdb->insert(
+                $table_versions,
+                array(
+                    'plugin_id' => $plugin_id,
+                    'version' => $plugin_data['version'],
+                    'file_path' => $file_path,
+                    'file_size' => $file_size,
+                    'checksum' => $checksum,
+                    'changelog' => sanitize_textarea_field($changelog),
+                    'uploaded_at' => current_time('mysql')
+                ),
+                array('%d', '%s', '%s', '%d', '%s', '%s', '%s')
+            );
+        }
+
+        return array(
+            'id' => $plugin_id,
+            'slug' => $plugin_data['slug'],
+            'name' => $plugin_data['name'],
+            'version' => $plugin_data['version']
+        );
+    }
+
+    /**
+     * Extraer información del plugin desde el ZIP
+     *
+     * @param string $zip_path Ruta al archivo ZIP
+     * @return array|WP_Error
+     */
+    private static function extract_plugin_info($zip_path) {
+        $zip = new ZipArchive();
+
+        if ($zip->open($zip_path) !== true) {
+            return new WP_Error('zip_error', __('No se pudo abrir el archivo ZIP', 'imagina-updater-server'));
+        }
+
+        // Buscar archivo principal del plugin
+        $plugin_file = null;
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $filename = $zip->getNameIndex($i);
+
+            // Buscar archivos .php en el primer nivel del ZIP
+            if (preg_match('/^[^\/]+\.php$/', $filename)) {
+                $content = $zip->getFromIndex($i);
+
+                // Verificar si tiene los headers de plugin
+                if (preg_match('/Plugin Name:/i', $content)) {
+                    $plugin_file = $content;
+                    break;
+                }
+            }
+        }
+
+        $zip->close();
+
+        if (!$plugin_file) {
+            return new WP_Error('no_plugin_header', __('No se encontró archivo de plugin válido en el ZIP', 'imagina-updater-server'));
+        }
+
+        // Extraer información usando función de WordPress
+        require_once ABSPATH . 'wp-admin/includes/plugin.php';
+
+        $plugin_data = array();
+
+        // Extraer headers del plugin
+        if (preg_match('/Plugin Name:\s*(.+)/i', $plugin_file, $matches)) {
+            $plugin_data['name'] = trim($matches[1]);
+        }
+
+        if (preg_match('/Version:\s*(.+)/i', $plugin_file, $matches)) {
+            $plugin_data['version'] = trim($matches[1]);
+        }
+
+        if (preg_match('/Description:\s*(.+)/i', $plugin_file, $matches)) {
+            $plugin_data['description'] = trim($matches[1]);
+        }
+
+        if (preg_match('/Author:\s*(.+)/i', $plugin_file, $matches)) {
+            $plugin_data['author'] = trim($matches[1]);
+        }
+
+        if (preg_match('/Plugin URI:\s*(.+)/i', $plugin_file, $matches)) {
+            $plugin_data['homepage'] = trim($matches[1]);
+        }
+
+        // Validar datos mínimos
+        if (empty($plugin_data['name']) || empty($plugin_data['version'])) {
+            return new WP_Error('invalid_plugin', __('El plugin no tiene nombre o versión definidos', 'imagina-updater-server'));
+        }
+
+        // Generar slug desde el nombre
+        $plugin_data['slug'] = sanitize_title($plugin_data['name']);
+
+        return $plugin_data;
+    }
+
+    /**
+     * Obtener todos los plugins
+     *
+     * @return array
+     */
+    public static function get_all_plugins() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'imagina_updater_plugins';
+
+        return $wpdb->get_results("SELECT * FROM $table ORDER BY name ASC");
+    }
+
+    /**
+     * Obtener un plugin por slug
+     *
+     * @param string $slug Slug del plugin
+     * @return object|null
+     */
+    public static function get_plugin_by_slug($slug) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'imagina_updater_plugins';
+
+        return $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $table WHERE slug = %s",
+            $slug
+        ));
+    }
+
+    /**
+     * Obtener historial de versiones de un plugin
+     *
+     * @param int $plugin_id ID del plugin
+     * @return array
+     */
+    public static function get_version_history($plugin_id) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'imagina_updater_versions';
+
+        return $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM $table WHERE plugin_id = %d ORDER BY uploaded_at DESC",
+            $plugin_id
+        ));
+    }
+
+    /**
+     * Eliminar un plugin y todas sus versiones
+     *
+     * @param int $plugin_id ID del plugin
+     * @return bool|WP_Error
+     */
+    public static function delete_plugin($plugin_id) {
+        global $wpdb;
+
+        $table_plugins = $wpdb->prefix . 'imagina_updater_plugins';
+        $table_versions = $wpdb->prefix . 'imagina_updater_versions';
+
+        // Obtener plugin
+        $plugin = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $table_plugins WHERE id = %d",
+            $plugin_id
+        ));
+
+        if (!$plugin) {
+            return new WP_Error('not_found', __('Plugin no encontrado', 'imagina-updater-server'));
+        }
+
+        // Eliminar archivo actual
+        if (file_exists($plugin->file_path)) {
+            @unlink($plugin->file_path);
+        }
+
+        // Obtener y eliminar archivos de versiones antiguas
+        $versions = self::get_version_history($plugin_id);
+        foreach ($versions as $version) {
+            if (file_exists($version->file_path)) {
+                @unlink($version->file_path);
+            }
+        }
+
+        // Eliminar de base de datos
+        $wpdb->delete($table_versions, array('plugin_id' => $plugin_id), array('%d'));
+        $wpdb->delete($table_plugins, array('id' => $plugin_id), array('%d'));
+
+        return true;
+    }
+
+    /**
+     * Registrar descarga de plugin
+     *
+     * @param int $api_key_id ID de la API key
+     * @param int $plugin_id ID del plugin
+     * @param string $version Versión descargada
+     */
+    public static function log_download($api_key_id, $plugin_id, $version) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'imagina_updater_downloads';
+
+        $wpdb->insert(
+            $table,
+            array(
+                'api_key_id' => $api_key_id,
+                'plugin_id' => $plugin_id,
+                'version' => $version,
+                'ip_address' => self::get_client_ip(),
+                'user_agent' => isset($_SERVER['HTTP_USER_AGENT']) ? substr($_SERVER['HTTP_USER_AGENT'], 0, 500) : '',
+                'downloaded_at' => current_time('mysql')
+            ),
+            array('%d', '%d', '%s', '%s', '%s', '%s')
+        );
+    }
+
+    /**
+     * Obtener IP del cliente de forma segura
+     */
+    private static function get_client_ip() {
+        $ip = '';
+
+        if (isset($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+            $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
+        } elseif (isset($_SERVER['HTTP_CLIENT_IP'])) {
+            $ip = $_SERVER['HTTP_CLIENT_IP'];
+        } elseif (isset($_SERVER['REMOTE_ADDR'])) {
+            $ip = $_SERVER['REMOTE_ADDR'];
+        }
+
+        // Validar y sanitizar IP
+        $ip = filter_var($ip, FILTER_VALIDATE_IP);
+
+        return $ip ? $ip : '';
+    }
+}

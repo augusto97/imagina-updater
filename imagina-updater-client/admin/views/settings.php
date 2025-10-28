@@ -110,6 +110,7 @@ if (!defined('ABSPATH')) {
                                         <input type="checkbox" id="select_all_plugins">
                                     </th>
                                     <th><?php _e('Plugin', 'imagina-updater-client'); ?></th>
+                                    <th><?php _e('Slug', 'imagina-updater-client'); ?></th>
                                     <th><?php _e('Versión Disponible', 'imagina-updater-client'); ?></th>
                                     <th><?php _e('Versión Instalada', 'imagina-updater-client'); ?></th>
                                     <th><?php _e('Estado', 'imagina-updater-client'); ?></th>
@@ -122,6 +123,17 @@ if (!defined('ABSPATH')) {
                                     $is_installed = isset($installed_plugins[$plugin['slug']]);
                                     $installed_version = $is_installed ? $installed_plugins[$plugin['slug']]['version'] : '-';
                                     $needs_update = $is_installed && version_compare($plugin['version'], $installed_version, '>');
+
+                                    // Verificar si el plugin puede ser detectado por el updater
+                                    $updater = class_exists('Imagina_Updater_Client_Updater') ? Imagina_Updater_Client_Updater::get_instance() : null;
+                                    $can_detect = false;
+                                    if ($updater) {
+                                        $reflection = new ReflectionClass($updater);
+                                        $method = $reflection->getMethod('find_plugin_file');
+                                        $method->setAccessible(true);
+                                        $detected_file = $method->invoke($updater, $plugin['slug']);
+                                        $can_detect = !empty($detected_file);
+                                    }
                                     ?>
                                     <tr>
                                         <td class="check-column">
@@ -129,12 +141,21 @@ if (!defined('ABSPATH')) {
                                                    name="enabled_plugins[]"
                                                    value="<?php echo esc_attr($plugin['slug']); ?>"
                                                    <?php checked($is_enabled); ?>
+                                                   <?php disabled(!$can_detect && !$is_enabled); ?>
                                                    class="plugin_checkbox">
                                         </td>
                                         <td>
                                             <strong><?php echo esc_html($plugin['name']); ?></strong>
                                             <br>
                                             <small><?php echo esc_html($plugin['description']); ?></small>
+                                        </td>
+                                        <td>
+                                            <code><?php echo esc_html($plugin['slug']); ?></code>
+                                            <?php if (!$can_detect && $is_installed): ?>
+                                                <br><span class="imagina-badge imagina-badge-warning" style="font-size: 10px;">
+                                                    <?php _e('No detectado', 'imagina-updater-client'); ?>
+                                                </span>
+                                            <?php endif; ?>
                                         </td>
                                         <td>
                                             <strong><?php echo esc_html($plugin['version']); ?></strong>

@@ -53,14 +53,20 @@ class Imagina_Updater_Client_Updater {
      * Inicializar hooks
      */
     private function init_hooks() {
-        // Hook para verificar actualizaciones
-        add_filter('pre_set_site_transient_update_plugins', array($this, 'check_for_updates'));
+        // Hook para verificar actualizaciones (prioridad alta para ejecutar primero)
+        add_filter('pre_set_site_transient_update_plugins', array($this, 'check_for_updates'), 20);
+
+        // Hook para bloquear actualizaciones externas de plugins gestionados
+        add_filter('site_transient_update_plugins', array($this, 'block_external_updates'), 999);
 
         // Hook para información del plugin en el modal de actualizaciones
-        add_filter('plugins_api', array($this, 'plugin_info'), 10, 3);
+        add_filter('plugins_api', array($this, 'plugin_info'), 20, 3);
 
         // Hook para modificar la URL de descarga
         add_filter('upgrader_pre_download', array($this, 'modify_download_url'), 10, 3);
+
+        // Bloquear HTTP requests de actualizaciones para plugins gestionados
+        add_filter('http_request_args', array($this, 'block_update_requests'), 10, 2);
     }
 
     /**
@@ -165,6 +171,83 @@ class Imagina_Updater_Client_Updater {
     }
 
     /**
+     * Bloquear actualizaciones externas para plugins gestionados
+     */
+    public function block_external_updates($transient) {
+        if (empty($transient) || !is_object($transient)) {
+            return $transient;
+        }
+
+        $enabled_plugins = $this->config['enabled_plugins'];
+
+        if (empty($enabled_plugins)) {
+            return $transient;
+        }
+
+        // Obtener todos los plugin files de los plugins gestionados
+        $managed_plugin_files = array();
+        foreach ($enabled_plugins as $plugin_slug) {
+            $plugin_file = $this->find_plugin_file($plugin_slug);
+            if ($plugin_file) {
+                $managed_plugin_files[] = $plugin_file;
+            }
+        }
+
+        // Remover actualizaciones externas de plugins gestionados
+        if (!empty($transient->response)) {
+            foreach ($managed_plugin_files as $plugin_file) {
+                // Solo remover si NO es una actualización de nuestro servidor
+                if (isset($transient->response[$plugin_file])) {
+                    $update = $transient->response[$plugin_file];
+
+                    // Si no es de nuestro servidor, removerla
+                    if (is_object($update) &&
+                        isset($update->package) &&
+                        strpos($update->package, $this->config['server_url']) === false) {
+                        unset($transient->response[$plugin_file]);
+                    }
+                }
+            }
+        }
+
+        return $transient;
+    }
+
+    /**
+     * Bloquear peticiones HTTP de actualización para plugins gestionados
+     */
+    public function block_update_requests($args, $url) {
+        // Bloquear peticiones a api.wordpress.org y otros servicios de actualización
+        if (strpos($url, 'api.wordpress.org') !== false ||
+            strpos($url, '/update-check/') !== false ||
+            strpos($url, '/plugin-updates/') !== false) {
+
+            $enabled_plugins = $this->config['enabled_plugins'];
+
+            if (!empty($enabled_plugins)) {
+                // Si la petición es para verificar actualizaciones de plugins,
+                // filtrar los plugins gestionados del body
+                if (isset($args['body']['plugins'])) {
+                    $plugins_data = json_decode($args['body']['plugins'], true);
+
+                    if (is_array($plugins_data) && isset($plugins_data['plugins'])) {
+                        foreach ($enabled_plugins as $plugin_slug) {
+                            $plugin_file = $this->find_plugin_file($plugin_slug);
+                            if ($plugin_file && isset($plugins_data['plugins'][$plugin_file])) {
+                                unset($plugins_data['plugins'][$plugin_file]);
+                            }
+                        }
+
+                        $args['body']['plugins'] = json_encode($plugins_data);
+                    }
+                }
+            }
+        }
+
+        return $args;
+    }
+
+    /**
      * Modificar URL de descarga si es necesario
      */
     public function modify_download_url($reply, $package, $upgrader) {
@@ -178,7 +261,7 @@ class Imagina_Updater_Client_Updater {
     }
 
     /**
-     * Encontrar archivo del plugin por slug
+     * Encontrar archivo del plugin por slug (mejorado con múltiples criterios)
      */
     private function find_plugin_file($slug) {
         if (!function_exists('get_plugins')) {
@@ -186,18 +269,35 @@ class Imagina_Updater_Client_Updater {
         }
 
         $all_plugins = get_plugins();
+        $slug_lower = strtolower($slug);
 
         foreach ($all_plugins as $plugin_file => $plugin_data) {
-            // Obtener el slug del plugin desde el archivo
+            // Criterio 1: Slug del directorio
             $plugin_slug = dirname($plugin_file);
 
-            // Si el plugin está en un directorio propio
-            if ($plugin_slug !== '.' && $plugin_slug === $slug) {
+            if ($plugin_slug !== '.' && strtolower($plugin_slug) === $slug_lower) {
                 return $plugin_file;
             }
 
-            // Si el plugin es un archivo único
-            if ($plugin_slug === '.' && basename($plugin_file, '.php') === $slug) {
+            // Criterio 2: Nombre del archivo (para plugins de archivo único)
+            if ($plugin_slug === '.' && strtolower(basename($plugin_file, '.php')) === $slug_lower) {
+                return $plugin_file;
+            }
+
+            // Criterio 3: Comparar con el nombre sanitizado del plugin
+            $plugin_name_slug = sanitize_title($plugin_data['Name']);
+            if (strtolower($plugin_name_slug) === $slug_lower) {
+                return $plugin_file;
+            }
+
+            // Criterio 4: Comparar con TextDomain si está definido
+            if (!empty($plugin_data['TextDomain']) && strtolower($plugin_data['TextDomain']) === $slug_lower) {
+                return $plugin_file;
+            }
+
+            // Criterio 5: Buscar coincidencia parcial en el nombre del archivo
+            $file_basename = strtolower(basename($plugin_file, '.php'));
+            if (strpos($file_basename, $slug_lower) !== false || strpos($slug_lower, $file_basename) !== false) {
                 return $plugin_file;
             }
         }

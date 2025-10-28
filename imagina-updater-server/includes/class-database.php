@@ -102,12 +102,8 @@ class Imagina_Updater_Server_Database {
      * Ejecutar migraciones de base de datos
      */
     public static function run_migrations() {
-        $current_version = self::get_db_version();
-
-        // Migración para agregar slug_override (versión 1.0.0)
-        if (version_compare($current_version, '1.0.0', '<')) {
-            self::migrate_add_slug_override();
-        }
+        // Siempre intentar ejecutar migraciones (verifican internamente si son necesarias)
+        self::migrate_add_slug_override();
     }
 
     /**

@@ -10,6 +10,21 @@ if (!defined('ABSPATH')) {
 class Imagina_Updater_Server_Plugin_Manager {
 
     /**
+     * Asegurar que el esquema de BD esté actualizado
+     */
+    private static function ensure_schema_updated() {
+        global $wpdb;
+        $table_plugins = $wpdb->prefix . 'imagina_updater_plugins';
+
+        // Verificar si slug_override existe
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM $table_plugins LIKE 'slug_override'");
+        if (empty($columns)) {
+            error_log('IMAGINA UPDATER SERVER: Esquema desactualizado, ejecutando migraciones');
+            Imagina_Updater_Server_Database::run_migrations();
+        }
+    }
+
+    /**
      * Obtener el directorio de uploads para plugins
      */
     public static function get_upload_dir() {
@@ -77,6 +92,9 @@ class Imagina_Updater_Server_Plugin_Manager {
         // Calcular checksum
         $checksum = hash_file('sha256', $file_path);
         $file_size = filesize($file_path);
+
+        // Asegurar que el esquema esté actualizado
+        self::ensure_schema_updated();
 
         // Guardar en base de datos
         global $wpdb;
@@ -297,8 +315,9 @@ class Imagina_Updater_Server_Plugin_Manager {
      * @return array
      */
     public static function get_all_plugins() {
-        global $wpdb;
+        self::ensure_schema_updated();
 
+        global $wpdb;
         $table = $wpdb->prefix . 'imagina_updater_plugins';
 
         return $wpdb->get_results("SELECT * FROM $table ORDER BY name ASC");
@@ -311,8 +330,9 @@ class Imagina_Updater_Server_Plugin_Manager {
      * @return object|null
      */
     public static function get_plugin_by_slug($slug) {
-        global $wpdb;
+        self::ensure_schema_updated();
 
+        global $wpdb;
         $table = $wpdb->prefix . 'imagina_updater_plugins';
 
         // Primero buscar por slug_override, luego por slug normal
@@ -331,8 +351,9 @@ class Imagina_Updater_Server_Plugin_Manager {
      * @return bool|WP_Error
      */
     public static function update_plugin_slug($plugin_id, $new_slug) {
-        global $wpdb;
+        self::ensure_schema_updated();
 
+        global $wpdb;
         $table_plugins = $wpdb->prefix . 'imagina_updater_plugins';
 
         // Validar que el plugin existe
@@ -344,20 +365,6 @@ class Imagina_Updater_Server_Plugin_Manager {
         if (!$plugin) {
             error_log('IMAGINA UPDATER SERVER: Plugin no encontrado con ID: ' . $plugin_id);
             return new WP_Error('not_found', __('Plugin no encontrado', 'imagina-updater-server'));
-        }
-
-        // Verificar que el campo slug_override existe
-        $columns = $wpdb->get_results("SHOW COLUMNS FROM $table_plugins LIKE 'slug_override'");
-        if (empty($columns)) {
-            error_log('IMAGINA UPDATER SERVER: Campo slug_override no existe, ejecutando migración');
-            // Ejecutar migración
-            Imagina_Updater_Server_Database::run_migrations();
-
-            // Verificar de nuevo
-            $columns = $wpdb->get_results("SHOW COLUMNS FROM $table_plugins LIKE 'slug_override'");
-            if (empty($columns)) {
-                return new WP_Error('migration_failed', __('Error: El campo slug_override no existe. Por favor, desactiva y reactiva el plugin.', 'imagina-updater-server'));
-            }
         }
 
         // Si el nuevo slug es igual al slug auto-generado, usar NULL

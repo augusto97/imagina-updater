@@ -73,6 +73,24 @@ class Imagina_Updater_Server_Admin {
             'imagina-updater-api-keys',
             array($this, 'render_api_keys_page')
         );
+
+        add_submenu_page(
+            'imagina-updater-server',
+            __('Logs', 'imagina-updater-server'),
+            __('Logs', 'imagina-updater-server'),
+            'manage_options',
+            'imagina-updater-logs',
+            array($this, 'render_logs_page')
+        );
+
+        add_submenu_page(
+            'imagina-updater-server',
+            __('Configuración', 'imagina-updater-server'),
+            __('Configuración', 'imagina-updater-server'),
+            'manage_options',
+            'imagina-updater-settings',
+            array($this, 'render_settings_page')
+        );
     }
 
     /**
@@ -149,23 +167,66 @@ class Imagina_Updater_Server_Admin {
         }
 
         // Subir plugin
-        if (isset($_POST['imagina_upload_plugin']) && check_admin_referer('imagina_upload_plugin')) {
-            if (isset($_FILES['plugin_file']) && $_FILES['plugin_file']['error'] === UPLOAD_ERR_OK) {
-                $changelog = isset($_POST['changelog']) ? $_POST['changelog'] : '';
+        if (isset($_POST['imagina_upload_plugin'])) {
+            // Verificar nonce con mejor manejo de errores
+            if (!check_admin_referer('imagina_upload_plugin', '_wpnonce', false)) {
+                imagina_updater_server_log('Error de seguridad: Nonce inválido al subir plugin', 'warning');
+                add_settings_error('imagina_updater', 'nonce_error',
+                    __('Error de seguridad: El formulario ha caducado. Por favor, recarga la página e intenta de nuevo.', 'imagina-updater-server'),
+                    'error'
+                );
+                return;
+            }
 
-                $result = Imagina_Updater_Server_Plugin_Manager::upload_plugin($_FILES['plugin_file'], $changelog);
+            // Verificar que se subió un archivo
+            if (!isset($_FILES['plugin_file']) || $_FILES['plugin_file']['error'] !== UPLOAD_ERR_OK) {
+                $error_message = '';
 
-                if (is_wp_error($result)) {
-                    add_settings_error('imagina_updater', 'upload_error', $result->get_error_message(), 'error');
+                if (!isset($_FILES['plugin_file'])) {
+                    $error_message = __('No se seleccionó ningún archivo', 'imagina-updater-server');
                 } else {
-                    add_settings_error('imagina_updater', 'upload_success', sprintf(
-                        __('Plugin "%s" versión %s subido exitosamente', 'imagina-updater-server'),
-                        $result['name'],
-                        $result['version']
-                    ), 'success');
+                    // Mensajes de error más descriptivos
+                    switch ($_FILES['plugin_file']['error']) {
+                        case UPLOAD_ERR_INI_SIZE:
+                        case UPLOAD_ERR_FORM_SIZE:
+                            $error_message = __('El archivo es demasiado grande. Tamaño máximo: ', 'imagina-updater-server') . ini_get('upload_max_filesize');
+                            break;
+                        case UPLOAD_ERR_PARTIAL:
+                            $error_message = __('El archivo se subió parcialmente. Intenta de nuevo.', 'imagina-updater-server');
+                            break;
+                        case UPLOAD_ERR_NO_FILE:
+                            $error_message = __('No se seleccionó ningún archivo', 'imagina-updater-server');
+                            break;
+                        case UPLOAD_ERR_NO_TMP_DIR:
+                        case UPLOAD_ERR_CANT_WRITE:
+                        case UPLOAD_ERR_EXTENSION:
+                            $error_message = __('Error del servidor al procesar el archivo. Contacta al administrador.', 'imagina-updater-server');
+                            break;
+                        default:
+                            $error_message = __('Error desconocido al subir el archivo', 'imagina-updater-server');
+                    }
                 }
+
+                imagina_updater_server_log('Error al subir archivo: ' . $error_message, 'error');
+                add_settings_error('imagina_updater', 'upload_error', $error_message, 'error');
+                return;
+            }
+
+            $changelog = isset($_POST['changelog']) ? $_POST['changelog'] : '';
+
+            imagina_updater_server_log('Iniciando subida de plugin: ' . $_FILES['plugin_file']['name'], 'info');
+            $result = Imagina_Updater_Server_Plugin_Manager::upload_plugin($_FILES['plugin_file'], $changelog);
+
+            if (is_wp_error($result)) {
+                imagina_updater_server_log('Error al subir plugin: ' . $result->get_error_message(), 'error');
+                add_settings_error('imagina_updater', 'upload_error', $result->get_error_message(), 'error');
             } else {
-                add_settings_error('imagina_updater', 'upload_error', __('Error al subir el archivo', 'imagina-updater-server'), 'error');
+                imagina_updater_server_log(sprintf('Plugin subido exitosamente: %s v%s', $result['name'], $result['version']), 'info');
+                add_settings_error('imagina_updater', 'upload_success', sprintf(
+                    __('Plugin "%s" versión %s subido exitosamente', 'imagina-updater-server'),
+                    $result['name'],
+                    $result['version']
+                ), 'success');
             }
         }
 
@@ -210,6 +271,30 @@ class Imagina_Updater_Server_Admin {
             Imagina_Updater_Server_Database::run_migrations();
             add_settings_error('imagina_updater', 'migration_success', __('Migración ejecutada. Revisa los logs de error de WordPress para más detalles.', 'imagina-updater-server'), 'success');
         }
+
+        // Guardar configuración
+        if (isset($_POST['imagina_save_settings']) && check_admin_referer('imagina_save_settings')) {
+            $enable_logging = isset($_POST['enable_logging']) ? true : false;
+            $log_level = isset($_POST['log_level']) ? sanitize_text_field($_POST['log_level']) : 'INFO';
+
+            update_option('imagina_updater_server_config', array(
+                'enable_logging' => $enable_logging,
+                'log_level' => $log_level
+            ));
+
+            add_settings_error('imagina_updater', 'settings_saved', __('Configuración guardada', 'imagina-updater-server'), 'success');
+        }
+
+        // Limpiar logs
+        if (isset($_POST['imagina_clear_logs']) && check_admin_referer('imagina_clear_logs')) {
+            Imagina_Updater_Server_Logger::get_instance()->clear_logs();
+            add_settings_error('imagina_updater', 'logs_cleared', __('Logs eliminados', 'imagina-updater-server'), 'success');
+        }
+
+        // Descargar logs
+        if (isset($_GET['action']) && $_GET['action'] === 'download_log' && check_admin_referer('download_log')) {
+            $this->download_log();
+        }
     }
 
     /**
@@ -246,5 +331,46 @@ class Imagina_Updater_Server_Admin {
         }
 
         include IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'admin/views/api-keys.php';
+    }
+
+    /**
+     * Renderizar página de logs
+     */
+    public function render_logs_page() {
+        $logger = Imagina_Updater_Server_Logger::get_instance();
+        $logs = $logger->read_logs(200);
+        $is_enabled = $logger->is_enabled();
+
+        include IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'admin/views/logs.php';
+    }
+
+    /**
+     * Renderizar página de configuración
+     */
+    public function render_settings_page() {
+        $config = get_option('imagina_updater_server_config', array(
+            'enable_logging' => false,
+            'log_level' => 'INFO'
+        ));
+
+        include IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'admin/views/settings.php';
+    }
+
+    /**
+     * Descargar archivo de log
+     */
+    private function download_log() {
+        $logger = Imagina_Updater_Server_Logger::get_instance();
+        $log_file = $logger->get_log_file();
+
+        if (!file_exists($log_file)) {
+            wp_die(__('No hay logs disponibles para descargar', 'imagina-updater-server'));
+        }
+
+        header('Content-Type: text/plain');
+        header('Content-Disposition: attachment; filename="imagina-updater-server-' . date('Y-m-d-His') . '.log"');
+        header('Content-Length: ' . filesize($log_file));
+        readfile($log_file);
+        exit;
     }
 }

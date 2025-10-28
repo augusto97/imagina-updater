@@ -26,6 +26,28 @@ define('IMAGINA_UPDATER_SERVER_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('IMAGINA_UPDATER_SERVER_PLUGIN_FILE', __FILE__);
 
 /**
+ * Función helper para logging usando el sistema propio
+ */
+function imagina_updater_server_log($message, $level = 'info', $context = array()) {
+    // Solo proceder si el Logger está cargado
+    if (!class_exists('Imagina_Updater_Server_Logger')) {
+        return;
+    }
+
+    // Convertir nivel a mayúsculas para consistencia
+    $level = strtoupper($level);
+
+    // Validar nivel
+    $valid_levels = array('DEBUG', 'INFO', 'WARNING', 'ERROR');
+    if (!in_array($level, $valid_levels)) {
+        $level = 'INFO';
+    }
+
+    // Usar el Logger
+    Imagina_Updater_Server_Logger::get_instance()->log($message, $level, $context);
+}
+
+/**
  * Clase principal del plugin servidor
  */
 class Imagina_Updater_Server {
@@ -57,6 +79,7 @@ class Imagina_Updater_Server {
      * Cargar dependencias del plugin
      */
     private function load_dependencies() {
+        require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'includes/class-logger.php';
         require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'includes/class-database.php';
         require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'includes/class-api-keys.php';
         require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'includes/class-plugin-manager.php';
@@ -100,6 +123,14 @@ class Imagina_Updater_Server {
      */
     public function activate() {
         Imagina_Updater_Server_Database::create_tables();
+
+        // Crear configuración por defecto si no existe
+        if (!get_option('imagina_updater_server_config')) {
+            add_option('imagina_updater_server_config', array(
+                'enable_logging' => false,
+                'log_level' => 'INFO'
+            ));
+        }
 
         // Crear directorio de uploads si no existe
         $upload_dir = wp_upload_dir();

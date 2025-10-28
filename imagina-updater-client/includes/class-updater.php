@@ -577,7 +577,7 @@ class Imagina_Updater_Client_Updater {
         error_log('IMAGINA UPDATER: Total de plugins instalados: ' . count($all_plugins));
 
         foreach ($all_plugins as $plugin_file => $plugin_data) {
-            // Criterio 1: Slug del directorio
+            // Criterio 1: Slug del directorio (EXACTO)
             $plugin_slug = dirname($plugin_file);
 
             if ($plugin_slug !== '.' && strtolower($plugin_slug) === $slug_lower) {
@@ -591,23 +591,35 @@ class Imagina_Updater_Client_Updater {
                 return $plugin_file;
             }
 
-            // Criterio 3: Comparar con el nombre sanitizado del plugin
+            // Criterio 3: Comparar con el nombre sanitizado del plugin (EXACTO)
             $plugin_name_slug = sanitize_title($plugin_data['Name']);
             if (strtolower($plugin_name_slug) === $slug_lower) {
                 error_log('IMAGINA UPDATER: ✓ Encontrado por Criterio 3 (nombre sanitizado): ' . $plugin_file);
                 return $plugin_file;
             }
 
-            // Criterio 4: Comparar con TextDomain si está definido
+            // Criterio 4: Comparar con TextDomain si está definido (EXACTO)
             if (!empty($plugin_data['TextDomain']) && strtolower($plugin_data['TextDomain']) === $slug_lower) {
                 error_log('IMAGINA UPDATER: ✓ Encontrado por Criterio 4 (TextDomain): ' . $plugin_file);
                 return $plugin_file;
             }
+        }
 
-            // Criterio 5: Buscar coincidencia parcial en el nombre del archivo
+        // Criterio 5 (ÚLTIMA OPCIÓN): Buscar coincidencia parcial SOLO si el slug buscado está COMPLETO al inicio
+        // Esto evita que "woocommerce" coincida con "woocommerce-google-analytics-pro"
+        foreach ($all_plugins as $plugin_file => $plugin_data) {
+            $plugin_slug = dirname($plugin_file);
             $file_basename = strtolower(basename($plugin_file, '.php'));
-            if (strpos($file_basename, $slug_lower) !== false || strpos($slug_lower, $file_basename) !== false) {
-                error_log('IMAGINA UPDATER: ✓ Encontrado por Criterio 5 (coincidencia parcial): ' . $plugin_file);
+
+            // Solo coincidir si el slug buscado está al inicio y seguido de guión o fin de string
+            // Ejemplo: "imagina" coincide con "imagina-login" pero "woocommerce" NO con "woocommerce-google-analytics-pro" si buscas "woocommerce-google-analytics-pro"
+            if ($plugin_slug !== '.' && strpos($plugin_slug, $slug_lower . '-') === 0) {
+                error_log('IMAGINA UPDATER: ✓ Encontrado por Criterio 5 (slug parcial): ' . $plugin_file);
+                return $plugin_file;
+            }
+
+            if (strpos($file_basename, $slug_lower . '-') === 0) {
+                error_log('IMAGINA UPDATER: ✓ Encontrado por Criterio 5 (basename parcial): ' . $plugin_file);
                 return $plugin_file;
             }
         }

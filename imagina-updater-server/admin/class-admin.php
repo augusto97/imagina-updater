@@ -143,16 +143,42 @@ class Imagina_Updater_Server_Admin {
             $result = Imagina_Updater_Server_API_Keys::create($site_name, $site_url);
 
             if (is_wp_error($result)) {
-                add_settings_error('imagina_updater', 'create_error', $result->get_error_message(), 'error');
+                imagina_updater_server_log('Error al crear API Key: ' . $result->get_error_message(), 'error');
+                set_transient('imagina_updater_api_error', $result->get_error_message(), 30);
             } else {
-                add_settings_error('imagina_updater', 'create_success', __('API Key creada exitosamente', 'imagina-updater-server'), 'success');
+                imagina_updater_server_log('API Key creada exitosamente para: ' . $site_name, 'info');
+                set_transient('imagina_updater_api_success', true, 30);
                 set_transient('imagina_new_api_key', $result['api_key'], 60);
             }
+
+            wp_redirect(admin_url('admin.php?page=imagina-updater-api-keys'));
+            exit;
+        }
+
+        // Mostrar mensajes de API Keys
+        if (get_transient('imagina_updater_api_success')) {
+            delete_transient('imagina_updater_api_success');
+            add_settings_error('imagina_updater', 'create_success', __('API Key creada exitosamente', 'imagina-updater-server'), 'success');
+        }
+        if ($api_error = get_transient('imagina_updater_api_error')) {
+            delete_transient('imagina_updater_api_error');
+            add_settings_error('imagina_updater', 'create_error', $api_error, 'error');
         }
 
         // Eliminar API Key
         if (isset($_GET['action']) && $_GET['action'] === 'delete_api_key' && isset($_GET['id']) && check_admin_referer('delete_api_key_' . $_GET['id'])) {
-            Imagina_Updater_Server_API_Keys::delete(intval($_GET['id']));
+            $id = intval($_GET['id']);
+            Imagina_Updater_Server_API_Keys::delete($id);
+            imagina_updater_server_log('API Key eliminada: ID ' . $id, 'info');
+            set_transient('imagina_updater_api_deleted', true, 30);
+
+            wp_redirect(admin_url('admin.php?page=imagina-updater-api-keys'));
+            exit;
+        }
+
+        // Mostrar mensaje de eliminación de API Key
+        if (get_transient('imagina_updater_api_deleted')) {
+            delete_transient('imagina_updater_api_deleted');
             add_settings_error('imagina_updater', 'delete_success', __('API Key eliminada', 'imagina-updater-server'), 'success');
         }
 
@@ -161,9 +187,20 @@ class Imagina_Updater_Server_Admin {
             $id = intval($_GET['id']);
             $key = Imagina_Updater_Server_API_Keys::get_by_id($id);
             if ($key) {
-                Imagina_Updater_Server_API_Keys::set_active($id, !$key->is_active);
-                add_settings_error('imagina_updater', 'toggle_success', __('Estado actualizado', 'imagina-updater-server'), 'success');
+                $new_status = !$key->is_active;
+                Imagina_Updater_Server_API_Keys::set_active($id, $new_status);
+                imagina_updater_server_log('API Key ID ' . $id . ' ' . ($new_status ? 'activada' : 'desactivada'), 'info');
+                set_transient('imagina_updater_api_toggled', true, 30);
             }
+
+            wp_redirect(admin_url('admin.php?page=imagina-updater-api-keys'));
+            exit;
+        }
+
+        // Mostrar mensaje de cambio de estado
+        if (get_transient('imagina_updater_api_toggled')) {
+            delete_transient('imagina_updater_api_toggled');
+            add_settings_error('imagina_updater', 'toggle_success', __('Estado actualizado', 'imagina-updater-server'), 'success');
         }
 
         // Subir plugin
@@ -222,23 +259,56 @@ class Imagina_Updater_Server_Admin {
                 add_settings_error('imagina_updater', 'upload_error', $result->get_error_message(), 'error');
             } else {
                 imagina_updater_server_log(sprintf('Plugin subido exitosamente: %s v%s', $result['name'], $result['version']), 'info');
-                add_settings_error('imagina_updater', 'upload_success', sprintf(
-                    __('Plugin "%s" versión %s subido exitosamente', 'imagina-updater-server'),
-                    $result['name'],
-                    $result['version']
-                ), 'success');
+
+                // Guardar mensaje de éxito en transient para mostrarlo después del redirect
+                set_transient('imagina_updater_upload_success', array(
+                    'name' => $result['name'],
+                    'version' => $result['version']
+                ), 30);
+
+                // Redirect limpio para evitar reenvío de formulario
+                wp_redirect(admin_url('admin.php?page=imagina-updater-plugins'));
+                exit;
             }
+        }
+
+        // Mostrar mensaje de éxito guardado en transient
+        $upload_success = get_transient('imagina_updater_upload_success');
+        if ($upload_success) {
+            delete_transient('imagina_updater_upload_success');
+            add_settings_error('imagina_updater', 'upload_success', sprintf(
+                __('Plugin "%s" versión %s subido exitosamente', 'imagina-updater-server'),
+                $upload_success['name'],
+                $upload_success['version']
+            ), 'success');
         }
 
         // Eliminar plugin
         if (isset($_GET['action']) && $_GET['action'] === 'delete_plugin' && isset($_GET['id']) && check_admin_referer('delete_plugin_' . $_GET['id'])) {
-            $result = Imagina_Updater_Server_Plugin_Manager::delete_plugin(intval($_GET['id']));
+            $id = intval($_GET['id']);
+            $result = Imagina_Updater_Server_Plugin_Manager::delete_plugin($id);
 
             if (is_wp_error($result)) {
-                add_settings_error('imagina_updater', 'delete_error', $result->get_error_message(), 'error');
+                imagina_updater_server_log('Error al eliminar plugin ID ' . $id . ': ' . $result->get_error_message(), 'error');
+                set_transient('imagina_updater_delete_error', $result->get_error_message(), 30);
             } else {
-                add_settings_error('imagina_updater', 'delete_success', __('Plugin eliminado', 'imagina-updater-server'), 'success');
+                imagina_updater_server_log('Plugin eliminado exitosamente: ID ' . $id, 'info');
+                set_transient('imagina_updater_delete_success', true, 30);
             }
+
+            // Redirect limpio
+            wp_redirect(admin_url('admin.php?page=imagina-updater-plugins'));
+            exit;
+        }
+
+        // Mostrar mensajes de eliminación
+        if (get_transient('imagina_updater_delete_success')) {
+            delete_transient('imagina_updater_delete_success');
+            add_settings_error('imagina_updater', 'delete_success', __('Plugin eliminado', 'imagina-updater-server'), 'success');
+        }
+        if ($delete_error = get_transient('imagina_updater_delete_error')) {
+            delete_transient('imagina_updater_delete_error');
+            add_settings_error('imagina_updater', 'delete_error', $delete_error, 'error');
         }
 
         // Actualizar slug del plugin
@@ -256,14 +326,30 @@ class Imagina_Updater_Server_Admin {
                 $result = Imagina_Updater_Server_Plugin_Manager::update_plugin_slug($plugin_id, $new_slug);
 
                 if (is_wp_error($result)) {
-                    add_settings_error('imagina_updater', 'slug_error', sprintf(
-                        __('Error al actualizar slug: %s', 'imagina-updater-server'),
-                        $result->get_error_message()
-                    ), 'error');
+                    imagina_updater_server_log('Error al actualizar slug: ' . $result->get_error_message(), 'error');
+                    set_transient('imagina_updater_slug_error', $result->get_error_message(), 30);
                 } else {
-                    add_settings_error('imagina_updater', 'slug_success', __('Slug actualizado exitosamente', 'imagina-updater-server'), 'success');
+                    imagina_updater_server_log('Slug actualizado exitosamente para plugin ID ' . $plugin_id, 'info');
+                    set_transient('imagina_updater_slug_success', true, 30);
                 }
+
+                // Redirect limpio
+                wp_redirect(admin_url('admin.php?page=imagina-updater-plugins'));
+                exit;
             }
+        }
+
+        // Mostrar mensajes de actualización de slug
+        if (get_transient('imagina_updater_slug_success')) {
+            delete_transient('imagina_updater_slug_success');
+            add_settings_error('imagina_updater', 'slug_success', __('Slug actualizado exitosamente', 'imagina-updater-server'), 'success');
+        }
+        if ($slug_error = get_transient('imagina_updater_slug_error')) {
+            delete_transient('imagina_updater_slug_error');
+            add_settings_error('imagina_updater', 'slug_error', sprintf(
+                __('Error al actualizar slug: %s', 'imagina-updater-server'),
+                $slug_error
+            ), 'error');
         }
 
         // Ejecutar migración manualmente
@@ -282,12 +368,32 @@ class Imagina_Updater_Server_Admin {
                 'log_level' => $log_level
             ));
 
+            imagina_updater_server_log('Configuración actualizada: logging=' . ($enable_logging ? 'enabled' : 'disabled') . ', level=' . $log_level, 'info');
+            set_transient('imagina_updater_settings_saved', true, 30);
+
+            wp_redirect(admin_url('admin.php?page=imagina-updater-settings'));
+            exit;
+        }
+
+        // Mostrar mensaje de configuración guardada
+        if (get_transient('imagina_updater_settings_saved')) {
+            delete_transient('imagina_updater_settings_saved');
             add_settings_error('imagina_updater', 'settings_saved', __('Configuración guardada', 'imagina-updater-server'), 'success');
         }
 
         // Limpiar logs
         if (isset($_POST['imagina_clear_logs']) && check_admin_referer('imagina_clear_logs')) {
             Imagina_Updater_Server_Logger::get_instance()->clear_logs();
+            imagina_updater_server_log('Logs limpiados manualmente', 'info');
+            set_transient('imagina_updater_logs_cleared', true, 30);
+
+            wp_redirect(admin_url('admin.php?page=imagina-updater-logs'));
+            exit;
+        }
+
+        // Mostrar mensaje de logs limpiados
+        if (get_transient('imagina_updater_logs_cleared')) {
+            delete_transient('imagina_updater_logs_cleared');
             add_settings_error('imagina_updater', 'logs_cleared', __('Logs eliminados', 'imagina-updater-server'), 'success');
         }
 

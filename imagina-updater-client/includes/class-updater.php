@@ -100,6 +100,9 @@ class Imagina_Updater_Client_Updater {
         // Hook genérico para deshabilitar sistemas de actualización
         add_action('plugins_loaded', array($this, 'disable_custom_update_checks'), 5);
 
+        // Limpiar cache después de actualizar un plugin
+        add_action('upgrader_process_complete', array($this, 'clear_cache_after_update'), 10, 2);
+
         imagina_updater_log('Todos los hooks registrados correctamente');
     }
 
@@ -190,33 +193,47 @@ class Imagina_Updater_Client_Updater {
             $plugin_file = $this->find_plugin_file($plugin_slug);
 
             if ($plugin_file) {
-                imagina_updater_log('Creando objeto de actualización para: ' . $plugin_file);
-                // Crear objeto de actualización con flag especial
-                $update_object = (object) array(
-                    'id' => 'imagina-updater/' . $plugin_slug,
-                    'slug' => $plugin_slug,
-                    'plugin' => $plugin_file,
-                    'new_version' => $update_data['new_version'],
-                    'url' => $update_data['homepage'],
-                    'package' => $this->api_client->get_download_url($plugin_slug),
-                    'tested' => $update_data['tested'],
-                    'requires_php' => $update_data['requires_php'],
-                    'compatibility' => new stdClass(),
-                    'icons' => array(),
-                    'banners' => array(),
-                    'banners_rtl' => array(),
-                    'requires' => '5.8',
-                    '_imagina_updater' => true // Flag para identificar nuestras actualizaciones
-                );
+                // Obtener versión instalada actual
+                $installed_version = '';
+                if (isset($transient->checked[$plugin_file])) {
+                    $installed_version = $transient->checked[$plugin_file];
+                }
 
-                // Forzar la actualización en response
-                $transient->response[$plugin_file] = $update_object;
-                imagina_updater_log('Actualización agregada a transient->response para: ' . $plugin_file);
+                imagina_updater_log("Comparando versiones: instalada={$installed_version}, nueva={$update_data['new_version']}");
 
-                // Remover de no_update si existe
-                if (isset($transient->no_update[$plugin_file])) {
-                    unset($transient->no_update[$plugin_file]);
-                    imagina_updater_log('Plugin removido de no_update: ' . $plugin_file);
+                // Solo agregar si hay una nueva versión disponible
+                if (empty($installed_version) || version_compare($update_data['new_version'], $installed_version, '>')) {
+                    imagina_updater_log('Nueva versión disponible, creando objeto de actualización para: ' . $plugin_file);
+
+                    // Crear objeto de actualización con flag especial
+                    $update_object = (object) array(
+                        'id' => 'imagina-updater/' . $plugin_slug,
+                        'slug' => $plugin_slug,
+                        'plugin' => $plugin_file,
+                        'new_version' => $update_data['new_version'],
+                        'url' => $update_data['homepage'],
+                        'package' => $this->api_client->get_download_url($plugin_slug),
+                        'tested' => $update_data['tested'],
+                        'requires_php' => $update_data['requires_php'],
+                        'compatibility' => new stdClass(),
+                        'icons' => array(),
+                        'banners' => array(),
+                        'banners_rtl' => array(),
+                        'requires' => '5.8',
+                        '_imagina_updater' => true // Flag para identificar nuestras actualizaciones
+                    );
+
+                    // Forzar la actualización en response
+                    $transient->response[$plugin_file] = $update_object;
+                    imagina_updater_log('Actualización agregada a transient->response para: ' . $plugin_file);
+
+                    // Remover de no_update si existe
+                    if (isset($transient->no_update[$plugin_file])) {
+                        unset($transient->no_update[$plugin_file]);
+                        imagina_updater_log('Plugin removido de no_update: ' . $plugin_file);
+                    }
+                } else {
+                    imagina_updater_log("Plugin ya está actualizado: {$plugin_slug} v{$installed_version}");
                 }
             } else {
                 imagina_updater_log('ERROR - No se encontró archivo para plugin: ' . $plugin_slug, 'error');
@@ -309,29 +326,43 @@ class Imagina_Updater_Client_Updater {
             $plugin_file = $this->find_plugin_file($plugin_slug);
 
             if ($plugin_file) {
-                $update_object = (object) array(
-                    'id' => 'imagina-updater/' . $plugin_slug,
-                    'slug' => $plugin_slug,
-                    'plugin' => $plugin_file,
-                    'new_version' => $update_data['new_version'],
-                    'url' => $update_data['homepage'],
-                    'package' => $this->api_client->get_download_url($plugin_slug),
-                    'tested' => $update_data['tested'],
-                    'requires_php' => $update_data['requires_php'],
-                    'compatibility' => new stdClass(),
-                    'icons' => array(),
-                    'banners' => array(),
-                    'banners_rtl' => array(),
-                    'requires' => '5.8',
-                    '_imagina_updater' => true
-                );
+                // Obtener versión instalada actual
+                $installed_version = '';
+                if (function_exists('get_plugin_data')) {
+                    $plugin_data = get_plugin_data(WP_PLUGIN_DIR . '/' . $plugin_file, false, false);
+                    $installed_version = !empty($plugin_data['Version']) ? $plugin_data['Version'] : '';
+                }
 
-                $transient->response[$plugin_file] = $update_object;
-                $updates_to_cache[$plugin_file] = $update_object;
+                // Solo agregar si hay una nueva versión disponible
+                if (empty($installed_version) || version_compare($update_data['new_version'], $installed_version, '>')) {
+                    $update_object = (object) array(
+                        'id' => 'imagina-updater/' . $plugin_slug,
+                        'slug' => $plugin_slug,
+                        'plugin' => $plugin_file,
+                        'new_version' => $update_data['new_version'],
+                        'url' => $update_data['homepage'],
+                        'package' => $this->api_client->get_download_url($plugin_slug),
+                        'tested' => $update_data['tested'],
+                        'requires_php' => $update_data['requires_php'],
+                        'compatibility' => new stdClass(),
+                        'icons' => array(),
+                        'banners' => array(),
+                        'banners_rtl' => array(),
+                        'requires' => '5.8',
+                        '_imagina_updater' => true
+                    );
 
-                // Remover de no_update si existe
-                if (isset($transient->no_update[$plugin_file])) {
-                    unset($transient->no_update[$plugin_file]);
+                    $transient->response[$plugin_file] = $update_object;
+                    $updates_to_cache[$plugin_file] = $update_object;
+
+                    // Remover de no_update si existe
+                    if (isset($transient->no_update[$plugin_file])) {
+                        unset($transient->no_update[$plugin_file]);
+                    }
+
+                    imagina_updater_log("Actualización disponible: {$plugin_slug} {$installed_version} → {$update_data['new_version']}");
+                } else {
+                    imagina_updater_log("Plugin ya está actualizado: {$plugin_slug} v{$installed_version}");
                 }
             }
         }
@@ -647,6 +678,24 @@ class Imagina_Updater_Client_Updater {
         }
 
         return $plugins;
+    }
+
+    /**
+     * Limpiar cache después de actualizar un plugin
+     */
+    public function clear_cache_after_update($upgrader_object, $options) {
+        // Solo limpiar si fue una actualización de plugin
+        if ($options['action'] !== 'update' || $options['type'] !== 'plugin') {
+            return;
+        }
+
+        imagina_updater_log('Plugin actualizado, limpiando cache de actualizaciones');
+
+        // Limpiar cache de actualizaciones
+        delete_transient('imagina_updater_cached_updates');
+        delete_site_transient('update_plugins');
+
+        imagina_updater_log('Cache limpiado exitosamente');
     }
 
     /**

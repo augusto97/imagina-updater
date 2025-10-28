@@ -261,11 +261,8 @@ if (!defined('ABSPATH')) {
                         <!-- Buscador -->
                         <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
                             <div style="flex: 1;">
-                                <form method="get" action="" style="display: flex; gap: 10px; max-width: 500px;">
+                                <form method="get" action="<?php echo admin_url('options-general.php'); ?>" style="display: flex; gap: 10px; max-width: 500px;">
                                     <input type="hidden" name="page" value="imagina-updater-client">
-                                    <?php if (isset($_GET['paged'])): ?>
-                                        <input type="hidden" name="paged" value="<?php echo esc_attr($_GET['paged']); ?>">
-                                    <?php endif; ?>
                                     <input type="text"
                                            name="plugin_search"
                                            placeholder="<?php _e('Buscar por nombre, slug o descripción...', 'imagina-updater-client'); ?>"

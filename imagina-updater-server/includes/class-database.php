@@ -127,15 +127,41 @@ class Imagina_Updater_Server_Database {
         );
 
         if (empty($column_exists)) {
+            error_log('IMAGINA UPDATER SERVER: Iniciando migración para agregar slug_override');
+
             // Agregar columna slug_override después de slug
-            $wpdb->query(
+            $result = $wpdb->query(
                 "ALTER TABLE $table_plugins
                 ADD COLUMN slug_override varchar(255) DEFAULT NULL COMMENT 'Slug personalizado'
-                AFTER slug,
-                ADD KEY slug_override (slug_override)"
+                AFTER slug"
             );
 
-            error_log('IMAGINA UPDATER SERVER: Migración completada - Campo slug_override agregado');
+            if ($result === false) {
+                error_log('IMAGINA UPDATER SERVER: ERROR en migración al agregar columna - ' . $wpdb->last_error);
+                return false;
+            }
+
+            // Verificar si el índice ya existe
+            $indexes = $wpdb->get_results("SHOW INDEX FROM $table_plugins WHERE Key_name = 'slug_override'");
+
+            if (empty($indexes)) {
+                // Agregar índice solo si no existe
+                $index_result = $wpdb->query(
+                    "ALTER TABLE $table_plugins
+                    ADD KEY slug_override (slug_override)"
+                );
+
+                if ($index_result === false) {
+                    error_log('IMAGINA UPDATER SERVER: ERROR al crear índice - ' . $wpdb->last_error);
+                    // No retornar false porque la columna ya fue creada exitosamente
+                }
+            }
+
+            error_log('IMAGINA UPDATER SERVER: Migración completada exitosamente - Campo slug_override agregado');
+            return true;
+        } else {
+            error_log('IMAGINA UPDATER SERVER: Campo slug_override ya existe, migración no necesaria');
+            return true;
         }
     }
 

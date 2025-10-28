@@ -342,7 +342,22 @@ class Imagina_Updater_Server_Plugin_Manager {
         ));
 
         if (!$plugin) {
+            error_log('IMAGINA UPDATER SERVER: Plugin no encontrado con ID: ' . $plugin_id);
             return new WP_Error('not_found', __('Plugin no encontrado', 'imagina-updater-server'));
+        }
+
+        // Verificar que el campo slug_override existe
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM $table_plugins LIKE 'slug_override'");
+        if (empty($columns)) {
+            error_log('IMAGINA UPDATER SERVER: Campo slug_override no existe, ejecutando migración');
+            // Ejecutar migración
+            Imagina_Updater_Server_Database::run_migrations();
+
+            // Verificar de nuevo
+            $columns = $wpdb->get_results("SHOW COLUMNS FROM $table_plugins LIKE 'slug_override'");
+            if (empty($columns)) {
+                return new WP_Error('migration_failed', __('Error: El campo slug_override no existe. Por favor, desactiva y reactiva el plugin.', 'imagina-updater-server'));
+            }
         }
 
         // Si el nuevo slug es igual al slug auto-generado, usar NULL
@@ -351,11 +366,12 @@ class Imagina_Updater_Server_Plugin_Manager {
         }
 
         // Si se proporciona un slug, validarlo
-        if ($new_slug !== null) {
+        if ($new_slug !== null && $new_slug !== '') {
             // Sanitizar
             $new_slug = sanitize_title($new_slug);
 
             if (empty($new_slug)) {
+                error_log('IMAGINA UPDATER SERVER: Slug inválido después de sanitizar');
                 return new WP_Error('invalid_slug', __('Slug inválido', 'imagina-updater-server'));
             }
 
@@ -369,9 +385,15 @@ class Imagina_Updater_Server_Plugin_Manager {
             ));
 
             if ($exists > 0) {
+                error_log('IMAGINA UPDATER SERVER: Ya existe un plugin con slug: ' . $new_slug);
                 return new WP_Error('slug_exists', __('Ya existe un plugin con ese slug', 'imagina-updater-server'));
             }
+        } else {
+            // Si está vacío, usar NULL para restablecer al auto-generado
+            $new_slug = null;
         }
+
+        error_log('IMAGINA UPDATER SERVER: Actualizando slug_override a: ' . var_export($new_slug, true) . ' para plugin ID: ' . $plugin_id);
 
         // Actualizar slug_override
         $result = $wpdb->update(
@@ -383,8 +405,11 @@ class Imagina_Updater_Server_Plugin_Manager {
         );
 
         if ($result === false) {
-            return new WP_Error('update_failed', __('Error al actualizar el slug', 'imagina-updater-server'));
+            error_log('IMAGINA UPDATER SERVER: Error de BD al actualizar slug. Error: ' . $wpdb->last_error);
+            return new WP_Error('update_failed', __('Error al actualizar el slug en la base de datos: ', 'imagina-updater-server') . $wpdb->last_error);
         }
+
+        error_log('IMAGINA UPDATER SERVER: Slug actualizado exitosamente. Filas afectadas: ' . $result);
 
         return true;
     }

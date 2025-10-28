@@ -173,6 +173,24 @@ class Imagina_Updater_Client_Admin {
             delete_transient('imagina_updater_cached_updates');
         }
 
+        // Guardar modo de visualización
+        if (isset($_POST['imagina_save_display_mode']) && check_admin_referer('imagina_save_display_mode')) {
+            $display_mode = isset($_POST['plugin_display_mode'])
+                ? sanitize_text_field($_POST['plugin_display_mode'])
+                : 'all_with_install';
+
+            // Validar que sea un valor permitido
+            if (!in_array($display_mode, array('all_with_install', 'installed_only'))) {
+                $display_mode = 'all_with_install';
+            }
+
+            imagina_updater_client()->update_config(array(
+                'plugin_display_mode' => $display_mode
+            ));
+
+            add_settings_error('imagina_updater_client', 'display_mode_saved', __('Modo de visualización actualizado', 'imagina-updater-client'), 'success');
+        }
+
         // Test de conexión
         if (isset($_POST['imagina_test_connection']) && check_admin_referer('imagina_test_connection')) {
             $config = imagina_updater_client()->get_config();

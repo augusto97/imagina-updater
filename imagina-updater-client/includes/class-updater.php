@@ -88,14 +88,19 @@ class Imagina_Updater_Client_Updater {
      * Verificar actualizaciones disponibles
      */
     public function check_for_updates($transient) {
+        error_log('IMAGINA UPDATER: check_for_updates EJECUTADO');
+
         if (empty($transient->checked)) {
+            error_log('IMAGINA UPDATER: transient->checked está vacío');
             return $transient;
         }
 
         // Solo verificar plugins habilitados
         $enabled_plugins = $this->config['enabled_plugins'];
+        error_log('IMAGINA UPDATER: Plugins habilitados: ' . print_r($enabled_plugins, true));
 
         if (empty($enabled_plugins)) {
+            error_log('IMAGINA UPDATER: No hay plugins habilitados, retornando');
             return $transient;
         }
 

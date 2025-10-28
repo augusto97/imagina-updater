@@ -33,12 +33,17 @@ class Imagina_Updater_Server_Plugin_Manager {
     }
 
     /**
-     * Validar formato de versión semántica
+     * Validar que la versión sea válida
+     *
+     * No imponemos formato específico (semántico o no), solo verificamos que:
+     * - No esté vacía
+     * - No contenga caracteres peligrosos
+     * - WordPress acepta cualquier formato: 1.0, 1.0.0, 5.5.4.5.1, etc.
      */
     private static function is_valid_version($version) {
-        // Regex para versión semántica básica: X.Y.Z o X.Y.Z-suffix
-        $pattern = '/^(\d+)\.(\d+)(\.(\d+))?(-[a-zA-Z0-9\-\.]+)?$/';
-        return preg_match($pattern, $version);
+        // Solo verificar que no esté vacía y que contenga caracteres permitidos
+        // Permitimos números, puntos, guiones y letras (para sufijos como -beta, -rc1, etc.)
+        return !empty($version) && preg_match('/^[0-9a-zA-Z\.\-]+$/', $version);
     }
 
     /**
@@ -76,7 +81,7 @@ class Imagina_Updater_Server_Plugin_Manager {
 
         // Validar versión
         if (!self::is_valid_version($plugin_data['version'])) {
-            return new WP_Error('invalid_version', __('Formato de versión inválido. Use formato semántico: X.Y.Z', 'imagina-updater-server'));
+            return new WP_Error('invalid_version', __('Versión inválida. La versión no puede estar vacía y solo puede contener números, puntos, guiones y letras.', 'imagina-updater-server'));
         }
 
         // Mover archivo a directorio seguro

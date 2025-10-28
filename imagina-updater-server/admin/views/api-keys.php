@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) {
 <div class="wrap">
     <h1><?php _e('Gestión de API Keys', 'imagina-updater-server'); ?></h1>
 
-    <?php settings_errors('imagina_updater'); ?>
+    <?php settings_errors('imagina_updater', false); ?>
 
     <?php if ($new_api_key): ?>
         <div class="notice notice-success">

@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) {
 <div class="wrap">
     <h1><?php _e('Gestión de Plugins', 'imagina-updater-server'); ?></h1>
 
-    <?php settings_errors('imagina_updater'); ?>
+    <?php settings_errors('imagina_updater', false); ?>
 
     <div class="imagina-upload-section">
         <h2><?php _e('Subir Nuevo Plugin o Actualización', 'imagina-updater-server'); ?></h2>

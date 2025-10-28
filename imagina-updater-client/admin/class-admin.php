@@ -46,15 +46,18 @@ class Imagina_Updater_Client_Admin {
             array($this, 'render_settings_page')
         );
 
-        // Submenú para logs
-        add_submenu_page(
-            'options-general.php',
-            __('Imagina Updater - Logs', 'imagina-updater-client'),
-            __('Imagina Updater Logs', 'imagina-updater-client'),
-            'manage_options',
-            'imagina-updater-client-logs',
-            array($this, 'render_logs_page')
-        );
+        // Submenú para logs (solo si está habilitado)
+        $config = imagina_updater_client()->get_config();
+        if (isset($config['enable_logging']) && $config['enable_logging']) {
+            add_submenu_page(
+                'options-general.php',
+                __('Imagina Updater - Logs', 'imagina-updater-client'),
+                __('Imagina Updater Logs', 'imagina-updater-client'),
+                'manage_options',
+                'imagina-updater-client-logs',
+                array($this, 'render_logs_page')
+            );
+        }
     }
 
     /**

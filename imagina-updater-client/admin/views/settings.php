@@ -62,6 +62,58 @@ if (!defined('ABSPATH')) {
                     </tr>
                 </table>
 
+                <hr>
+                <h3><?php _e('Configuración de Logs', 'imagina-updater-client'); ?></h3>
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">
+                            <label for="enable_logging"><?php _e('Habilitar Logging', 'imagina-updater-client'); ?></label>
+                        </th>
+                        <td>
+                            <label for="enable_logging">
+                                <input type="checkbox"
+                                       name="enable_logging"
+                                       id="enable_logging"
+                                       value="1"
+                                       <?php checked(isset($config['enable_logging']) && $config['enable_logging']); ?>>
+                                <?php _e('Activar sistema de logs', 'imagina-updater-client'); ?>
+                            </label>
+                            <p class="description">
+                                <?php _e('Los logs te ayudarán a diagnosticar problemas con las actualizaciones. Se guardan en un archivo independiente.', 'imagina-updater-client'); ?>
+                                <?php if ($is_configured): ?>
+                                    <br>
+                                    <a href="<?php echo admin_url('options-general.php?page=imagina-updater-client-logs'); ?>"><?php _e('Ver logs', 'imagina-updater-client'); ?></a>
+                                <?php endif; ?>
+                            </p>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th scope="row">
+                            <label for="log_level"><?php _e('Nivel de Log', 'imagina-updater-client'); ?></label>
+                        </th>
+                        <td>
+                            <select name="log_level" id="log_level">
+                                <option value="DEBUG" <?php selected(isset($config['log_level']) ? $config['log_level'] : 'INFO', 'DEBUG'); ?>>
+                                    <?php _e('DEBUG - Todos los mensajes', 'imagina-updater-client'); ?>
+                                </option>
+                                <option value="INFO" <?php selected(isset($config['log_level']) ? $config['log_level'] : 'INFO', 'INFO'); ?>>
+                                    <?php _e('INFO - Información general', 'imagina-updater-client'); ?>
+                                </option>
+                                <option value="WARNING" <?php selected(isset($config['log_level']) ? $config['log_level'] : 'INFO', 'WARNING'); ?>>
+                                    <?php _e('WARNING - Solo advertencias y errores', 'imagina-updater-client'); ?>
+                                </option>
+                                <option value="ERROR" <?php selected(isset($config['log_level']) ? $config['log_level'] : 'INFO', 'ERROR'); ?>>
+                                    <?php _e('ERROR - Solo errores', 'imagina-updater-client'); ?>
+                                </option>
+                            </select>
+                            <p class="description">
+                                <?php _e('Selecciona qué nivel de detalle quieres en los logs. DEBUG es muy detallado, INFO es recomendado.', 'imagina-updater-client'); ?>
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+
                 <p class="submit">
                     <button type="submit" name="imagina_save_config" class="button button-primary">
                         <span class="dashicons dashicons-yes"></span>

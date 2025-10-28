@@ -20,30 +20,29 @@ if (!defined('ABSPATH')) {
 }
 
 // Constantes del plugin
-define('IMAGINA_UPDATER_CLIENT_VERSION', '1.0.0');
+define('IMAGINA_UPDATER_CLIENT_VERSION', '1.0.1');
 define('IMAGINA_UPDATER_CLIENT_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('IMAGINA_UPDATER_CLIENT_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('IMAGINA_UPDATER_CLIENT_PLUGIN_FILE', __FILE__);
 
-// Modo debug (cambiar a false en producción o usar constante de WordPress)
-if (!defined('IMAGINA_UPDATER_DEBUG')) {
-    define('IMAGINA_UPDATER_DEBUG', defined('WP_DEBUG') && WP_DEBUG);
-}
-
 /**
- * Función helper para logging condicional
+ * Función helper para logging usando el sistema propio
  */
-function imagina_updater_log($message, $level = 'info') {
-    if (!IMAGINA_UPDATER_DEBUG) {
-        return;
-    }
+function imagina_updater_log($message, $level = 'info', $context = array()) {
+    // Mapear nivel a constantes de Logger
+    $level_map = array(
+        'debug' => Imagina_Updater_Client_Logger::LEVEL_DEBUG,
+        'info' => Imagina_Updater_Client_Logger::LEVEL_INFO,
+        'warning' => Imagina_Updater_Client_Logger::LEVEL_WARNING,
+        'error' => Imagina_Updater_Client_Logger::LEVEL_ERROR
+    );
 
-    $prefix = 'IMAGINA UPDATER';
-    if ($level !== 'info') {
-        $prefix .= ' [' . strtoupper($level) . ']';
-    }
+    $log_level = isset($level_map[$level]) ? $level_map[$level] : Imagina_Updater_Client_Logger::LEVEL_INFO;
 
-    error_log($prefix . ': ' . $message);
+    // Usar el Logger
+    if (class_exists('Imagina_Updater_Client_Logger')) {
+        Imagina_Updater_Client_Logger::get_instance()->log($message, $log_level, $context);
+    }
 }
 
 /**
@@ -87,7 +86,9 @@ class Imagina_Updater_Client {
         $this->config = get_option('imagina_updater_client_config', array(
             'server_url' => '',
             'api_key' => '',
-            'enabled_plugins' => array()
+            'enabled_plugins' => array(),
+            'enable_logging' => false, // Logs desactivados por defecto
+            'log_level' => 'INFO' // Nivel por defecto
         ));
     }
 
@@ -95,6 +96,7 @@ class Imagina_Updater_Client {
      * Cargar dependencias del plugin
      */
     private function load_dependencies() {
+        require_once IMAGINA_UPDATER_CLIENT_PLUGIN_DIR . 'includes/class-logger.php';
         require_once IMAGINA_UPDATER_CLIENT_PLUGIN_DIR . 'includes/class-api-client.php';
         require_once IMAGINA_UPDATER_CLIENT_PLUGIN_DIR . 'includes/class-updater.php';
         require_once IMAGINA_UPDATER_CLIENT_PLUGIN_DIR . 'admin/class-admin.php';
@@ -178,7 +180,9 @@ class Imagina_Updater_Client {
             add_option('imagina_updater_client_config', array(
                 'server_url' => '',
                 'api_key' => '',
-                'enabled_plugins' => array()
+                'enabled_plugins' => array(),
+                'enable_logging' => false,
+                'log_level' => 'INFO'
             ));
         }
     }

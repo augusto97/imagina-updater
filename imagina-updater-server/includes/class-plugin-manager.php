@@ -248,8 +248,10 @@ class Imagina_Updater_Server_Plugin_Manager {
             return new WP_Error('zip_error', __('No se pudo abrir el archivo ZIP', 'imagina-updater-server'));
         }
 
-        // Buscar archivo principal del plugin
+        // Buscar archivo principal del plugin y extraer carpeta raíz
         $plugin_file = null;
+        $plugin_folder = null;
+
         for ($i = 0; $i < $zip->numFiles; $i++) {
             $filename = $zip->getNameIndex($i);
 
@@ -261,6 +263,17 @@ class Imagina_Updater_Server_Plugin_Manager {
                 // Verificar si tiene los headers de plugin
                 if (preg_match('/Plugin Name:/i', $content)) {
                     $plugin_file = $content;
+
+                    // Extraer nombre de la carpeta desde la ruta del archivo
+                    // Si es "carpeta/archivo.php", extraer "carpeta"
+                    // Si es "archivo.php", usar el nombre del archivo sin extensión
+                    if (strpos($filename, '/') !== false) {
+                        $plugin_folder = substr($filename, 0, strpos($filename, '/'));
+                    } else {
+                        // Plugin en raíz del ZIP (sin carpeta)
+                        $plugin_folder = basename($filename, '.php');
+                    }
+
                     break;
                 }
             }
@@ -268,7 +281,7 @@ class Imagina_Updater_Server_Plugin_Manager {
 
         $zip->close();
 
-        if (!$plugin_file) {
+        if (!$plugin_file || !$plugin_folder) {
             return new WP_Error('no_plugin_header', __('No se encontró archivo de plugin válido en el ZIP', 'imagina-updater-server'));
         }
 
@@ -303,8 +316,9 @@ class Imagina_Updater_Server_Plugin_Manager {
             return new WP_Error('invalid_plugin', __('El plugin no tiene nombre o versión definidos', 'imagina-updater-server'));
         }
 
-        // Generar slug desde el nombre
-        $plugin_data['slug'] = sanitize_title($plugin_data['name']);
+        // USAR EL NOMBRE DE LA CARPETA COMO SLUG (no el nombre del plugin)
+        // Esto asegura que el slug coincida con la estructura real del plugin
+        $plugin_data['slug'] = sanitize_file_name($plugin_folder);
 
         return $plugin_data;
     }

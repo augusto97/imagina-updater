@@ -401,6 +401,25 @@ class Imagina_Updater_Client_Admin {
                     $server_plugins = array();
                 }
             }
+
+            // Limpiar plugins habilitados que ya no están disponibles en el servidor
+            if (!empty($server_plugins) && !empty($config['enabled_plugins'])) {
+                $available_slugs = array_column($server_plugins, 'slug');
+                $original_count = count($config['enabled_plugins']);
+                $cleaned_plugins = array_intersect($config['enabled_plugins'], $available_slugs);
+
+                // Si se removieron plugins, actualizar configuración
+                if (count($cleaned_plugins) < $original_count) {
+                    $removed = array_diff($config['enabled_plugins'], $cleaned_plugins);
+                    imagina_updater_client()->update_config(array(
+                        'enabled_plugins' => array_values($cleaned_plugins)
+                    ));
+                    imagina_updater_client_log('Plugins removidos de enabled_plugins (ya no disponibles en servidor): ' . implode(', ', $removed), 'info');
+
+                    // Recargar configuración para reflejar los cambios
+                    $config = imagina_updater_client()->get_config();
+                }
+            }
         }
 
         // Obtener plugins instalados

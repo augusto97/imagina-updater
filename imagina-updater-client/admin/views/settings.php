@@ -159,17 +159,17 @@ if (!defined('ABSPATH')) {
                                     <label>
                                         <input type="radio"
                                                name="plugin_display_mode"
-                                               value="all_with_install"
-                                               <?php checked(isset($config['plugin_display_mode']) ? $config['plugin_display_mode'] : 'all_with_install', 'all_with_install'); ?>>
-                                        <?php _e('Mostrar todos los plugins con opción de instalar', 'imagina-updater-client'); ?>
+                                               value="installed_only"
+                                               <?php checked(isset($config['plugin_display_mode']) ? $config['plugin_display_mode'] : 'installed_only', 'installed_only'); ?>>
+                                        <?php _e('Mostrar solo plugins instalados', 'imagina-updater-client'); ?>
                                     </label>
                                     <br>
                                     <label>
                                         <input type="radio"
                                                name="plugin_display_mode"
-                                               value="installed_only"
-                                               <?php checked(isset($config['plugin_display_mode']) ? $config['plugin_display_mode'] : 'all_with_install', 'installed_only'); ?>>
-                                        <?php _e('Mostrar solo plugins instalados', 'imagina-updater-client'); ?>
+                                               value="all_with_install"
+                                               <?php checked(isset($config['plugin_display_mode']) ? $config['plugin_display_mode'] : 'installed_only', 'all_with_install'); ?>>
+                                        <?php _e('Mostrar todos los plugins con opción de instalar', 'imagina-updater-client'); ?>
                                     </label>
                                     <p class="description">
                                         <?php _e('Elige si quieres ver todos los plugins disponibles en el servidor o solo los que ya tienes instalados.', 'imagina-updater-client'); ?>
@@ -213,7 +213,7 @@ if (!defined('ABSPATH')) {
                             </thead>
                             <tbody>
                                 <?php
-                                $display_mode = isset($config['plugin_display_mode']) ? $config['plugin_display_mode'] : 'all_with_install';
+                                $display_mode = isset($config['plugin_display_mode']) ? $config['plugin_display_mode'] : 'installed_only';
                                 foreach ($server_plugins as $plugin):
                                     $is_enabled = in_array($plugin['slug'], $config['enabled_plugins']);
                                     $is_installed = isset($installed_plugins[$plugin['slug']]);
@@ -278,12 +278,14 @@ if (!defined('ABSPATH')) {
                                                     <?php _e('No instalado', 'imagina-updater-client'); ?>
                                                 </span>
                                                 <br>
-                                                <a href="<?php echo esc_url(admin_url('plugin-install.php?s=' . urlencode($plugin['slug']) . '&tab=search&type=term')); ?>"
-                                                   class="button button-small"
-                                                   style="margin-top: 5px;">
-                                                    <span class="dashicons dashicons-download" style="font-size: 14px; margin-top: 3px;"></span>
-                                                    <?php _e('Instalar Plugin', 'imagina-updater-client'); ?>
-                                                </a>
+                                                <form method="post" style="display: inline; margin-top: 5px;">
+                                                    <?php wp_nonce_field('imagina_install_plugin'); ?>
+                                                    <input type="hidden" name="plugin_slug" value="<?php echo esc_attr($plugin['slug']); ?>">
+                                                    <button type="submit" name="imagina_install_plugin" class="button button-small">
+                                                        <span class="dashicons dashicons-download" style="font-size: 14px; margin-top: 3px;"></span>
+                                                        <?php _e('Instalar Plugin', 'imagina-updater-client'); ?>
+                                                    </button>
+                                                </form>
                                             <?php elseif ($needs_update): ?>
                                                 <span class="imagina-badge imagina-badge-warning">
                                                     <?php _e('Actualización disponible', 'imagina-updater-client'); ?>

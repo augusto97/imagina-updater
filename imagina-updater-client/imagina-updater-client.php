@@ -92,7 +92,7 @@ class Imagina_Updater_Client {
             'enabled_plugins' => array(),
             'enable_logging' => false, // Logs desactivados por defecto
             'log_level' => 'INFO', // Nivel por defecto
-            'plugin_display_mode' => 'all_with_install' // Modo de visualización por defecto
+            'plugin_display_mode' => 'installed_only' // Modo de visualización por defecto
         ));
     }
 

@@ -116,47 +116,73 @@ class Imagina_Updater_Client_Updater {
         }
 
         // PASO 1: Limpiar actualizaciones previas de plugins gestionados
+        error_log('IMAGINA UPDATER: PASO 1 - Limpiar actualizaciones previas');
         $managed_files = array();
         foreach ($enabled_plugins as $plugin_slug) {
+            error_log('IMAGINA UPDATER: Buscando archivo para plugin: ' . $plugin_slug);
             $plugin_file = $this->find_plugin_file($plugin_slug);
+            error_log('IMAGINA UPDATER: Archivo encontrado: ' . ($plugin_file ? $plugin_file : 'NO ENCONTRADO'));
+
             if ($plugin_file) {
                 $managed_files[] = $plugin_file;
                 // Remover actualizaciones existentes de otros sistemas
                 if (isset($transient->response[$plugin_file])) {
                     unset($transient->response[$plugin_file]);
+                    error_log('IMAGINA UPDATER: Actualización externa removida para: ' . $plugin_file);
                 }
             }
         }
 
         // PASO 2: Preparar lista de plugins para verificar
+        error_log('IMAGINA UPDATER: PASO 2 - Preparar lista de plugins para verificar');
+        error_log('IMAGINA UPDATER: Plugins en transient->checked: ' . print_r(array_keys($transient->checked), true));
         $plugins_to_check = array();
 
         foreach ($enabled_plugins as $plugin_slug) {
             $plugin_file = $this->find_plugin_file($plugin_slug);
 
-            if ($plugin_file && isset($transient->checked[$plugin_file])) {
-                $plugins_to_check[$plugin_slug] = $transient->checked[$plugin_file];
+            if ($plugin_file) {
+                error_log('IMAGINA UPDATER: Plugin ' . $plugin_slug . ' -> archivo: ' . $plugin_file);
+
+                if (isset($transient->checked[$plugin_file])) {
+                    $plugins_to_check[$plugin_slug] = $transient->checked[$plugin_file];
+                    error_log('IMAGINA UPDATER: Plugin agregado a verificar: ' . $plugin_slug . ' v' . $transient->checked[$plugin_file]);
+                } else {
+                    error_log('IMAGINA UPDATER: Plugin NO está en transient->checked: ' . $plugin_file);
+                }
+            } else {
+                error_log('IMAGINA UPDATER: NO se encontró archivo para plugin: ' . $plugin_slug);
             }
         }
 
+        error_log('IMAGINA UPDATER: Total de plugins a verificar: ' . count($plugins_to_check));
+
         if (empty($plugins_to_check)) {
+            error_log('IMAGINA UPDATER: No hay plugins para verificar, retornando');
             return $transient;
         }
 
         // PASO 3: Consultar servidor
+        error_log('IMAGINA UPDATER: PASO 3 - Consultando servidor');
+        error_log('IMAGINA UPDATER: Enviando al servidor: ' . print_r($plugins_to_check, true));
         $updates = $this->api_client->check_updates($plugins_to_check);
 
         if (is_wp_error($updates)) {
             // Log del error
-            error_log('Imagina Updater Client: ' . $updates->get_error_message());
+            error_log('IMAGINA UPDATER: ERROR del servidor: ' . $updates->get_error_message());
             return $transient;
         }
 
+        error_log('IMAGINA UPDATER: Respuesta del servidor: ' . print_r($updates, true));
+
         // PASO 4: Forzar actualizaciones desde nuestro servidor
+        error_log('IMAGINA UPDATER: PASO 4 - Procesar actualizaciones recibidas');
         foreach ($updates as $plugin_slug => $update_data) {
+            error_log('IMAGINA UPDATER: Procesando actualización para: ' . $plugin_slug);
             $plugin_file = $this->find_plugin_file($plugin_slug);
 
             if ($plugin_file) {
+                error_log('IMAGINA UPDATER: Creando objeto de actualización para: ' . $plugin_file);
                 // Crear objeto de actualización con flag especial
                 $update_object = (object) array(
                     'id' => 'imagina-updater/' . $plugin_slug,
@@ -177,13 +203,19 @@ class Imagina_Updater_Client_Updater {
 
                 // Forzar la actualización en response
                 $transient->response[$plugin_file] = $update_object;
+                error_log('IMAGINA UPDATER: Actualización agregada a transient->response para: ' . $plugin_file);
 
                 // Remover de no_update si existe
                 if (isset($transient->no_update[$plugin_file])) {
                     unset($transient->no_update[$plugin_file]);
+                    error_log('IMAGINA UPDATER: Plugin removido de no_update: ' . $plugin_file);
                 }
+            } else {
+                error_log('IMAGINA UPDATER: ERROR - No se encontró archivo para plugin: ' . $plugin_slug);
             }
         }
+
+        error_log('IMAGINA UPDATER: Proceso completado exitosamente. Total de actualizaciones agregadas: ' . count($transient->response));
 
         return $transient;
     }
@@ -534,44 +566,53 @@ class Imagina_Updater_Client_Updater {
      * Encontrar archivo del plugin por slug (mejorado con múltiples criterios)
      */
     private function find_plugin_file($slug) {
+        error_log('IMAGINA UPDATER: find_plugin_file() iniciado para: ' . $slug);
+
         if (!function_exists('get_plugins')) {
             require_once ABSPATH . 'wp-admin/includes/plugin.php';
         }
 
         $all_plugins = get_plugins();
         $slug_lower = strtolower($slug);
+        error_log('IMAGINA UPDATER: Total de plugins instalados: ' . count($all_plugins));
 
         foreach ($all_plugins as $plugin_file => $plugin_data) {
             // Criterio 1: Slug del directorio
             $plugin_slug = dirname($plugin_file);
 
             if ($plugin_slug !== '.' && strtolower($plugin_slug) === $slug_lower) {
+                error_log('IMAGINA UPDATER: ✓ Encontrado por Criterio 1 (directorio): ' . $plugin_file);
                 return $plugin_file;
             }
 
             // Criterio 2: Nombre del archivo (para plugins de archivo único)
             if ($plugin_slug === '.' && strtolower(basename($plugin_file, '.php')) === $slug_lower) {
+                error_log('IMAGINA UPDATER: ✓ Encontrado por Criterio 2 (archivo único): ' . $plugin_file);
                 return $plugin_file;
             }
 
             // Criterio 3: Comparar con el nombre sanitizado del plugin
             $plugin_name_slug = sanitize_title($plugin_data['Name']);
             if (strtolower($plugin_name_slug) === $slug_lower) {
+                error_log('IMAGINA UPDATER: ✓ Encontrado por Criterio 3 (nombre sanitizado): ' . $plugin_file);
                 return $plugin_file;
             }
 
             // Criterio 4: Comparar con TextDomain si está definido
             if (!empty($plugin_data['TextDomain']) && strtolower($plugin_data['TextDomain']) === $slug_lower) {
+                error_log('IMAGINA UPDATER: ✓ Encontrado por Criterio 4 (TextDomain): ' . $plugin_file);
                 return $plugin_file;
             }
 
             // Criterio 5: Buscar coincidencia parcial en el nombre del archivo
             $file_basename = strtolower(basename($plugin_file, '.php'));
             if (strpos($file_basename, $slug_lower) !== false || strpos($slug_lower, $file_basename) !== false) {
+                error_log('IMAGINA UPDATER: ✓ Encontrado por Criterio 5 (coincidencia parcial): ' . $plugin_file);
                 return $plugin_file;
             }
         }
 
+        error_log('IMAGINA UPDATER: ✗ NO se encontró archivo para slug: ' . $slug);
         return false;
     }
 

@@ -18,6 +18,15 @@ class Imagina_Updater_Server_Plugin_Manager {
     }
 
     /**
+     * Validar formato de versión semántica
+     */
+    private static function is_valid_version($version) {
+        // Regex para versión semántica básica: X.Y.Z o X.Y.Z-suffix
+        $pattern = '/^(\d+)\.(\d+)(\.(\d+))?(-[a-zA-Z0-9\-\.]+)?$/';
+        return preg_match($pattern, $version);
+    }
+
+    /**
      * Subir un nuevo plugin o nueva versión
      *
      * @param array $file Archivo ZIP del plugin ($_FILES)
@@ -28,6 +37,10 @@ class Imagina_Updater_Server_Plugin_Manager {
         // Validar archivo
         if (!isset($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
             return new WP_Error('invalid_file', __('Archivo no válido', 'imagina-updater-server'));
+        }
+
+        if (!file_exists($file['tmp_name'])) {
+            return new WP_Error('file_not_found', __('Archivo temporal no encontrado', 'imagina-updater-server'));
         }
 
         // Validar que sea un ZIP
@@ -46,13 +59,19 @@ class Imagina_Updater_Server_Plugin_Manager {
             return $plugin_data;
         }
 
+        // Validar versión
+        if (!self::is_valid_version($plugin_data['version'])) {
+            return new WP_Error('invalid_version', __('Formato de versión inválido. Use formato semántico: X.Y.Z', 'imagina-updater-server'));
+        }
+
         // Mover archivo a directorio seguro
         $upload_dir = self::get_upload_dir();
         $filename = sanitize_file_name($plugin_data['slug'] . '-' . $plugin_data['version'] . '.zip');
         $file_path = $upload_dir . '/' . $filename;
 
         if (!move_uploaded_file($file['tmp_name'], $file_path)) {
-            return new WP_Error('upload_failed', __('Error al mover el archivo', 'imagina-updater-server'));
+            $error_msg = error_get_last();
+            return new WP_Error('upload_failed', __('Error al mover el archivo', 'imagina-updater-server') . ': ' . ($error_msg['message'] ?? 'Desconocido'));
         }
 
         // Calcular checksum
@@ -70,92 +89,132 @@ class Imagina_Updater_Server_Plugin_Manager {
             $plugin_data['slug']
         ));
 
-        if ($existing) {
-            // Verificar si la versión es más nueva
-            if (version_compare($plugin_data['version'], $existing->current_version, '<=')) {
-                @unlink($file_path);
-                return new WP_Error('old_version', __('La versión debe ser mayor a la actual', 'imagina-updater-server'));
+        // Usar transacciones para garantizar consistencia
+        $wpdb->query('START TRANSACTION');
+
+        try {
+            if ($existing) {
+                // Verificar si la versión es más nueva
+                if (version_compare($plugin_data['version'], $existing->current_version, '<=')) {
+                    if (!unlink($file_path)) {
+                        error_log('IMAGINA UPDATER SERVER: No se pudo eliminar archivo: ' . $file_path);
+                    }
+                    throw new Exception(__('La versión debe ser mayor a la actual', 'imagina-updater-server'));
+                }
+
+                // Guardar versión anterior en historial
+                $result = $wpdb->insert(
+                    $table_versions,
+                    array(
+                        'plugin_id' => $existing->id,
+                        'version' => $existing->current_version,
+                        'file_path' => $existing->file_path,
+                        'file_size' => $existing->file_size,
+                        'checksum' => $existing->checksum,
+                        'uploaded_at' => $existing->uploaded_at
+                    ),
+                    array('%d', '%s', '%s', '%d', '%s', '%s')
+                );
+
+                if ($result === false) {
+                    throw new Exception(__('Error al guardar historial de versión', 'imagina-updater-server'));
+                }
+
+                // Actualizar plugin con nueva versión
+                $result = $wpdb->update(
+                    $table_plugins,
+                    array(
+                        'current_version' => $plugin_data['version'],
+                        'file_path' => $file_path,
+                        'file_size' => $file_size,
+                        'checksum' => $checksum,
+                        'uploaded_at' => current_time('mysql'),
+                        'name' => $plugin_data['name'],
+                        'description' => $plugin_data['description'],
+                        'author' => $plugin_data['author'],
+                        'homepage' => $plugin_data['homepage']
+                    ),
+                    array('id' => $existing->id),
+                    array('%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s'),
+                    array('%d')
+                );
+
+                if ($result === false) {
+                    throw new Exception(__('Error al actualizar plugin', 'imagina-updater-server'));
+                }
+
+                $plugin_id = $existing->id;
+            } else {
+                // Crear nuevo plugin
+                $result = $wpdb->insert(
+                    $table_plugins,
+                    array(
+                        'slug' => $plugin_data['slug'],
+                        'slug_override' => null,
+                        'name' => $plugin_data['name'],
+                        'description' => $plugin_data['description'],
+                        'author' => $plugin_data['author'],
+                        'homepage' => $plugin_data['homepage'],
+                        'current_version' => $plugin_data['version'],
+                        'file_path' => $file_path,
+                        'file_size' => $file_size,
+                        'checksum' => $checksum,
+                        'uploaded_at' => current_time('mysql')
+                    ),
+                    array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s')
+                );
+
+                if ($result === false) {
+                    throw new Exception(__('Error al crear plugin', 'imagina-updater-server'));
+                }
+
+                $plugin_id = $wpdb->insert_id;
             }
 
-            // Guardar versión anterior en historial
-            $wpdb->insert(
-                $table_versions,
-                array(
-                    'plugin_id' => $existing->id,
-                    'version' => $existing->current_version,
-                    'file_path' => $existing->file_path,
-                    'file_size' => $existing->file_size,
-                    'checksum' => $existing->checksum,
-                    'uploaded_at' => $existing->uploaded_at
-                ),
-                array('%d', '%s', '%s', '%d', '%s', '%s')
+            // Guardar changelog si se proporcionó
+            if (!empty($changelog)) {
+                $result = $wpdb->insert(
+                    $table_versions,
+                    array(
+                        'plugin_id' => $plugin_id,
+                        'version' => $plugin_data['version'],
+                        'file_path' => $file_path,
+                        'file_size' => $file_size,
+                        'checksum' => $checksum,
+                        'changelog' => sanitize_textarea_field($changelog),
+                        'uploaded_at' => current_time('mysql')
+                    ),
+                    array('%d', '%s', '%s', '%d', '%s', '%s', '%s')
+                );
+
+                if ($result === false) {
+                    throw new Exception(__('Error al guardar changelog', 'imagina-updater-server'));
+                }
+            }
+
+            // Commit de la transacción
+            $wpdb->query('COMMIT');
+
+            return array(
+                'id' => $plugin_id,
+                'slug' => $plugin_data['slug'],
+                'name' => $plugin_data['name'],
+                'version' => $plugin_data['version']
             );
 
-            // Actualizar plugin con nueva versión
-            $wpdb->update(
-                $table_plugins,
-                array(
-                    'current_version' => $plugin_data['version'],
-                    'file_path' => $file_path,
-                    'file_size' => $file_size,
-                    'checksum' => $checksum,
-                    'uploaded_at' => current_time('mysql'),
-                    'name' => $plugin_data['name'],
-                    'description' => $plugin_data['description'],
-                    'author' => $plugin_data['author'],
-                    'homepage' => $plugin_data['homepage']
-                ),
-                array('id' => $existing->id),
-                array('%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s'),
-                array('%d')
-            );
+        } catch (Exception $e) {
+            // Rollback en caso de error
+            $wpdb->query('ROLLBACK');
 
-            $plugin_id = $existing->id;
-        } else {
-            // Crear nuevo plugin
-            $wpdb->insert(
-                $table_plugins,
-                array(
-                    'slug' => $plugin_data['slug'],
-                    'name' => $plugin_data['name'],
-                    'description' => $plugin_data['description'],
-                    'author' => $plugin_data['author'],
-                    'homepage' => $plugin_data['homepage'],
-                    'current_version' => $plugin_data['version'],
-                    'file_path' => $file_path,
-                    'file_size' => $file_size,
-                    'checksum' => $checksum,
-                    'uploaded_at' => current_time('mysql')
-                ),
-                array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s')
-            );
+            // Limpiar archivo si existe
+            if (file_exists($file_path)) {
+                if (!unlink($file_path)) {
+                    error_log('IMAGINA UPDATER SERVER: No se pudo eliminar archivo tras error: ' . $file_path);
+                }
+            }
 
-            $plugin_id = $wpdb->insert_id;
+            return new WP_Error('transaction_failed', $e->getMessage());
         }
-
-        // Guardar changelog si se proporcionó
-        if (!empty($changelog)) {
-            $wpdb->insert(
-                $table_versions,
-                array(
-                    'plugin_id' => $plugin_id,
-                    'version' => $plugin_data['version'],
-                    'file_path' => $file_path,
-                    'file_size' => $file_size,
-                    'checksum' => $checksum,
-                    'changelog' => sanitize_textarea_field($changelog),
-                    'uploaded_at' => current_time('mysql')
-                ),
-                array('%d', '%s', '%s', '%d', '%s', '%s', '%s')
-            );
-        }
-
-        return array(
-            'id' => $plugin_id,
-            'slug' => $plugin_data['slug'],
-            'name' => $plugin_data['name'],
-            'version' => $plugin_data['version']
-        );
     }
 
     /**
@@ -246,7 +305,7 @@ class Imagina_Updater_Server_Plugin_Manager {
     }
 
     /**
-     * Obtener un plugin por slug
+     * Obtener un plugin por slug (verifica tanto slug como slug_override)
      *
      * @param string $slug Slug del plugin
      * @return object|null
@@ -256,10 +315,78 @@ class Imagina_Updater_Server_Plugin_Manager {
 
         $table = $wpdb->prefix . 'imagina_updater_plugins';
 
+        // Primero buscar por slug_override, luego por slug normal
         return $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM $table WHERE slug = %s",
+            "SELECT * FROM $table WHERE slug_override = %s OR (slug_override IS NULL AND slug = %s) LIMIT 1",
+            $slug,
             $slug
         ));
+    }
+
+    /**
+     * Actualizar el slug personalizado de un plugin
+     *
+     * @param int $plugin_id ID del plugin
+     * @param string|null $new_slug Nuevo slug (null para usar el auto-generado)
+     * @return bool|WP_Error
+     */
+    public static function update_plugin_slug($plugin_id, $new_slug) {
+        global $wpdb;
+
+        $table_plugins = $wpdb->prefix . 'imagina_updater_plugins';
+
+        // Validar que el plugin existe
+        $plugin = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $table_plugins WHERE id = %d",
+            $plugin_id
+        ));
+
+        if (!$plugin) {
+            return new WP_Error('not_found', __('Plugin no encontrado', 'imagina-updater-server'));
+        }
+
+        // Si el nuevo slug es igual al slug auto-generado, usar NULL
+        if ($new_slug === $plugin->slug) {
+            $new_slug = null;
+        }
+
+        // Si se proporciona un slug, validarlo
+        if ($new_slug !== null) {
+            // Sanitizar
+            $new_slug = sanitize_title($new_slug);
+
+            if (empty($new_slug)) {
+                return new WP_Error('invalid_slug', __('Slug inválido', 'imagina-updater-server'));
+            }
+
+            // Verificar que no exista otro plugin con ese slug
+            $exists = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM $table_plugins
+                WHERE id != %d AND (slug = %s OR slug_override = %s)",
+                $plugin_id,
+                $new_slug,
+                $new_slug
+            ));
+
+            if ($exists > 0) {
+                return new WP_Error('slug_exists', __('Ya existe un plugin con ese slug', 'imagina-updater-server'));
+            }
+        }
+
+        // Actualizar slug_override
+        $result = $wpdb->update(
+            $table_plugins,
+            array('slug_override' => $new_slug),
+            array('id' => $plugin_id),
+            array('%s'),
+            array('%d')
+        );
+
+        if ($result === false) {
+            return new WP_Error('update_failed', __('Error al actualizar el slug', 'imagina-updater-server'));
+        }
+
+        return true;
     }
 
     /**
@@ -303,14 +430,18 @@ class Imagina_Updater_Server_Plugin_Manager {
 
         // Eliminar archivo actual
         if (file_exists($plugin->file_path)) {
-            @unlink($plugin->file_path);
+            if (!unlink($plugin->file_path)) {
+                error_log('IMAGINA UPDATER SERVER: No se pudo eliminar archivo actual: ' . $plugin->file_path);
+            }
         }
 
         // Obtener y eliminar archivos de versiones antiguas
         $versions = self::get_version_history($plugin_id);
         foreach ($versions as $version) {
             if (file_exists($version->file_path)) {
-                @unlink($version->file_path);
+                if (!unlink($version->file_path)) {
+                    error_log('IMAGINA UPDATER SERVER: No se pudo eliminar versión antigua: ' . $version->file_path);
+                }
             }
         }
 

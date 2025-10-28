@@ -30,12 +30,22 @@ class Imagina_Updater_Client_API {
     /**
      * Realizar petición al servidor
      */
-    private function request($endpoint, $method = 'GET', $body = null) {
+    private function request($endpoint, $method = 'GET', $body = null, $timeout = null) {
         $url = $this->server_url . 'wp-json/imagina-updater/v1/' . ltrim($endpoint, '/');
+
+        // Timeout según tipo de operación
+        if ($timeout === null) {
+            // Downloads necesitan más tiempo
+            if (strpos($endpoint, '/download/') !== false) {
+                $timeout = 120; // 2 minutos para descargas
+            } else {
+                $timeout = 15; // 15 segundos para API calls normales
+            }
+        }
 
         $args = array(
             'method' => $method,
-            'timeout' => 30,
+            'timeout' => $timeout,
             'headers' => array(
                 'Authorization' => 'Bearer ' . $this->api_key,
                 'Content-Type' => 'application/json'
@@ -97,9 +107,23 @@ class Imagina_Updater_Client_API {
     }
 
     /**
-     * Obtener URL de descarga para un plugin
+     * Obtener URL de descarga para un plugin (sin API key en URL por seguridad)
      */
     public function get_download_url($slug) {
-        return $this->server_url . 'wp-json/imagina-updater/v1/download/' . $slug . '?api_key=' . urlencode($this->api_key);
+        return $this->server_url . 'wp-json/imagina-updater/v1/download/' . $slug;
+    }
+
+    /**
+     * Obtener API key (para inyectar en headers durante descarga)
+     */
+    public function get_api_key() {
+        return $this->api_key;
+    }
+
+    /**
+     * Obtener server URL
+     */
+    public function get_server_url() {
+        return $this->server_url;
     }
 }

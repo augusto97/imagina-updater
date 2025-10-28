@@ -37,6 +37,7 @@ class Imagina_Updater_Server_Database {
         $sql_plugins = "CREATE TABLE IF NOT EXISTS $table_plugins (
             id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
             slug varchar(255) NOT NULL,
+            slug_override varchar(255) DEFAULT NULL COMMENT 'Slug personalizado (si se establece, sobrescribe el auto-generado)',
             name varchar(255) NOT NULL,
             description text,
             author varchar(255),
@@ -48,6 +49,7 @@ class Imagina_Updater_Server_Database {
             uploaded_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY slug (slug),
+            KEY slug_override (slug_override),
             KEY slug_version (slug, current_version)
         ) $charset_collate;";
 
@@ -89,8 +91,52 @@ class Imagina_Updater_Server_Database {
         dbDelta($sql_versions);
         dbDelta($sql_downloads);
 
+        // Ejecutar migraciones si es necesario
+        self::run_migrations();
+
         // Guardar versión de la base de datos
         update_option('imagina_updater_server_db_version', IMAGINA_UPDATER_SERVER_VERSION);
+    }
+
+    /**
+     * Ejecutar migraciones de base de datos
+     */
+    public static function run_migrations() {
+        $current_version = self::get_db_version();
+
+        // Migración para agregar slug_override (versión 1.0.0)
+        if (version_compare($current_version, '1.0.0', '<')) {
+            self::migrate_add_slug_override();
+        }
+    }
+
+    /**
+     * Migración: Agregar campo slug_override
+     */
+    private static function migrate_add_slug_override() {
+        global $wpdb;
+
+        $table_plugins = $wpdb->prefix . 'imagina_updater_plugins';
+
+        // Verificar si el campo ya existe
+        $column_exists = $wpdb->get_results(
+            $wpdb->prepare(
+                "SHOW COLUMNS FROM $table_plugins LIKE %s",
+                'slug_override'
+            )
+        );
+
+        if (empty($column_exists)) {
+            // Agregar columna slug_override después de slug
+            $wpdb->query(
+                "ALTER TABLE $table_plugins
+                ADD COLUMN slug_override varchar(255) DEFAULT NULL COMMENT 'Slug personalizado'
+                AFTER slug,
+                ADD KEY slug_override (slug_override)"
+            );
+
+            error_log('IMAGINA UPDATER SERVER: Migración completada - Campo slug_override agregado');
+        }
     }
 
     /**

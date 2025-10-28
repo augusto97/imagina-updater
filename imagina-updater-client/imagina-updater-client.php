@@ -20,10 +20,30 @@ if (!defined('ABSPATH')) {
 }
 
 // Constantes del plugin
-define('IMAGINA_UPDATER_CLIENT_VERSION', '1.0.0');
+define('IMAGINA_UPDATER_CLIENT_VERSION', '1.0.1');
 define('IMAGINA_UPDATER_CLIENT_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('IMAGINA_UPDATER_CLIENT_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('IMAGINA_UPDATER_CLIENT_PLUGIN_FILE', __FILE__);
+
+/**
+ * Función helper para logging usando el sistema propio
+ */
+function imagina_updater_log($message, $level = 'info', $context = array()) {
+    // Mapear nivel a constantes de Logger
+    $level_map = array(
+        'debug' => Imagina_Updater_Client_Logger::LEVEL_DEBUG,
+        'info' => Imagina_Updater_Client_Logger::LEVEL_INFO,
+        'warning' => Imagina_Updater_Client_Logger::LEVEL_WARNING,
+        'error' => Imagina_Updater_Client_Logger::LEVEL_ERROR
+    );
+
+    $log_level = isset($level_map[$level]) ? $level_map[$level] : Imagina_Updater_Client_Logger::LEVEL_INFO;
+
+    // Usar el Logger
+    if (class_exists('Imagina_Updater_Client_Logger')) {
+        Imagina_Updater_Client_Logger::get_instance()->log($message, $log_level, $context);
+    }
+}
 
 /**
  * Clase principal del plugin cliente
@@ -66,7 +86,9 @@ class Imagina_Updater_Client {
         $this->config = get_option('imagina_updater_client_config', array(
             'server_url' => '',
             'api_key' => '',
-            'enabled_plugins' => array()
+            'enabled_plugins' => array(),
+            'enable_logging' => false, // Logs desactivados por defecto
+            'log_level' => 'INFO' // Nivel por defecto
         ));
     }
 
@@ -74,6 +96,7 @@ class Imagina_Updater_Client {
      * Cargar dependencias del plugin
      */
     private function load_dependencies() {
+        require_once IMAGINA_UPDATER_CLIENT_PLUGIN_DIR . 'includes/class-logger.php';
         require_once IMAGINA_UPDATER_CLIENT_PLUGIN_DIR . 'includes/class-api-client.php';
         require_once IMAGINA_UPDATER_CLIENT_PLUGIN_DIR . 'includes/class-updater.php';
         require_once IMAGINA_UPDATER_CLIENT_PLUGIN_DIR . 'admin/class-admin.php';
@@ -94,17 +117,17 @@ class Imagina_Updater_Client {
      * Inicializar componentes del plugin
      */
     public function init() {
-        error_log('IMAGINA UPDATER: Método init() ejecutado');
-        error_log('IMAGINA UPDATER: Configuración actual: ' . print_r($this->config, true));
+        imagina_updater_log('Método init() ejecutado');
+        imagina_updater_log('Configuración actual: ' . print_r($this->config, true));
 
         // Solo inicializar si está configurado
         if ($this->is_configured()) {
-            error_log('IMAGINA UPDATER: Plugin configurado, inicializando Updater');
+            imagina_updater_log('Plugin configurado, inicializando Updater');
             Imagina_Updater_Client_Updater::get_instance();
         } else {
-            error_log('IMAGINA UPDATER: Plugin NO configurado, Updater no se inicializa');
-            error_log('IMAGINA UPDATER: server_url: ' . ($this->config['server_url'] ?? 'vacío'));
-            error_log('IMAGINA UPDATER: api_key: ' . (empty($this->config['api_key']) ? 'vacío' : 'presente'));
+            imagina_updater_log('Plugin NO configurado, Updater no se inicializa', 'warning');
+            imagina_updater_log('server_url: ' . ($this->config['server_url'] ?? 'vacío'));
+            imagina_updater_log('api_key: ' . (empty($this->config['api_key']) ? 'vacío' : 'presente'));
         }
 
         // Siempre inicializar admin
@@ -157,7 +180,9 @@ class Imagina_Updater_Client {
             add_option('imagina_updater_client_config', array(
                 'server_url' => '',
                 'api_key' => '',
-                'enabled_plugins' => array()
+                'enabled_plugins' => array(),
+                'enable_logging' => false,
+                'log_level' => 'INFO'
             ));
         }
     }
@@ -179,5 +204,5 @@ function imagina_updater_client() {
 }
 
 // Iniciar el plugin
-error_log('IMAGINA UPDATER: Plugin cargado por WordPress');
+imagina_updater_log('Plugin cargado por WordPress');
 imagina_updater_client();

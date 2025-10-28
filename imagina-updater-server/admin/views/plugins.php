@@ -77,7 +77,10 @@ if (!defined('ABSPATH')) {
                 </tr>
             </thead>
             <tbody>
-                <?php foreach ($plugins as $plugin): ?>
+                <?php foreach ($plugins as $plugin):
+                    $effective_slug = !empty($plugin->slug_override) ? $plugin->slug_override : $plugin->slug;
+                    $is_custom_slug = !empty($plugin->slug_override);
+                ?>
                     <tr>
                         <td>
                             <strong><?php echo esc_html($plugin->name); ?></strong>
@@ -85,7 +88,30 @@ if (!defined('ABSPATH')) {
                                 <br><small><?php echo esc_html($plugin->description); ?></small>
                             <?php endif; ?>
                         </td>
-                        <td><code><?php echo esc_html($plugin->slug); ?></code></td>
+                        <td>
+                            <code><?php echo esc_html($effective_slug); ?></code>
+                            <?php if ($is_custom_slug): ?>
+                                <span class="dashicons dashicons-edit" style="color: #2271b1;" title="<?php esc_attr_e('Slug personalizado', 'imagina-updater-server'); ?>"></span>
+                            <?php endif; ?>
+                            <br>
+                            <small style="color: #666;">
+                                <?php _e('Auto:', 'imagina-updater-server'); ?> <code><?php echo esc_html($plugin->slug); ?></code>
+                            </small>
+                            <br>
+                            <a href="#" class="edit-slug-link" data-plugin-id="<?php echo esc_attr($plugin->id); ?>" data-current-slug="<?php echo esc_attr($effective_slug); ?>" style="font-size: 11px;">
+                                <?php _e('Editar slug', 'imagina-updater-server'); ?>
+                            </a>
+                            <div class="slug-edit-form" id="slug-edit-<?php echo $plugin->id; ?>" style="display:none; margin-top:5px;">
+                                <form method="post" style="display:inline;">
+                                    <?php wp_nonce_field('update_slug_' . $plugin->id); ?>
+                                    <input type="hidden" name="plugin_id" value="<?php echo esc_attr($plugin->id); ?>">
+                                    <input type="text" name="new_slug" value="<?php echo esc_attr($effective_slug); ?>" style="width:150px;" placeholder="<?php echo esc_attr($plugin->slug); ?>">
+                                    <button type="submit" name="imagina_update_slug" class="button button-small"><?php _e('Guardar', 'imagina-updater-server'); ?></button>
+                                    <button type="button" class="button button-small cancel-slug-edit"><?php _e('Cancelar', 'imagina-updater-server'); ?></button>
+                                    <br><small><?php _e('Deja vacío para usar el slug auto-generado', 'imagina-updater-server'); ?></small>
+                                </form>
+                            </div>
+                        </td>
                         <td><strong><?php echo esc_html($plugin->current_version); ?></strong></td>
                         <td><?php echo esc_html($plugin->author); ?></td>
                         <td><?php echo esc_html(mysql2date(get_option('date_format') . ' ' . get_option('time_format'), $plugin->uploaded_at)); ?></td>

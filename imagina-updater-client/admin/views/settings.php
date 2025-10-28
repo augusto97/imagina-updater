@@ -202,8 +202,100 @@ if (!defined('ABSPATH')) {
                             <span class="dashicons dashicons-info"></span>
                             <p><?php _e('No hay plugins disponibles en el servidor o no se pudo conectar.', 'imagina-updater-client'); ?></p>
                         </div>
-                    <?php else: ?>
-                        <table class="wp-list-table widefat fixed striped">
+                    <?php else:
+                        // Obtener modo de visualización
+                        $display_mode = isset($config['plugin_display_mode']) ? $config['plugin_display_mode'] : 'installed_only';
+
+                        // Obtener término de búsqueda
+                        $search_term = isset($_GET['plugin_search']) ? sanitize_text_field($_GET['plugin_search']) : '';
+
+                        // Separar plugins en instalados y no instalados, y aplicar filtros
+                        $installed_list = array();
+                        $not_installed_list = array();
+
+                        foreach ($server_plugins as $plugin) {
+                            $is_installed = isset($installed_plugins[$plugin['slug']]);
+
+                            // Aplicar filtro de modo de visualización
+                            if ($display_mode === 'installed_only' && !$is_installed) {
+                                continue;
+                            }
+
+                            // Aplicar filtro de búsqueda
+                            if (!empty($search_term)) {
+                                $matches = stripos($plugin['name'], $search_term) !== false ||
+                                          stripos($plugin['slug'], $search_term) !== false ||
+                                          stripos($plugin['description'], $search_term) !== false;
+                                if (!$matches) {
+                                    continue;
+                                }
+                            }
+
+                            // Separar en listas
+                            if ($is_installed) {
+                                $is_enabled = in_array($plugin['slug'], $config['enabled_plugins']);
+                                // Ordenar: habilitados primero
+                                if ($is_enabled) {
+                                    array_unshift($installed_list, $plugin);
+                                } else {
+                                    $installed_list[] = $plugin;
+                                }
+                            } else {
+                                $not_installed_list[] = $plugin;
+                            }
+                        }
+
+                        // Combinar listas: instalados primero, luego no instalados
+                        $filtered_plugins = array_merge($installed_list, $not_installed_list);
+                        $total_plugins = count($filtered_plugins);
+
+                        // Configuración de paginación
+                        $per_page = 20;
+                        $current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
+                        $total_pages = max(1, ceil($total_plugins / $per_page));
+                        $current_page = min($current_page, $total_pages);
+                        $offset = ($current_page - 1) * $per_page;
+                        $plugins_to_show = array_slice($filtered_plugins, $offset, $per_page);
+                        ?>
+
+                        <!-- Buscador -->
+                        <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                            <div style="flex: 1;">
+                                <form method="get" action="" style="display: flex; gap: 10px; max-width: 500px;">
+                                    <input type="hidden" name="page" value="imagina-updater-client">
+                                    <?php if (isset($_GET['paged'])): ?>
+                                        <input type="hidden" name="paged" value="<?php echo esc_attr($_GET['paged']); ?>">
+                                    <?php endif; ?>
+                                    <input type="text"
+                                           name="plugin_search"
+                                           placeholder="<?php _e('Buscar por nombre, slug o descripción...', 'imagina-updater-client'); ?>"
+                                           value="<?php echo esc_attr($search_term); ?>"
+                                           style="flex: 1; padding: 6px 10px;">
+                                    <button type="submit" class="button">
+                                        <span class="dashicons dashicons-search"></span>
+                                        <?php _e('Buscar', 'imagina-updater-client'); ?>
+                                    </button>
+                                    <?php if (!empty($search_term)): ?>
+                                        <a href="<?php echo admin_url('options-general.php?page=imagina-updater-client'); ?>" class="button">
+                                            <?php _e('Limpiar', 'imagina-updater-client'); ?>
+                                        </a>
+                                    <?php endif; ?>
+                                </form>
+                            </div>
+                            <div>
+                                <span class="description">
+                                    <?php printf(__('Mostrando %d de %d plugins', 'imagina-updater-client'), count($plugins_to_show), $total_plugins); ?>
+                                </span>
+                            </div>
+                        </div>
+
+                        <?php if (empty($plugins_to_show)): ?>
+                            <div class="imagina-notice-info">
+                                <span class="dashicons dashicons-info"></span>
+                                <p><?php _e('No se encontraron plugins con ese criterio de búsqueda.', 'imagina-updater-client'); ?></p>
+                            </div>
+                        <?php else: ?>
+                            <table class="wp-list-table widefat fixed striped">
                             <thead>
                                 <tr>
                                     <th class="check-column">
@@ -218,17 +310,11 @@ if (!defined('ABSPATH')) {
                             </thead>
                             <tbody>
                                 <?php
-                                $display_mode = isset($config['plugin_display_mode']) ? $config['plugin_display_mode'] : 'installed_only';
-                                foreach ($server_plugins as $plugin):
+                                foreach ($plugins_to_show as $plugin):
                                     $is_enabled = in_array($plugin['slug'], $config['enabled_plugins']);
                                     $is_installed = isset($installed_plugins[$plugin['slug']]);
                                     $installed_version = $is_installed ? $installed_plugins[$plugin['slug']]['version'] : '-';
                                     $needs_update = $is_installed && version_compare($plugin['version'], $installed_version, '>');
-
-                                    // Si el modo es "solo instalados" y el plugin no está instalado, saltarlo
-                                    if ($display_mode === 'installed_only' && !$is_installed) {
-                                        continue;
-                                    }
 
                                     // Verificar si el plugin puede ser detectado por el updater
                                     $updater = class_exists('Imagina_Updater_Client_Updater') ? Imagina_Updater_Client_Updater::get_instance() : null;
@@ -312,12 +398,60 @@ if (!defined('ABSPATH')) {
                             </tbody>
                         </table>
 
+                        <!-- Paginación -->
+                        <?php if ($total_pages > 1): ?>
+                            <div class="tablenav" style="margin-top: 15px;">
+                                <div class="tablenav-pages">
+                                    <span class="displaying-num">
+                                        <?php printf(__('%s elementos', 'imagina-updater-client'), number_format_i18n($total_plugins)); ?>
+                                    </span>
+                                    <span class="pagination-links">
+                                        <?php
+                                        $base_url = admin_url('options-general.php?page=imagina-updater-client');
+                                        if (!empty($search_term)) {
+                                            $base_url = add_query_arg('plugin_search', urlencode($search_term), $base_url);
+                                        }
+
+                                        // Primera página
+                                        if ($current_page == 1) {
+                                            echo '<span class="tablenav-pages-navspan button disabled" aria-hidden="true">«</span>';
+                                            echo '<span class="tablenav-pages-navspan button disabled" aria-hidden="true">‹</span>';
+                                        } else {
+                                            echo '<a class="first-page button" href="' . esc_url($base_url) . '"><span aria-hidden="true">«</span></a>';
+                                            echo '<a class="prev-page button" href="' . esc_url(add_query_arg('paged', $current_page - 1, $base_url)) . '"><span aria-hidden="true">‹</span></a>';
+                                        }
+
+                                        // Números de página
+                                        echo '<span class="paging-input">';
+                                        echo '<span class="tablenav-paging-text">';
+                                        printf(__('%1$s de %2$s', 'imagina-updater-client'),
+                                            '<span class="current-page">' . number_format_i18n($current_page) . '</span>',
+                                            '<span class="total-pages">' . number_format_i18n($total_pages) . '</span>'
+                                        );
+                                        echo '</span>';
+                                        echo '</span>';
+
+                                        // Última página
+                                        if ($current_page == $total_pages) {
+                                            echo '<span class="tablenav-pages-navspan button disabled" aria-hidden="true">›</span>';
+                                            echo '<span class="tablenav-pages-navspan button disabled" aria-hidden="true">»</span>';
+                                        } else {
+                                            echo '<a class="next-page button" href="' . esc_url(add_query_arg('paged', $current_page + 1, $base_url)) . '"><span aria-hidden="true">›</span></a>';
+                                            echo '<a class="last-page button" href="' . esc_url(add_query_arg('paged', $total_pages, $base_url)) . '"><span aria-hidden="true">»</span></a>';
+                                        }
+                                        ?>
+                                    </span>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+
                         <p class="submit">
                             <button type="submit" name="imagina_save_plugins" class="button button-primary">
                                 <span class="dashicons dashicons-yes"></span>
                                 <?php _e('Guardar Selección', 'imagina-updater-client'); ?>
                             </button>
                         </p>
+                        <?php endif; ?>
                     <?php endif; ?>
                 </form>
             </div>

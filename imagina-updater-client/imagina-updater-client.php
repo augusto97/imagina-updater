@@ -25,6 +25,27 @@ define('IMAGINA_UPDATER_CLIENT_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('IMAGINA_UPDATER_CLIENT_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('IMAGINA_UPDATER_CLIENT_PLUGIN_FILE', __FILE__);
 
+// Modo debug (cambiar a false en producción o usar constante de WordPress)
+if (!defined('IMAGINA_UPDATER_DEBUG')) {
+    define('IMAGINA_UPDATER_DEBUG', defined('WP_DEBUG') && WP_DEBUG);
+}
+
+/**
+ * Función helper para logging condicional
+ */
+function imagina_updater_log($message, $level = 'info') {
+    if (!IMAGINA_UPDATER_DEBUG) {
+        return;
+    }
+
+    $prefix = 'IMAGINA UPDATER';
+    if ($level !== 'info') {
+        $prefix .= ' [' . strtoupper($level) . ']';
+    }
+
+    error_log($prefix . ': ' . $message);
+}
+
 /**
  * Clase principal del plugin cliente
  */
@@ -94,17 +115,17 @@ class Imagina_Updater_Client {
      * Inicializar componentes del plugin
      */
     public function init() {
-        error_log('IMAGINA UPDATER: Método init() ejecutado');
-        error_log('IMAGINA UPDATER: Configuración actual: ' . print_r($this->config, true));
+        imagina_updater_log('Método init() ejecutado');
+        imagina_updater_log('Configuración actual: ' . print_r($this->config, true));
 
         // Solo inicializar si está configurado
         if ($this->is_configured()) {
-            error_log('IMAGINA UPDATER: Plugin configurado, inicializando Updater');
+            imagina_updater_log('Plugin configurado, inicializando Updater');
             Imagina_Updater_Client_Updater::get_instance();
         } else {
-            error_log('IMAGINA UPDATER: Plugin NO configurado, Updater no se inicializa');
-            error_log('IMAGINA UPDATER: server_url: ' . ($this->config['server_url'] ?? 'vacío'));
-            error_log('IMAGINA UPDATER: api_key: ' . (empty($this->config['api_key']) ? 'vacío' : 'presente'));
+            imagina_updater_log('Plugin NO configurado, Updater no se inicializa', 'warning');
+            imagina_updater_log('server_url: ' . ($this->config['server_url'] ?? 'vacío'));
+            imagina_updater_log('api_key: ' . (empty($this->config['api_key']) ? 'vacío' : 'presente'));
         }
 
         // Siempre inicializar admin
@@ -179,5 +200,5 @@ function imagina_updater_client() {
 }
 
 // Iniciar el plugin
-error_log('IMAGINA UPDATER: Plugin cargado por WordPress');
+imagina_updater_log('Plugin cargado por WordPress');
 imagina_updater_client();

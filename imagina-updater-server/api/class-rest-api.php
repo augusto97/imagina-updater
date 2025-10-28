@@ -37,6 +37,28 @@ class Imagina_Updater_Server_REST_API {
     }
 
     /**
+     * Verificar rate limiting simple (máx 60 peticiones por minuto por API key)
+     */
+    private function check_rate_limit($api_key) {
+        $cache_key = 'imagina_updater_rate_limit_' . md5($api_key);
+        $requests = get_transient($cache_key);
+
+        if ($requests === false) {
+            // Primera petición en este minuto
+            set_transient($cache_key, 1, 60); // 60 segundos
+            return true;
+        }
+
+        if ($requests >= 60) {
+            return false; // Límite excedido
+        }
+
+        // Incrementar contador
+        set_transient($cache_key, $requests + 1, 60);
+        return true;
+    }
+
+    /**
      * Registrar rutas de la API
      */
     public function register_routes() {
@@ -109,6 +131,15 @@ class Imagina_Updater_Server_REST_API {
             );
         }
 
+        // Verificar rate limiting
+        if (!$this->check_rate_limit($api_key)) {
+            return new WP_Error(
+                'rate_limit_exceeded',
+                __('Límite de peticiones excedido. Máximo 60 peticiones por minuto.', 'imagina-updater-server'),
+                array('status' => 429)
+            );
+        }
+
         $key_data = Imagina_Updater_Server_API_Keys::validate($api_key);
 
         if (!$key_data) {
@@ -153,8 +184,11 @@ class Imagina_Updater_Server_REST_API {
 
         $result = array();
         foreach ($plugins as $plugin) {
+            // Usar slug_override si existe, sino slug
+            $effective_slug = !empty($plugin->slug_override) ? $plugin->slug_override : $plugin->slug;
+
             $result[] = array(
-                'slug' => $plugin->slug,
+                'slug' => $effective_slug,
                 'name' => $plugin->name,
                 'description' => $plugin->description,
                 'version' => $plugin->current_version,
@@ -183,15 +217,18 @@ class Imagina_Updater_Server_REST_API {
             );
         }
 
+        // Usar slug_override si existe
+        $effective_slug = !empty($plugin->slug_override) ? $plugin->slug_override : $plugin->slug;
+
         return rest_ensure_response(array(
-            'slug' => $plugin->slug,
+            'slug' => $effective_slug,
             'name' => $plugin->name,
             'description' => $plugin->description,
             'version' => $plugin->current_version,
             'author' => $plugin->author,
             'homepage' => $plugin->homepage,
             'last_updated' => $plugin->uploaded_at,
-            'download_url' => rest_url(self::NAMESPACE . '/download/' . $plugin->slug)
+            'download_url' => rest_url(self::NAMESPACE . '/download/' . $effective_slug)
         ));
     }
 
@@ -215,10 +252,13 @@ class Imagina_Updater_Server_REST_API {
             $plugin = Imagina_Updater_Server_Plugin_Manager::get_plugin_by_slug($plugin_slug);
 
             if ($plugin && version_compare($plugin->current_version, $installed_version, '>')) {
+                // Usar slug_override si existe
+                $effective_slug = !empty($plugin->slug_override) ? $plugin->slug_override : $plugin->slug;
+
                 $updates[$plugin_slug] = array(
-                    'slug' => $plugin->slug,
+                    'slug' => $effective_slug,
                     'new_version' => $plugin->current_version,
-                    'package' => rest_url(self::NAMESPACE . '/download/' . $plugin->slug),
+                    'package' => rest_url(self::NAMESPACE . '/download/' . $effective_slug),
                     'tested' => get_bloginfo('version'),
                     'requires_php' => '7.4',
                     'last_updated' => $plugin->uploaded_at,
@@ -263,6 +303,21 @@ class Imagina_Updater_Server_REST_API {
             $plugin->id,
             $plugin->current_version
         );
+
+        // Verificar que no se hayan enviado headers
+        if (headers_sent($file, $line)) {
+            error_log('IMAGINA UPDATER SERVER: Headers ya enviados en ' . $file . ':' . $line);
+            return new WP_Error(
+                'headers_sent',
+                __('No se puede enviar el archivo, headers ya enviados', 'imagina-updater-server'),
+                array('status' => 500)
+            );
+        }
+
+        // Limpiar cualquier output buffer
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
 
         // Enviar archivo
         header('Content-Type: application/zip');

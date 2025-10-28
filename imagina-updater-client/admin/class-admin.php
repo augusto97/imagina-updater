@@ -133,8 +133,9 @@ class Imagina_Updater_Client_Admin {
 
             add_settings_error('imagina_updater_client', 'config_saved', __('Configuración guardada exitosamente', 'imagina-updater-client'), 'success');
 
-            // Limpiar cache
+            // Limpiar cache de actualizaciones y plugins del servidor
             delete_site_transient('update_plugins');
+            delete_transient('imagina_updater_server_plugins_' . md5($server_url));
         }
 
         // Guardar plugins habilitados
@@ -149,7 +150,7 @@ class Imagina_Updater_Client_Admin {
 
             add_settings_error('imagina_updater_client', 'plugins_saved', __('Plugins actualizados', 'imagina-updater-client'), 'success');
 
-            // Limpiar cache
+            // Limpiar cache de actualizaciones
             delete_site_transient('update_plugins');
         }
 
@@ -181,14 +182,25 @@ class Imagina_Updater_Client_Admin {
         $config = imagina_updater_client()->get_config();
         $is_configured = imagina_updater_client()->is_configured();
 
-        // Obtener plugins disponibles del servidor si está configurado
+        // Obtener plugins disponibles del servidor con caché
         $server_plugins = array();
         if ($is_configured) {
-            $api_client = new Imagina_Updater_Client_API($config['server_url'], $config['api_key']);
-            $result = $api_client->get_plugins();
+            // Intentar obtener de caché (24 horas)
+            $cache_key = 'imagina_updater_server_plugins_' . md5($config['server_url']);
+            $server_plugins = get_transient($cache_key);
 
-            if (!is_wp_error($result)) {
-                $server_plugins = $result;
+            if ($server_plugins === false) {
+                // No hay caché, consultar servidor
+                $api_client = new Imagina_Updater_Client_API($config['server_url'], $config['api_key']);
+                $result = $api_client->get_plugins();
+
+                if (!is_wp_error($result)) {
+                    $server_plugins = $result;
+                    // Guardar en caché por 24 horas
+                    set_transient($cache_key, $server_plugins, 24 * HOUR_IN_SECONDS);
+                } else {
+                    $server_plugins = array();
+                }
             }
         }
 

@@ -89,6 +89,24 @@ class Imagina_Updater_Server_Admin {
             array(),
             IMAGINA_UPDATER_SERVER_VERSION
         );
+
+        // Agregar script inline simple para el formulario de edición de slug
+        if ($hook === 'toplevel_page_imagina-updater-plugins' || strpos($hook, 'imagina-updater-plugins') !== false) {
+            wp_add_inline_script('jquery', '
+                jQuery(document).ready(function($) {
+                    $(".edit-slug-link").on("click", function(e) {
+                        e.preventDefault();
+                        var pluginId = $(this).data("plugin-id");
+                        $("#slug-edit-" + pluginId).slideToggle();
+                    });
+
+                    $(".cancel-slug-edit").on("click", function(e) {
+                        e.preventDefault();
+                        $(this).closest(".slug-edit-form").slideUp();
+                    });
+                });
+            ');
+        }
     }
 
     /**
@@ -159,6 +177,28 @@ class Imagina_Updater_Server_Admin {
                 add_settings_error('imagina_updater', 'delete_error', $result->get_error_message(), 'error');
             } else {
                 add_settings_error('imagina_updater', 'delete_success', __('Plugin eliminado', 'imagina-updater-server'), 'success');
+            }
+        }
+
+        // Actualizar slug del plugin
+        if (isset($_POST['imagina_update_slug'])) {
+            $plugin_id = intval($_POST['plugin_id']);
+
+            if (check_admin_referer('update_slug_' . $plugin_id)) {
+                $new_slug = isset($_POST['new_slug']) ? trim($_POST['new_slug']) : '';
+
+                // Si está vacío, pasar null para usar el auto-generado
+                if (empty($new_slug)) {
+                    $new_slug = null;
+                }
+
+                $result = Imagina_Updater_Server_Plugin_Manager::update_plugin_slug($plugin_id, $new_slug);
+
+                if (is_wp_error($result)) {
+                    add_settings_error('imagina_updater', 'slug_error', $result->get_error_message(), 'error');
+                } else {
+                    add_settings_error('imagina_updater', 'slug_success', __('Slug actualizado exitosamente', 'imagina-updater-server'), 'success');
+                }
             }
         }
     }

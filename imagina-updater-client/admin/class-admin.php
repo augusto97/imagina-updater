@@ -253,6 +253,48 @@ class Imagina_Updater_Client_Admin {
             }
         }
 
+        // Refrescar lista de plugins desde servidor
+        if (isset($_POST['imagina_refresh_plugins']) && check_admin_referer('imagina_refresh_plugins')) {
+            $config = imagina_updater_client()->get_config();
+
+            // Limpiar todos los cachés relacionados
+            $cache_key = 'imagina_updater_server_plugins_' . md5($config['server_url']);
+            delete_transient($cache_key);
+            delete_transient('imagina_updater_cached_updates');
+            delete_site_transient('update_plugins');
+
+            imagina_updater_client_log('Cachés limpiados, refrescando lista de plugins desde servidor', 'info');
+
+            // Consultar servidor directamente
+            $api_client = new Imagina_Updater_Client_API($config['server_url'], $config['api_key']);
+            $result = $api_client->get_plugins();
+
+            if (is_wp_error($result)) {
+                add_settings_error('imagina_updater_client', 'refresh_failed', sprintf(
+                    __('Error al refrescar: %s', 'imagina-updater-client'),
+                    $result->get_error_message()
+                ), 'error');
+                imagina_updater_client_log('Error al refrescar plugins: ' . $result->get_error_message(), 'error');
+            } else {
+                // Guardar en caché
+                set_transient($cache_key, $result, 24 * HOUR_IN_SECONDS);
+
+                // Contar plugins
+                $count = count($result);
+
+                add_settings_error('imagina_updater_client', 'refresh_success', sprintf(
+                    __('Lista actualizada: %d plugin(s) disponibles en el servidor', 'imagina-updater-client'),
+                    $count
+                ), 'success');
+
+                imagina_updater_client_log('Lista de plugins refrescada: ' . $count . ' plugins disponibles', 'info');
+
+                // Redirect para recargar página con nuevo caché
+                wp_redirect(admin_url('options-general.php?page=imagina-updater-client'));
+                exit;
+            }
+        }
+
         // Limpiar logs
         if (isset($_POST['imagina_clear_logs']) && check_admin_referer('imagina_clear_logs')) {
             Imagina_Updater_Client_Logger::get_instance()->clear_logs();

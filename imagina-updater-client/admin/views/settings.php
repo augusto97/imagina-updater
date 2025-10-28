@@ -124,11 +124,18 @@ if (!defined('ABSPATH')) {
 
             <?php if ($is_configured): ?>
                 <hr>
-                <form method="post" style="display: inline;">
+                <form method="post" style="display: inline; margin-right: 10px;">
                     <?php wp_nonce_field('imagina_test_connection'); ?>
                     <button type="submit" name="imagina_test_connection" class="button">
                         <span class="dashicons dashicons-update"></span>
                         <?php _e('Probar Conexión', 'imagina-updater-client'); ?>
+                    </button>
+                </form>
+                <form method="post" style="display: inline;">
+                    <?php wp_nonce_field('imagina_refresh_plugins'); ?>
+                    <button type="submit" name="imagina_refresh_plugins" class="button">
+                        <span class="dashicons dashicons-update-alt"></span>
+                        <?php _e('Actualizar Lista de Plugins', 'imagina-updater-client'); ?>
                     </button>
                 </form>
             <?php endif; ?>

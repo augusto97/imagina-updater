@@ -38,7 +38,10 @@ class Imagina_Updater_Client_Updater {
      * Constructor
      */
     private function __construct() {
+        error_log('IMAGINA UPDATER: Constructor de Updater ejecutado');
+
         $this->config = imagina_updater_client()->get_config();
+        error_log('IMAGINA UPDATER: Configuración cargada en Updater: ' . print_r($this->config, true));
 
         // Crear cliente API
         $this->api_client = new Imagina_Updater_Client_API(
@@ -46,15 +49,21 @@ class Imagina_Updater_Client_Updater {
             $this->config['api_key']
         );
 
+        error_log('IMAGINA UPDATER: Cliente API creado');
+
         $this->init_hooks();
+        error_log('IMAGINA UPDATER: Hooks inicializados');
     }
 
     /**
      * Inicializar hooks
      */
     private function init_hooks() {
+        error_log('IMAGINA UPDATER: Registrando hooks...');
+
         // IMPORTANTE: Ejecutar lo más temprano posible
         add_filter('pre_set_site_transient_update_plugins', array($this, 'check_for_updates'), 5);
+        error_log('IMAGINA UPDATER: Hook pre_set_site_transient_update_plugins registrado');
 
         // Hook para bloquear actualizaciones externas de plugins gestionados (muy tarde)
         add_filter('site_transient_update_plugins', array($this, 'block_external_updates'), PHP_INT_MAX);
@@ -82,6 +91,8 @@ class Imagina_Updater_Client_Updater {
 
         // Hook genérico para cualquier custom update host
         add_action('plugins_loaded', array($this, 'disable_custom_update_checks'), 1);
+
+        error_log('IMAGINA UPDATER: Todos los hooks registrados correctamente');
     }
 
     /**

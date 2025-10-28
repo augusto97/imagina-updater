@@ -195,11 +195,20 @@ class Imagina_Updater_Server_Admin {
                 $result = Imagina_Updater_Server_Plugin_Manager::update_plugin_slug($plugin_id, $new_slug);
 
                 if (is_wp_error($result)) {
-                    add_settings_error('imagina_updater', 'slug_error', $result->get_error_message(), 'error');
+                    add_settings_error('imagina_updater', 'slug_error', sprintf(
+                        __('Error al actualizar slug: %s', 'imagina-updater-server'),
+                        $result->get_error_message()
+                    ), 'error');
                 } else {
                     add_settings_error('imagina_updater', 'slug_success', __('Slug actualizado exitosamente', 'imagina-updater-server'), 'success');
                 }
             }
+        }
+
+        // Ejecutar migración manualmente
+        if (isset($_POST['imagina_run_migration']) && check_admin_referer('imagina_run_migration')) {
+            Imagina_Updater_Server_Database::run_migrations();
+            add_settings_error('imagina_updater', 'migration_success', __('Migración ejecutada. Revisa los logs de error de WordPress para más detalles.', 'imagina-updater-server'), 'success');
         }
     }
 

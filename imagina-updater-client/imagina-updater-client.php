@@ -27,22 +27,25 @@ define('IMAGINA_UPDATER_CLIENT_PLUGIN_FILE', __FILE__);
 
 /**
  * Función helper para logging usando el sistema propio
+ * Usa strings simples para evitar referencias a clases antes de cargarlas
  */
 function imagina_updater_log($message, $level = 'info', $context = array()) {
-    // Mapear nivel a constantes de Logger
-    $level_map = array(
-        'debug' => Imagina_Updater_Client_Logger::LEVEL_DEBUG,
-        'info' => Imagina_Updater_Client_Logger::LEVEL_INFO,
-        'warning' => Imagina_Updater_Client_Logger::LEVEL_WARNING,
-        'error' => Imagina_Updater_Client_Logger::LEVEL_ERROR
-    );
+    // Solo proceder si el Logger está cargado
+    if (!class_exists('Imagina_Updater_Client_Logger')) {
+        return;
+    }
 
-    $log_level = isset($level_map[$level]) ? $level_map[$level] : Imagina_Updater_Client_Logger::LEVEL_INFO;
+    // Convertir nivel a mayúsculas para consistencia
+    $level = strtoupper($level);
+
+    // Validar nivel
+    $valid_levels = array('DEBUG', 'INFO', 'WARNING', 'ERROR');
+    if (!in_array($level, $valid_levels)) {
+        $level = 'INFO';
+    }
 
     // Usar el Logger
-    if (class_exists('Imagina_Updater_Client_Logger')) {
-        Imagina_Updater_Client_Logger::get_instance()->log($message, $log_level, $context);
-    }
+    Imagina_Updater_Client_Logger::get_instance()->log($message, $level, $context);
 }
 
 /**
@@ -117,17 +120,14 @@ class Imagina_Updater_Client {
      * Inicializar componentes del plugin
      */
     public function init() {
-        imagina_updater_log('Método init() ejecutado');
-        imagina_updater_log('Configuración actual: ' . print_r($this->config, true));
+        imagina_updater_log('Imagina Updater Client inicializado', 'info');
 
         // Solo inicializar si está configurado
         if ($this->is_configured()) {
-            imagina_updater_log('Plugin configurado, inicializando Updater');
+            imagina_updater_log('Plugin configurado correctamente, inicializando sistema de actualizaciones', 'info');
             Imagina_Updater_Client_Updater::get_instance();
         } else {
-            imagina_updater_log('Plugin NO configurado, Updater no se inicializa', 'warning');
-            imagina_updater_log('server_url: ' . ($this->config['server_url'] ?? 'vacío'));
-            imagina_updater_log('api_key: ' . (empty($this->config['api_key']) ? 'vacío' : 'presente'));
+            imagina_updater_log('Plugin sin configurar. Configure la URL del servidor y la API Key en Ajustes > Imagina Updater', 'warning');
         }
 
         // Siempre inicializar admin
@@ -203,6 +203,5 @@ function imagina_updater_client() {
     return Imagina_Updater_Client::get_instance();
 }
 
-// Iniciar el plugin
-imagina_updater_log('Plugin cargado por WordPress');
+// Iniciar el plugin (sin log aquí porque la clase Logger aún no está cargada)
 imagina_updater_client();

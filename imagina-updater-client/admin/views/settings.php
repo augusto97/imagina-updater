@@ -194,6 +194,91 @@ if (!defined('ABSPATH')) {
 
                 <hr>
 
+                <?php if (!empty($server_plugins)):
+                    // Obtener modo de visualización
+                    $display_mode = isset($config['plugin_display_mode']) ? $config['plugin_display_mode'] : 'installed_only';
+
+                    // Obtener término de búsqueda
+                    $search_term = isset($_GET['plugin_search']) ? sanitize_text_field($_GET['plugin_search']) : '';
+
+                    // Separar plugins en instalados y no instalados, y aplicar filtros
+                    $installed_list = array();
+                    $not_installed_list = array();
+
+                    foreach ($server_plugins as $plugin) {
+                        $is_installed = isset($installed_plugins[$plugin['slug']]);
+
+                        // Aplicar filtro de modo de visualización
+                        if ($display_mode === 'installed_only' && !$is_installed) {
+                            continue;
+                        }
+
+                        // Aplicar filtro de búsqueda
+                        if (!empty($search_term)) {
+                            $matches = stripos($plugin['name'], $search_term) !== false ||
+                                      stripos($plugin['slug'], $search_term) !== false ||
+                                      stripos($plugin['description'], $search_term) !== false;
+                            if (!$matches) {
+                                continue;
+                            }
+                        }
+
+                        // Separar en listas
+                        if ($is_installed) {
+                            $is_enabled = in_array($plugin['slug'], $config['enabled_plugins']);
+                            // Ordenar: habilitados primero
+                            if ($is_enabled) {
+                                array_unshift($installed_list, $plugin);
+                            } else {
+                                $installed_list[] = $plugin;
+                            }
+                        } else {
+                            $not_installed_list[] = $plugin;
+                        }
+                    }
+
+                    // Combinar listas: instalados primero, luego no instalados
+                    $filtered_plugins = array_merge($installed_list, $not_installed_list);
+                    $total_plugins = count($filtered_plugins);
+
+                    // Configuración de paginación
+                    $per_page = 20;
+                    $current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
+                    $total_pages = max(1, ceil($total_plugins / $per_page));
+                    $current_page = min($current_page, $total_pages);
+                    $offset = ($current_page - 1) * $per_page;
+                    $plugins_to_show = array_slice($filtered_plugins, $offset, $per_page);
+                    ?>
+
+                    <!-- Buscador (FUERA del formulario POST) -->
+                    <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                        <div style="flex: 1;">
+                            <form method="get" action="<?php echo admin_url('options-general.php'); ?>" style="display: flex; gap: 10px; max-width: 500px;">
+                                <input type="hidden" name="page" value="imagina-updater-client">
+                                <input type="text"
+                                       name="plugin_search"
+                                       placeholder="<?php _e('Buscar por nombre, slug o descripción...', 'imagina-updater-client'); ?>"
+                                       value="<?php echo esc_attr($search_term); ?>"
+                                       style="flex: 1; padding: 6px 10px;">
+                                <button type="submit" class="button">
+                                    <span class="dashicons dashicons-search"></span>
+                                    <?php _e('Buscar', 'imagina-updater-client'); ?>
+                                </button>
+                                <?php if (!empty($search_term)): ?>
+                                    <a href="<?php echo admin_url('options-general.php?page=imagina-updater-client'); ?>" class="button">
+                                        <?php _e('Limpiar', 'imagina-updater-client'); ?>
+                                    </a>
+                                <?php endif; ?>
+                            </form>
+                        </div>
+                        <div>
+                            <span class="description">
+                                <?php printf(__('Mostrando %d de %d plugins', 'imagina-updater-client'), count($plugins_to_show), $total_plugins); ?>
+                            </span>
+                        </div>
+                    </div>
+                <?php endif; ?>
+
                 <form method="post">
                     <?php wp_nonce_field('imagina_save_plugins'); ?>
 
@@ -202,89 +287,7 @@ if (!defined('ABSPATH')) {
                             <span class="dashicons dashicons-info"></span>
                             <p><?php _e('No hay plugins disponibles en el servidor o no se pudo conectar.', 'imagina-updater-client'); ?></p>
                         </div>
-                    <?php else:
-                        // Obtener modo de visualización
-                        $display_mode = isset($config['plugin_display_mode']) ? $config['plugin_display_mode'] : 'installed_only';
-
-                        // Obtener término de búsqueda
-                        $search_term = isset($_GET['plugin_search']) ? sanitize_text_field($_GET['plugin_search']) : '';
-
-                        // Separar plugins en instalados y no instalados, y aplicar filtros
-                        $installed_list = array();
-                        $not_installed_list = array();
-
-                        foreach ($server_plugins as $plugin) {
-                            $is_installed = isset($installed_plugins[$plugin['slug']]);
-
-                            // Aplicar filtro de modo de visualización
-                            if ($display_mode === 'installed_only' && !$is_installed) {
-                                continue;
-                            }
-
-                            // Aplicar filtro de búsqueda
-                            if (!empty($search_term)) {
-                                $matches = stripos($plugin['name'], $search_term) !== false ||
-                                          stripos($plugin['slug'], $search_term) !== false ||
-                                          stripos($plugin['description'], $search_term) !== false;
-                                if (!$matches) {
-                                    continue;
-                                }
-                            }
-
-                            // Separar en listas
-                            if ($is_installed) {
-                                $is_enabled = in_array($plugin['slug'], $config['enabled_plugins']);
-                                // Ordenar: habilitados primero
-                                if ($is_enabled) {
-                                    array_unshift($installed_list, $plugin);
-                                } else {
-                                    $installed_list[] = $plugin;
-                                }
-                            } else {
-                                $not_installed_list[] = $plugin;
-                            }
-                        }
-
-                        // Combinar listas: instalados primero, luego no instalados
-                        $filtered_plugins = array_merge($installed_list, $not_installed_list);
-                        $total_plugins = count($filtered_plugins);
-
-                        // Configuración de paginación
-                        $per_page = 20;
-                        $current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
-                        $total_pages = max(1, ceil($total_plugins / $per_page));
-                        $current_page = min($current_page, $total_pages);
-                        $offset = ($current_page - 1) * $per_page;
-                        $plugins_to_show = array_slice($filtered_plugins, $offset, $per_page);
-                        ?>
-
-                        <!-- Buscador -->
-                        <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
-                            <div style="flex: 1;">
-                                <form method="get" action="<?php echo admin_url('options-general.php'); ?>" style="display: flex; gap: 10px; max-width: 500px;">
-                                    <input type="hidden" name="page" value="imagina-updater-client">
-                                    <input type="text"
-                                           name="plugin_search"
-                                           placeholder="<?php _e('Buscar por nombre, slug o descripción...', 'imagina-updater-client'); ?>"
-                                           value="<?php echo esc_attr($search_term); ?>"
-                                           style="flex: 1; padding: 6px 10px;">
-                                    <button type="submit" class="button">
-                                        <span class="dashicons dashicons-search"></span>
-                                        <?php _e('Buscar', 'imagina-updater-client'); ?>
-                                    </button>
-                                    <?php if (!empty($search_term)): ?>
-                                        <a href="<?php echo admin_url('options-general.php?page=imagina-updater-client'); ?>" class="button">
-                                            <?php _e('Limpiar', 'imagina-updater-client'); ?>
-                                        </a>
-                                    <?php endif; ?>
-                                </form>
-                            </div>
-                            <div>
-                                <span class="description">
-                                    <?php printf(__('Mostrando %d de %d plugins', 'imagina-updater-client'), count($plugins_to_show), $total_plugins); ?>
-                                </span>
-                            </div>
-                        </div>
+                    <?php else: ?>
 
                         <?php if (empty($plugins_to_show)): ?>
                             <div class="imagina-notice-info">

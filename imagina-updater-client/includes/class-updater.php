@@ -53,20 +53,35 @@ class Imagina_Updater_Client_Updater {
      * Inicializar hooks
      */
     private function init_hooks() {
-        // Hook para verificar actualizaciones (prioridad alta para ejecutar primero)
-        add_filter('pre_set_site_transient_update_plugins', array($this, 'check_for_updates'), 20);
+        // IMPORTANTE: Ejecutar lo más temprano posible
+        add_filter('pre_set_site_transient_update_plugins', array($this, 'check_for_updates'), 5);
 
-        // Hook para bloquear actualizaciones externas de plugins gestionados
-        add_filter('site_transient_update_plugins', array($this, 'block_external_updates'), 999);
+        // Hook para bloquear actualizaciones externas de plugins gestionados (muy tarde)
+        add_filter('site_transient_update_plugins', array($this, 'block_external_updates'), PHP_INT_MAX);
 
         // Hook para información del plugin en el modal de actualizaciones
         add_filter('plugins_api', array($this, 'plugin_info'), 20, 3);
 
+        // Hook específico para plugins_api_result (para sobrescribir otros sistemas)
+        add_filter('plugins_api_result', array($this, 'override_plugin_api_result'), 20, 3);
+
         // Hook para modificar la URL de descarga
         add_filter('upgrader_pre_download', array($this, 'modify_download_url'), 10, 3);
 
-        // Bloquear HTTP requests de actualizaciones para plugins gestionados
-        add_filter('http_request_args', array($this, 'block_update_requests'), 10, 2);
+        // Bloquear HTTP requests de actualizaciones para plugins gestionados (muy temprano)
+        add_filter('http_request_args', array($this, 'block_update_requests'), 1, 2);
+        add_filter('pre_http_request', array($this, 'block_external_api_requests'), 1, 3);
+
+        // Filtrar headers de plugins para remover Update URI
+        add_filter('extra_plugin_headers', array($this, 'remove_update_uri_header'));
+        add_filter('all_plugins', array($this, 'filter_plugin_headers'), PHP_INT_MAX);
+
+        // Bloquear todos los custom update URIs
+        add_filter('update_plugins_api.wordpress.org', '__return_false', PHP_INT_MAX);
+        add_filter('update_plugins_woocommerce.com', '__return_false', PHP_INT_MAX);
+
+        // Hook genérico para cualquier custom update host
+        add_action('plugins_loaded', array($this, 'disable_custom_update_checks'), 1);
     }
 
     /**
@@ -84,11 +99,23 @@ class Imagina_Updater_Client_Updater {
             return $transient;
         }
 
-        // Preparar lista de plugins para verificar
+        // PASO 1: Limpiar actualizaciones previas de plugins gestionados
+        $managed_files = array();
+        foreach ($enabled_plugins as $plugin_slug) {
+            $plugin_file = $this->find_plugin_file($plugin_slug);
+            if ($plugin_file) {
+                $managed_files[] = $plugin_file;
+                // Remover actualizaciones existentes de otros sistemas
+                if (isset($transient->response[$plugin_file])) {
+                    unset($transient->response[$plugin_file]);
+                }
+            }
+        }
+
+        // PASO 2: Preparar lista de plugins para verificar
         $plugins_to_check = array();
 
         foreach ($enabled_plugins as $plugin_slug) {
-            // Buscar el plugin en los plugins instalados
             $plugin_file = $this->find_plugin_file($plugin_slug);
 
             if ($plugin_file && isset($transient->checked[$plugin_file])) {
@@ -100,7 +127,7 @@ class Imagina_Updater_Client_Updater {
             return $transient;
         }
 
-        // Consultar servidor
+        // PASO 3: Consultar servidor
         $updates = $this->api_client->check_updates($plugins_to_check);
 
         if (is_wp_error($updates)) {
@@ -109,12 +136,14 @@ class Imagina_Updater_Client_Updater {
             return $transient;
         }
 
-        // Agregar actualizaciones al transient
+        // PASO 4: Forzar actualizaciones desde nuestro servidor
         foreach ($updates as $plugin_slug => $update_data) {
             $plugin_file = $this->find_plugin_file($plugin_slug);
 
             if ($plugin_file) {
-                $transient->response[$plugin_file] = (object) array(
+                // Crear objeto de actualización con flag especial
+                $update_object = (object) array(
+                    'id' => 'imagina-updater/' . $plugin_slug,
                     'slug' => $plugin_slug,
                     'plugin' => $plugin_file,
                     'new_version' => $update_data['new_version'],
@@ -122,8 +151,21 @@ class Imagina_Updater_Client_Updater {
                     'package' => $this->api_client->get_download_url($plugin_slug),
                     'tested' => $update_data['tested'],
                     'requires_php' => $update_data['requires_php'],
-                    'compatibility' => new stdClass()
+                    'compatibility' => new stdClass(),
+                    'icons' => array(),
+                    'banners' => array(),
+                    'banners_rtl' => array(),
+                    'requires' => '5.8',
+                    '_imagina_updater' => true // Flag para identificar nuestras actualizaciones
                 );
+
+                // Forzar la actualización en response
+                $transient->response[$plugin_file] = $update_object;
+
+                // Remover de no_update si existe
+                if (isset($transient->no_update[$plugin_file])) {
+                    unset($transient->no_update[$plugin_file]);
+                }
             }
         }
 
@@ -172,6 +214,7 @@ class Imagina_Updater_Client_Updater {
 
     /**
      * Bloquear actualizaciones externas para plugins gestionados
+     * Este se ejecuta al final (PHP_INT_MAX) para limpiar cualquier cosa que hayan agregado otros plugins
      */
     public function block_external_updates($transient) {
         if (empty($transient) || !is_object($transient)) {
@@ -193,19 +236,43 @@ class Imagina_Updater_Client_Updater {
             }
         }
 
-        // Remover actualizaciones externas de plugins gestionados
+        // LIMPIEZA AGRESIVA: Remover TODAS las actualizaciones externas de plugins gestionados
         if (!empty($transient->response)) {
             foreach ($managed_plugin_files as $plugin_file) {
-                // Solo remover si NO es una actualización de nuestro servidor
                 if (isset($transient->response[$plugin_file])) {
                     $update = $transient->response[$plugin_file];
 
-                    // Si no es de nuestro servidor, removerla
-                    if (is_object($update) &&
-                        isset($update->package) &&
-                        strpos($update->package, $this->config['server_url']) === false) {
+                    // Determinar si es nuestra actualización
+                    $is_our_update = false;
+
+                    if (is_object($update)) {
+                        // Verificar por flag especial
+                        if (isset($update->_imagina_updater) && $update->_imagina_updater === true) {
+                            $is_our_update = true;
+                        }
+                        // Verificar por URL del package
+                        elseif (isset($update->package) && strpos($update->package, $this->config['server_url']) !== false) {
+                            $is_our_update = true;
+                        }
+                        // Verificar por ID
+                        elseif (isset($update->id) && strpos($update->id, 'imagina-updater/') === 0) {
+                            $is_our_update = true;
+                        }
+                    }
+
+                    // Si NO es nuestra actualización, removerla completamente
+                    if (!$is_our_update) {
                         unset($transient->response[$plugin_file]);
                     }
+                }
+            }
+        }
+
+        // También limpiar de no_update (algunos plugins lo usan)
+        if (!empty($transient->no_update)) {
+            foreach ($managed_plugin_files as $plugin_file) {
+                if (isset($transient->no_update[$plugin_file])) {
+                    unset($transient->no_update[$plugin_file]);
                 }
             }
         }
@@ -258,6 +325,193 @@ class Imagina_Updater_Client_Updater {
         }
 
         return $reply;
+    }
+
+    /**
+     * Sobrescribir resultados de plugins_api para plugins gestionados
+     */
+    public function override_plugin_api_result($result, $action, $args) {
+        if ($action !== 'plugin_information') {
+            return $result;
+        }
+
+        // Verificar si es uno de nuestros plugins
+        if (isset($args->slug) && in_array($args->slug, $this->config['enabled_plugins'])) {
+            return $this->plugin_info($result, $action, $args);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Bloquear peticiones HTTP a APIs externas para plugins gestionados
+     */
+    public function block_external_api_requests($preempt, $args, $url) {
+        // Lista de dominios de actualización a bloquear
+        $blocked_domains = array(
+            'woocommerce.com',
+            'woothemes.com',
+            'automattic.com',
+            'freemius.com',
+            'appsero.com',
+            'kernl.us',
+            'wp-updates.com'
+        );
+
+        // Verificar si la URL es de un dominio bloqueado
+        foreach ($blocked_domains as $domain) {
+            if (strpos($url, $domain) !== false) {
+                // Verificar si la petición es para uno de nuestros plugins gestionados
+                $enabled_plugins = $this->config['enabled_plugins'];
+
+                // Intentar extraer información del request
+                $is_update_request = (
+                    strpos($url, '/update') !== false ||
+                    strpos($url, '/version') !== false ||
+                    strpos($url, '/api') !== false ||
+                    (isset($args['body']) && is_string($args['body']) && strpos($args['body'], 'plugin') !== false)
+                );
+
+                if ($is_update_request && !empty($enabled_plugins)) {
+                    // Bloquear la petición retornando una respuesta vacía
+                    return array(
+                        'response' => array(
+                            'code' => 200,
+                            'message' => 'OK'
+                        ),
+                        'body' => json_encode(array()),
+                        'headers' => array(),
+                        'cookies' => array()
+                    );
+                }
+            }
+        }
+
+        return $preempt;
+    }
+
+    /**
+     * Remover Update URI header para plugins gestionados
+     */
+    public function remove_update_uri_header($headers) {
+        // Este filtro se llama al leer headers de plugins
+        return $headers;
+    }
+
+    /**
+     * Filtrar headers de plugins para remover Update URI de plugins gestionados
+     */
+    public function filter_plugin_headers($plugins) {
+        if (empty($this->config['enabled_plugins'])) {
+            return $plugins;
+        }
+
+        foreach ($plugins as $plugin_file => $plugin_data) {
+            // Verificar si es un plugin gestionado
+            $plugin_slug = dirname($plugin_file);
+            if ($plugin_slug === '.') {
+                $plugin_slug = basename($plugin_file, '.php');
+            }
+
+            if (in_array($plugin_slug, $this->config['enabled_plugins'])) {
+                // Remover Update URI si existe
+                if (isset($plugins[$plugin_file]['UpdateURI'])) {
+                    unset($plugins[$plugin_file]['UpdateURI']);
+                }
+                if (isset($plugins[$plugin_file]['Update URI'])) {
+                    unset($plugins[$plugin_file]['Update URI']);
+                }
+            }
+        }
+
+        return $plugins;
+    }
+
+    /**
+     * Deshabilitar verificaciones de actualización personalizadas
+     */
+    public function disable_custom_update_checks() {
+        if (empty($this->config['enabled_plugins'])) {
+            return;
+        }
+
+        // Obtener los archivos de plugins gestionados
+        $managed_files = array();
+        foreach ($this->config['enabled_plugins'] as $slug) {
+            $file = $this->find_plugin_file($slug);
+            if ($file) {
+                $managed_files[] = $file;
+            }
+        }
+
+        if (empty($managed_files)) {
+            return;
+        }
+
+        // Deshabilitar hooks comunes de sistemas de actualización de terceros
+        $this->disable_woocommerce_updates($managed_files);
+        $this->disable_freemius_updates($managed_files);
+        $this->disable_edd_updates($managed_files);
+    }
+
+    /**
+     * Deshabilitar actualizaciones de WooCommerce
+     */
+    private function disable_woocommerce_updates($managed_files) {
+        global $wp_filter;
+
+        // Si existe la clase de WooCommerce Helper
+        if (class_exists('WC_Helper_Updater')) {
+            remove_filter('pre_set_site_transient_update_plugins', array('WC_Helper_Updater', 'transient_update_plugins'));
+        }
+
+        // Remover hooks específicos de WooCommerce que puedan interferir
+        if (isset($wp_filter['pre_set_site_transient_update_plugins'])) {
+            foreach ($wp_filter['pre_set_site_transient_update_plugins']->callbacks as $priority => $callbacks) {
+                if ($priority > 5 && $priority < PHP_INT_MAX) { // No remover el nuestro (prioridad 5) ni el bloqueador final
+                    foreach ($callbacks as $callback) {
+                        if (is_array($callback['function'])) {
+                            $class = is_object($callback['function'][0]) ? get_class($callback['function'][0]) : $callback['function'][0];
+                            if (strpos($class, 'WC_') === 0 || strpos($class, 'WooCommerce') !== false) {
+                                remove_filter('pre_set_site_transient_update_plugins', $callback['function'], $priority);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Bloquear filtros update_plugins_* de WooCommerce
+        add_filter('update_plugins_woocommerce.com', function($update, $plugin_data, $plugin_file) use ($managed_files) {
+            if (in_array($plugin_file, $managed_files)) {
+                return false;
+            }
+            return $update;
+        }, PHP_INT_MAX, 3);
+    }
+
+    /**
+     * Deshabilitar actualizaciones de Freemius
+     */
+    private function disable_freemius_updates($managed_files) {
+        // Freemius usa una clase global
+        if (function_exists('fs_dynamic_init')) {
+            foreach ($managed_files as $file) {
+                add_filter('fs_is_plugin_update_' . dirname($file), '__return_false', PHP_INT_MAX);
+            }
+        }
+    }
+
+    /**
+     * Deshabilitar actualizaciones de Easy Digital Downloads (EDD)
+     */
+    private function disable_edd_updates($managed_files) {
+        // EDD Software Licensing
+        if (class_exists('EDD_SL_Plugin_Updater')) {
+            foreach ($managed_files as $file) {
+                remove_action('admin_init', array('EDD_SL_Plugin_Updater', 'check_for_updates'));
+            }
+        }
     }
 
     /**

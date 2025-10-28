@@ -66,11 +66,14 @@ class Imagina_Updater_Client_Updater {
     private function init_hooks() {
         imagina_updater_log('Registrando hooks...');
 
-        // Hook principal para verificar actualizaciones (prioridad 10 - estándar)
+        // Hook principal para verificar actualizaciones cuando se GUARDA el transient (prioridad 10)
         add_filter('pre_set_site_transient_update_plugins', array($this, 'check_for_updates'), 10);
         imagina_updater_log('Hook pre_set_site_transient_update_plugins registrado');
 
-        // Hook para bloquear actualizaciones externas (prioridad 100 - tarde pero no extremo)
+        // Hook para inyectar actualizaciones cuando se LEE el transient (prioridad 10 - antes de bloquear)
+        add_filter('site_transient_update_plugins', array($this, 'inject_updates_on_read'), 10);
+
+        // Hook para bloquear actualizaciones externas (prioridad 100 - después de inyectar las nuestras)
         add_filter('site_transient_update_plugins', array($this, 'block_external_updates'), 100);
 
         // Hook para información del plugin en el modal
@@ -221,6 +224,123 @@ class Imagina_Updater_Client_Updater {
         }
 
         imagina_updater_log('Proceso completado exitosamente. Total de actualizaciones agregadas: ' . count($transient->response));
+
+        return $transient;
+    }
+
+    /**
+     * Inyectar actualizaciones cuando se lee el transient (para evitar problemas con cache)
+     */
+    public function inject_updates_on_read($transient) {
+        if (empty($transient) || !is_object($transient)) {
+            return $transient;
+        }
+
+        $enabled_plugins = $this->config['enabled_plugins'];
+        if (empty($enabled_plugins)) {
+            return $transient;
+        }
+
+        // Verificar si ya tenemos actualizaciones de Imagina Updater en el transient
+        $has_our_updates = false;
+        if (!empty($transient->response)) {
+            foreach ($transient->response as $update) {
+                if (is_object($update) && isset($update->_imagina_updater) && $update->_imagina_updater === true) {
+                    $has_our_updates = true;
+                    break;
+                }
+            }
+        }
+
+        // Si ya tenemos nuestras actualizaciones, no hacer nada más
+        if ($has_our_updates) {
+            return $transient;
+        }
+
+        // Verificar cache de actualizaciones (válido por 1 hora)
+        $cache_key = 'imagina_updater_cached_updates';
+        $cached_updates = get_transient($cache_key);
+
+        if ($cached_updates !== false && is_array($cached_updates)) {
+            // Usar actualizaciones cacheadas
+            foreach ($cached_updates as $plugin_file => $update_object) {
+                $transient->response[$plugin_file] = $update_object;
+
+                // Remover de no_update si existe
+                if (isset($transient->no_update[$plugin_file])) {
+                    unset($transient->no_update[$plugin_file]);
+                }
+            }
+
+            imagina_updater_log('Actualizaciones inyectadas desde cache');
+            return $transient;
+        }
+
+        // Si no hay cache, realizar verificación completa
+        // Preparar lista de plugins para verificar
+        $plugins_to_check = array();
+
+        foreach ($enabled_plugins as $plugin_slug) {
+            $plugin_file = $this->find_plugin_file($plugin_slug);
+
+            if ($plugin_file && function_exists('get_plugin_data')) {
+                $plugin_data = get_plugin_data(WP_PLUGIN_DIR . '/' . $plugin_file, false, false);
+                if (!empty($plugin_data['Version'])) {
+                    $plugins_to_check[$plugin_slug] = $plugin_data['Version'];
+                }
+            }
+        }
+
+        if (empty($plugins_to_check)) {
+            return $transient;
+        }
+
+        // Consultar servidor
+        $updates = $this->api_client->check_updates($plugins_to_check);
+
+        if (is_wp_error($updates)) {
+            return $transient;
+        }
+
+        // Preparar actualizaciones y cachearlas
+        $updates_to_cache = array();
+
+        foreach ($updates as $plugin_slug => $update_data) {
+            $plugin_file = $this->find_plugin_file($plugin_slug);
+
+            if ($plugin_file) {
+                $update_object = (object) array(
+                    'id' => 'imagina-updater/' . $plugin_slug,
+                    'slug' => $plugin_slug,
+                    'plugin' => $plugin_file,
+                    'new_version' => $update_data['new_version'],
+                    'url' => $update_data['homepage'],
+                    'package' => $this->api_client->get_download_url($plugin_slug),
+                    'tested' => $update_data['tested'],
+                    'requires_php' => $update_data['requires_php'],
+                    'compatibility' => new stdClass(),
+                    'icons' => array(),
+                    'banners' => array(),
+                    'banners_rtl' => array(),
+                    'requires' => '5.8',
+                    '_imagina_updater' => true
+                );
+
+                $transient->response[$plugin_file] = $update_object;
+                $updates_to_cache[$plugin_file] = $update_object;
+
+                // Remover de no_update si existe
+                if (isset($transient->no_update[$plugin_file])) {
+                    unset($transient->no_update[$plugin_file]);
+                }
+            }
+        }
+
+        // Cachear actualizaciones por 1 hora
+        if (!empty($updates_to_cache)) {
+            set_transient($cache_key, $updates_to_cache, HOUR_IN_SECONDS);
+            imagina_updater_log('Actualizaciones cacheadas por 1 hora');
+        }
 
         return $transient;
     }

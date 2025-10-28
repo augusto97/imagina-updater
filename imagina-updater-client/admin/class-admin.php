@@ -149,6 +149,7 @@ class Imagina_Updater_Client_Admin {
 
             // Limpiar cache de actualizaciones y plugins del servidor
             delete_site_transient('update_plugins');
+            delete_transient('imagina_updater_cached_updates');
             delete_transient('imagina_updater_server_plugins_' . md5($server_url));
         }
 
@@ -166,6 +167,7 @@ class Imagina_Updater_Client_Admin {
 
             // Limpiar cache de actualizaciones
             delete_site_transient('update_plugins');
+            delete_transient('imagina_updater_cached_updates');
         }
 
         // Test de conexión

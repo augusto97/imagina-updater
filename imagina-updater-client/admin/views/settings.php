@@ -11,8 +11,6 @@ if (!defined('ABSPATH')) {
 <div class="wrap">
     <h1><?php _e('Imagina Updater Client - Configuración', 'imagina-updater-client'); ?></h1>
 
-    <?php settings_errors('imagina_updater_client', false); ?>
-
     <div class="imagina-client-container">
         <!-- Configuración de Conexión -->
         <div class="imagina-card">

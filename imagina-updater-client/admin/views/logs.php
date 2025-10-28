@@ -13,8 +13,6 @@ if (!defined('ABSPATH')) {
         <?php _e('Imagina Updater - Logs del Sistema', 'imagina-updater-client'); ?>
     </h1>
 
-    <?php settings_errors('imagina_updater_client', false); ?>
-
     <?php if (!$is_enabled): ?>
         <div class="notice notice-warning">
             <p>

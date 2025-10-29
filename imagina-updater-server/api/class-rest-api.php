@@ -177,10 +177,73 @@ class Imagina_Updater_Server_REST_API {
     }
 
     /**
+     * Filtrar plugins según permisos de la API key
+     *
+     * @param array $plugins Lista de plugins
+     * @param object $api_key_data Datos de la API key
+     * @return array Lista filtrada de plugins
+     */
+    private function filter_plugins_by_permissions($plugins, $api_key_data) {
+        // Si no hay datos de API key o access_type es 'all', devolver todos
+        if (!$api_key_data || $api_key_data->access_type === 'all') {
+            return $plugins;
+        }
+
+        $allowed_plugin_ids = array();
+
+        // Filtrar por plugins específicos
+        if ($api_key_data->access_type === 'specific' && !empty($api_key_data->allowed_plugins)) {
+            $allowed_plugin_ids = json_decode($api_key_data->allowed_plugins, true);
+            if (!is_array($allowed_plugin_ids)) {
+                $allowed_plugin_ids = array();
+            }
+        }
+
+        // Filtrar por grupos
+        elseif ($api_key_data->access_type === 'groups' && !empty($api_key_data->allowed_groups)) {
+            $allowed_group_ids = json_decode($api_key_data->allowed_groups, true);
+            if (!is_array($allowed_group_ids)) {
+                $allowed_group_ids = array();
+            }
+
+            // Obtener todos los plugins de los grupos permitidos
+            foreach ($allowed_group_ids as $group_id) {
+                $group_plugin_ids = Imagina_Updater_Server_Plugin_Groups::get_group_plugin_ids($group_id);
+                $allowed_plugin_ids = array_merge($allowed_plugin_ids, $group_plugin_ids);
+            }
+
+            // Eliminar duplicados
+            $allowed_plugin_ids = array_unique($allowed_plugin_ids);
+        }
+
+        // Si no hay plugins permitidos, devolver array vacío
+        if (empty($allowed_plugin_ids)) {
+            return array();
+        }
+
+        // Filtrar plugins
+        $filtered = array();
+        foreach ($plugins as $plugin) {
+            if (in_array($plugin->id, $allowed_plugin_ids)) {
+                $filtered[] = $plugin;
+            }
+        }
+
+        return $filtered;
+    }
+
+    /**
      * Endpoint: Obtener lista de plugins
      */
     public function get_plugins($request) {
-        $plugins = Imagina_Updater_Server_Plugin_Manager::get_all_plugins();
+        // Obtener todos los plugins
+        $all_plugins = Imagina_Updater_Server_Plugin_Manager::get_all_plugins();
+
+        // Obtener datos de la API key para filtrar
+        $api_key_data = $request->get_param('_api_key_data');
+
+        // Filtrar según permisos
+        $plugins = $this->filter_plugins_by_permissions($all_plugins, $api_key_data);
 
         $result = array();
         foreach ($plugins as $plugin) {
@@ -202,6 +265,45 @@ class Imagina_Updater_Server_REST_API {
     }
 
     /**
+     * Verificar si un plugin está permitido para la API key
+     *
+     * @param object $plugin Plugin a verificar
+     * @param object $api_key_data Datos de la API key
+     * @return bool
+     */
+    private function is_plugin_allowed($plugin, $api_key_data) {
+        // Si no hay datos de API key o access_type es 'all', permitir
+        if (!$api_key_data || $api_key_data->access_type === 'all') {
+            return true;
+        }
+
+        $plugin_id = $plugin->id;
+
+        // Verificar si está en plugins específicos
+        if ($api_key_data->access_type === 'specific' && !empty($api_key_data->allowed_plugins)) {
+            $allowed_plugin_ids = json_decode($api_key_data->allowed_plugins, true);
+            if (is_array($allowed_plugin_ids) && in_array($plugin_id, $allowed_plugin_ids)) {
+                return true;
+            }
+        }
+
+        // Verificar si está en grupos permitidos
+        if ($api_key_data->access_type === 'groups' && !empty($api_key_data->allowed_groups)) {
+            $allowed_group_ids = json_decode($api_key_data->allowed_groups, true);
+            if (is_array($allowed_group_ids)) {
+                foreach ($allowed_group_ids as $group_id) {
+                    $group_plugin_ids = Imagina_Updater_Server_Plugin_Groups::get_group_plugin_ids($group_id);
+                    if (in_array($plugin_id, $group_plugin_ids)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Endpoint: Obtener información de un plugin
      */
     public function get_plugin_info($request) {
@@ -214,6 +316,16 @@ class Imagina_Updater_Server_REST_API {
                 'plugin_not_found',
                 __('Plugin no encontrado', 'imagina-updater-server'),
                 array('status' => 404)
+            );
+        }
+
+        // Verificar permisos
+        $api_key_data = $request->get_param('_api_key_data');
+        if (!$this->is_plugin_allowed($plugin, $api_key_data)) {
+            return new WP_Error(
+                'access_denied',
+                __('No tienes permiso para acceder a este plugin', 'imagina-updater-server'),
+                array('status' => 403)
             );
         }
 
@@ -286,6 +398,15 @@ class Imagina_Updater_Server_REST_API {
                 'plugin_not_found',
                 __('Plugin no encontrado', 'imagina-updater-server'),
                 array('status' => 404)
+            );
+        }
+
+        // Verificar permisos
+        if (!$this->is_plugin_allowed($plugin, $api_key_data)) {
+            return new WP_Error(
+                'access_denied',
+                __('No tienes permiso para descargar este plugin', 'imagina-updater-server'),
+                array('status' => 403)
             );
         }
 

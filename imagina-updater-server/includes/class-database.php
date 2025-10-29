@@ -85,11 +85,36 @@ class Imagina_Updater_Server_Database {
             KEY downloaded_at (downloaded_at)
         ) $charset_collate;";
 
+        // Tabla de grupos de plugins
+        $table_groups = $wpdb->prefix . 'imagina_updater_plugin_groups';
+        $sql_groups = "CREATE TABLE IF NOT EXISTS $table_groups (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            name varchar(200) NOT NULL,
+            description text,
+            created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY name (name)
+        ) $charset_collate;";
+
+        // Tabla de relación plugins-grupos (muchos a muchos)
+        $table_group_items = $wpdb->prefix . 'imagina_updater_plugin_group_items';
+        $sql_group_items = "CREATE TABLE IF NOT EXISTS $table_group_items (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            group_id bigint(20) unsigned NOT NULL,
+            plugin_id bigint(20) unsigned NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY group_plugin (group_id, plugin_id),
+            KEY group_id (group_id),
+            KEY plugin_id (plugin_id)
+        ) $charset_collate;";
+
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql_api_keys);
         dbDelta($sql_plugins);
         dbDelta($sql_versions);
         dbDelta($sql_downloads);
+        dbDelta($sql_groups);
+        dbDelta($sql_group_items);
 
         // Ejecutar migraciones si es necesario
         self::run_migrations();
@@ -104,6 +129,7 @@ class Imagina_Updater_Server_Database {
     public static function run_migrations() {
         // Siempre intentar ejecutar migraciones (verifican internamente si son necesarias)
         self::migrate_add_slug_override();
+        self::migrate_add_api_key_permissions();
     }
 
     /**
@@ -157,6 +183,46 @@ class Imagina_Updater_Server_Database {
             return true;
         } else {
             error_log('IMAGINA UPDATER SERVER: Campo slug_override ya existe, migración no necesaria');
+            return true;
+        }
+    }
+
+    /**
+     * Migración: Agregar campos de permisos a API keys
+     */
+    private static function migrate_add_api_key_permissions() {
+        global $wpdb;
+
+        $table_api_keys = $wpdb->prefix . 'imagina_updater_api_keys';
+
+        // Verificar si el campo access_type ya existe
+        $column_exists = $wpdb->get_results(
+            $wpdb->prepare(
+                "SHOW COLUMNS FROM $table_api_keys LIKE %s",
+                'access_type'
+            )
+        );
+
+        if (empty($column_exists)) {
+            error_log('IMAGINA UPDATER SERVER: Iniciando migración para agregar campos de permisos a API keys');
+
+            // Agregar columnas de permisos
+            $result = $wpdb->query(
+                "ALTER TABLE $table_api_keys
+                ADD COLUMN access_type ENUM('all', 'specific', 'groups') NOT NULL DEFAULT 'all' COMMENT 'Tipo de acceso' AFTER is_active,
+                ADD COLUMN allowed_plugins TEXT NULL COMMENT 'IDs de plugins permitidos (JSON array)' AFTER access_type,
+                ADD COLUMN allowed_groups TEXT NULL COMMENT 'IDs de grupos permitidos (JSON array)' AFTER allowed_plugins"
+            );
+
+            if ($result === false) {
+                error_log('IMAGINA UPDATER SERVER: ERROR en migración al agregar columnas de permisos - ' . $wpdb->last_error);
+                return false;
+            }
+
+            error_log('IMAGINA UPDATER SERVER: Migración completada exitosamente - Campos de permisos agregados a API keys');
+            return true;
+        } else {
+            error_log('IMAGINA UPDATER SERVER: Campos de permisos ya existen en API keys, migración no necesaria');
             return true;
         }
     }

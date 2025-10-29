@@ -148,14 +148,17 @@ class Imagina_Updater_Server_Admin {
         if (isset($_POST['imagina_create_api_key']) && check_admin_referer('imagina_create_api_key')) {
             $site_name = sanitize_text_field($_POST['site_name']);
             $site_url = esc_url_raw($_POST['site_url']);
+            $access_type = isset($_POST['access_type']) ? sanitize_text_field($_POST['access_type']) : 'all';
+            $allowed_plugins = isset($_POST['allowed_plugins']) ? array_map('intval', $_POST['allowed_plugins']) : array();
+            $allowed_groups = isset($_POST['allowed_groups']) ? array_map('intval', $_POST['allowed_groups']) : array();
 
-            $result = Imagina_Updater_Server_API_Keys::create($site_name, $site_url);
+            $result = Imagina_Updater_Server_API_Keys::create($site_name, $site_url, $access_type, $allowed_plugins, $allowed_groups);
 
             if (is_wp_error($result)) {
                 imagina_updater_server_log('Error al crear API Key: ' . $result->get_error_message(), 'error');
                 set_transient('imagina_updater_api_error', $result->get_error_message(), 30);
             } else {
-                imagina_updater_server_log('API Key creada exitosamente para: ' . $site_name, 'info');
+                imagina_updater_server_log('API Key creada exitosamente para: ' . $site_name . ' con acceso: ' . $access_type, 'info');
                 set_transient('imagina_updater_api_success', true, 30);
                 set_transient('imagina_new_api_key', $result['api_key'], 60);
             }
@@ -210,6 +213,33 @@ class Imagina_Updater_Server_Admin {
         if (get_transient('imagina_updater_api_toggled')) {
             delete_transient('imagina_updater_api_toggled');
             add_settings_error('imagina_updater', 'toggle_success', __('Estado actualizado', 'imagina-updater-server'), 'success');
+        }
+
+        // Actualizar permisos de API Key
+        if (isset($_POST['imagina_update_api_permissions']) && check_admin_referer('imagina_update_api_permissions')) {
+            $api_key_id = intval($_POST['api_key_id']);
+            $access_type = isset($_POST['access_type']) ? sanitize_text_field($_POST['access_type']) : 'all';
+            $allowed_plugins = isset($_POST['allowed_plugins']) ? array_map('intval', $_POST['allowed_plugins']) : array();
+            $allowed_groups = isset($_POST['allowed_groups']) ? array_map('intval', $_POST['allowed_groups']) : array();
+
+            $result = Imagina_Updater_Server_API_Keys::update_permissions($api_key_id, $access_type, $allowed_plugins, $allowed_groups);
+
+            if (is_wp_error($result)) {
+                imagina_updater_server_log('Error al actualizar permisos API Key ID ' . $api_key_id . ': ' . $result->get_error_message(), 'error');
+                set_transient('imagina_updater_api_error', $result->get_error_message(), 30);
+            } else {
+                imagina_updater_server_log('Permisos actualizados exitosamente para API Key ID ' . $api_key_id . ': ' . $access_type, 'info');
+                set_transient('imagina_updater_api_permissions_success', true, 30);
+            }
+
+            wp_redirect(admin_url('admin.php?page=imagina-updater-api-keys'));
+            exit;
+        }
+
+        // Mostrar mensaje de actualización de permisos
+        if (get_transient('imagina_updater_api_permissions_success')) {
+            delete_transient('imagina_updater_api_permissions_success');
+            add_settings_error('imagina_updater', 'permissions_success', __('Permisos actualizados', 'imagina-updater-server'), 'success');
         }
 
         // Subir plugin
@@ -534,6 +564,10 @@ class Imagina_Updater_Server_Admin {
         if ($new_api_key) {
             delete_transient('imagina_new_api_key');
         }
+
+        // Cargar plugins y grupos para los permisos
+        $all_plugins = Imagina_Updater_Server_Plugin_Manager::get_all_plugins();
+        $all_groups = Imagina_Updater_Server_Plugin_Groups::get_all_groups();
 
         include IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'admin/views/api-keys.php';
     }

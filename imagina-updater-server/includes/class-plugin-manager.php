@@ -33,12 +33,17 @@ class Imagina_Updater_Server_Plugin_Manager {
     }
 
     /**
-     * Validar formato de versión semántica
+     * Validar que la versión sea válida
+     *
+     * No imponemos formato específico (semántico o no), solo verificamos que:
+     * - No esté vacía
+     * - No contenga caracteres peligrosos
+     * - WordPress acepta cualquier formato: 1.0, 1.0.0, 5.5.4.5.1, etc.
      */
     private static function is_valid_version($version) {
-        // Regex para versión semántica básica: X.Y.Z o X.Y.Z-suffix
-        $pattern = '/^(\d+)\.(\d+)(\.(\d+))?(-[a-zA-Z0-9\-\.]+)?$/';
-        return preg_match($pattern, $version);
+        // Solo verificar que no esté vacía y que contenga caracteres permitidos
+        // Permitimos números, puntos, guiones y letras (para sufijos como -beta, -rc1, etc.)
+        return !empty($version) && preg_match('/^[0-9a-zA-Z\.\-]+$/', $version);
     }
 
     /**
@@ -76,7 +81,7 @@ class Imagina_Updater_Server_Plugin_Manager {
 
         // Validar versión
         if (!self::is_valid_version($plugin_data['version'])) {
-            return new WP_Error('invalid_version', __('Formato de versión inválido. Use formato semántico: X.Y.Z', 'imagina-updater-server'));
+            return new WP_Error('invalid_version', __('Versión inválida. La versión no puede estar vacía y solo puede contener números, puntos, guiones y letras.', 'imagina-updater-server'));
         }
 
         // Mover archivo a directorio seguro
@@ -248,8 +253,10 @@ class Imagina_Updater_Server_Plugin_Manager {
             return new WP_Error('zip_error', __('No se pudo abrir el archivo ZIP', 'imagina-updater-server'));
         }
 
-        // Buscar archivo principal del plugin
+        // Buscar archivo principal del plugin y extraer carpeta raíz
         $plugin_file = null;
+        $plugin_folder = null;
+
         for ($i = 0; $i < $zip->numFiles; $i++) {
             $filename = $zip->getNameIndex($i);
 
@@ -261,6 +268,17 @@ class Imagina_Updater_Server_Plugin_Manager {
                 // Verificar si tiene los headers de plugin
                 if (preg_match('/Plugin Name:/i', $content)) {
                     $plugin_file = $content;
+
+                    // Extraer nombre de la carpeta desde la ruta del archivo
+                    // Si es "carpeta/archivo.php", extraer "carpeta"
+                    // Si es "archivo.php", usar el nombre del archivo sin extensión
+                    if (strpos($filename, '/') !== false) {
+                        $plugin_folder = substr($filename, 0, strpos($filename, '/'));
+                    } else {
+                        // Plugin en raíz del ZIP (sin carpeta)
+                        $plugin_folder = basename($filename, '.php');
+                    }
+
                     break;
                 }
             }
@@ -268,7 +286,7 @@ class Imagina_Updater_Server_Plugin_Manager {
 
         $zip->close();
 
-        if (!$plugin_file) {
+        if (!$plugin_file || !$plugin_folder) {
             return new WP_Error('no_plugin_header', __('No se encontró archivo de plugin válido en el ZIP', 'imagina-updater-server'));
         }
 
@@ -303,8 +321,9 @@ class Imagina_Updater_Server_Plugin_Manager {
             return new WP_Error('invalid_plugin', __('El plugin no tiene nombre o versión definidos', 'imagina-updater-server'));
         }
 
-        // Generar slug desde el nombre
-        $plugin_data['slug'] = sanitize_title($plugin_data['name']);
+        // USAR EL NOMBRE DE LA CARPETA COMO SLUG (no el nombre del plugin)
+        // Esto asegura que el slug coincida con la estructura real del plugin
+        $plugin_data['slug'] = sanitize_file_name($plugin_folder);
 
         return $plugin_data;
     }

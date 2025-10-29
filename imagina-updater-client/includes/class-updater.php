@@ -874,7 +874,7 @@ class Imagina_Updater_Client_Updater {
             return $found;
         }
 
-        imagina_updater_log('✗ NO se encontró archivo para slug: ' . $slug, 'warning');
+        imagina_updater_log('✗ NO se encontró archivo para slug: ' . $slug . ' (puede que no esté instalado localmente)', 'debug');
 
         // Guardar resultado negativo en caché para evitar búsquedas repetidas
         $this->plugin_file_cache[$slug] = false;

@@ -173,6 +173,66 @@ class Imagina_Updater_Client_Admin {
             delete_transient('imagina_updater_cached_updates');
         }
 
+        // Guardar modo de visualización
+        if (isset($_POST['imagina_save_display_mode']) && check_admin_referer('imagina_save_display_mode')) {
+            $display_mode = isset($_POST['plugin_display_mode'])
+                ? sanitize_text_field($_POST['plugin_display_mode'])
+                : 'installed_only';
+
+            // Validar que sea un valor permitido
+            if (!in_array($display_mode, array('all_with_install', 'installed_only'))) {
+                $display_mode = 'installed_only';
+            }
+
+            imagina_updater_client()->update_config(array(
+                'plugin_display_mode' => $display_mode
+            ));
+
+            add_settings_error('imagina_updater_client', 'display_mode_saved', __('Modo de visualización actualizado', 'imagina-updater-client'), 'success');
+        }
+
+        // Instalar plugin desde servidor Imagina
+        if (isset($_POST['imagina_install_plugin']) && check_admin_referer('imagina_install_plugin')) {
+            $plugin_slug = isset($_POST['plugin_slug']) ? sanitize_text_field($_POST['plugin_slug']) : '';
+
+            if (empty($plugin_slug)) {
+                add_settings_error('imagina_updater_client', 'install_error', __('Slug de plugin no válido', 'imagina-updater-client'), 'error');
+            } else {
+                $result = $this->install_plugin_from_server($plugin_slug);
+
+                if (is_wp_error($result)) {
+                    add_settings_error('imagina_updater_client', 'install_error', sprintf(
+                        __('Error al instalar plugin: %s', 'imagina-updater-client'),
+                        $result->get_error_message()
+                    ), 'error');
+                    imagina_updater_log('Error instalando plugin ' . $plugin_slug . ': ' . $result->get_error_message(), 'error');
+                } else {
+                    // Guardar mensaje en transient para mostrarlo después del redirect
+                    set_transient('imagina_updater_install_success', array(
+                        'name' => $result['name'],
+                        'version' => $result['version']
+                    ), 30);
+
+                    imagina_updater_log('Plugin instalado exitosamente: ' . $plugin_slug, 'info');
+
+                    // Redirect para evitar reenvío de formulario
+                    wp_redirect(admin_url('options-general.php?page=imagina-updater-client'));
+                    exit;
+                }
+            }
+        }
+
+        // Mostrar mensaje de instalación exitosa (después del redirect)
+        $install_success = get_transient('imagina_updater_install_success');
+        if ($install_success) {
+            delete_transient('imagina_updater_install_success');
+            add_settings_error('imagina_updater_client', 'install_success', sprintf(
+                __('Plugin "%s" v%s instalado exitosamente. Ahora puedes habilitarlo para recibir actualizaciones.', 'imagina-updater-client'),
+                $install_success['name'],
+                $install_success['version']
+            ), 'success');
+        }
+
         // Test de conexión
         if (isset($_POST['imagina_test_connection']) && check_admin_referer('imagina_test_connection')) {
             $config = imagina_updater_client()->get_config();
@@ -190,6 +250,48 @@ class Imagina_Updater_Client_Admin {
                     __('Conexión exitosa con: %s', 'imagina-updater-client'),
                     $validation['site_name']
                 ), 'success');
+            }
+        }
+
+        // Refrescar lista de plugins desde servidor
+        if (isset($_POST['imagina_refresh_plugins']) && check_admin_referer('imagina_refresh_plugins')) {
+            $config = imagina_updater_client()->get_config();
+
+            // Limpiar todos los cachés relacionados
+            $cache_key = 'imagina_updater_server_plugins_' . md5($config['server_url']);
+            delete_transient($cache_key);
+            delete_transient('imagina_updater_cached_updates');
+            delete_site_transient('update_plugins');
+
+            imagina_updater_log('Cachés limpiados, refrescando lista de plugins desde servidor', 'info');
+
+            // Consultar servidor directamente
+            $api_client = new Imagina_Updater_Client_API($config['server_url'], $config['api_key']);
+            $result = $api_client->get_plugins();
+
+            if (is_wp_error($result)) {
+                add_settings_error('imagina_updater_client', 'refresh_failed', sprintf(
+                    __('Error al refrescar: %s', 'imagina-updater-client'),
+                    $result->get_error_message()
+                ), 'error');
+                imagina_updater_log('Error al refrescar plugins: ' . $result->get_error_message(), 'error');
+            } else {
+                // Guardar en caché
+                set_transient($cache_key, $result, 24 * HOUR_IN_SECONDS);
+
+                // Contar plugins
+                $count = count($result);
+
+                add_settings_error('imagina_updater_client', 'refresh_success', sprintf(
+                    __('Lista actualizada: %d plugin(s) disponibles en el servidor', 'imagina-updater-client'),
+                    $count
+                ), 'success');
+
+                imagina_updater_log('Lista de plugins refrescada: ' . $count . ' plugins disponibles', 'info');
+
+                // Redirect para recargar página con nuevo caché
+                wp_redirect(admin_url('options-general.php?page=imagina-updater-client'));
+                exit;
             }
         }
 
@@ -224,6 +326,97 @@ class Imagina_Updater_Client_Admin {
     }
 
     /**
+     * Instalar plugin desde servidor Imagina
+     */
+    private function install_plugin_from_server($plugin_slug) {
+        $config = imagina_updater_client()->get_config();
+
+        if (!imagina_updater_client()->is_configured()) {
+            return new WP_Error('not_configured', __('El plugin no está configurado', 'imagina-updater-client'));
+        }
+
+        // Obtener información del plugin desde el servidor
+        $api_client = new Imagina_Updater_Client_API($config['server_url'], $config['api_key']);
+        $plugins = $api_client->get_plugins();
+
+        if (is_wp_error($plugins)) {
+            return $plugins;
+        }
+
+        // Buscar el plugin en la lista
+        $plugin_info = null;
+        foreach ($plugins as $plugin) {
+            if ($plugin['slug'] === $plugin_slug) {
+                $plugin_info = $plugin;
+                break;
+            }
+        }
+
+        if (!$plugin_info) {
+            return new WP_Error('plugin_not_found', __('Plugin no encontrado en el servidor', 'imagina-updater-client'));
+        }
+
+        // Descargar el plugin
+        imagina_updater_log('Descargando plugin desde servidor: ' . $plugin_slug, 'info');
+
+        $download_url = trailingslashit($config['server_url']) . 'wp-json/imagina-updater/v1/download/' . $plugin_slug;
+
+        // Usar WordPress HTTP API para descargar
+        $response = wp_remote_get($download_url, array(
+            'timeout' => 300,
+            'headers' => array(
+                'X-API-Key' => $config['api_key']
+            )
+        ));
+
+        if (is_wp_error($response)) {
+            return $response;
+        }
+
+        $response_code = wp_remote_retrieve_response_code($response);
+        if ($response_code !== 200) {
+            return new WP_Error('download_failed', sprintf(
+                __('Error al descargar plugin (código %d)', 'imagina-updater-client'),
+                $response_code
+            ));
+        }
+
+        // Guardar archivo temporal
+        $temp_file = wp_tempnam($plugin_slug . '.zip');
+        file_put_contents($temp_file, wp_remote_retrieve_body($response));
+
+        imagina_updater_log('Plugin descargado, instalando...', 'info');
+
+        // Instalar usando Plugin_Upgrader
+        require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+        require_once ABSPATH . 'wp-admin/includes/file.php';
+        require_once ABSPATH . 'wp-admin/includes/plugin.php';
+
+        $upgrader = new Plugin_Upgrader(new WP_Ajax_Upgrader_Skin());
+        $result = $upgrader->install($temp_file);
+
+        // Limpiar archivo temporal
+        @unlink($temp_file);
+
+        if (is_wp_error($result)) {
+            return $result;
+        }
+
+        if ($result === false) {
+            return new WP_Error('install_failed', __('Error al instalar el plugin', 'imagina-updater-client'));
+        }
+
+        // Limpiar cache
+        delete_transient('imagina_updater_server_plugins_' . md5($config['server_url']));
+
+        return array(
+            'name' => $plugin_info['name'],
+            'version' => $plugin_info['version'],
+            'slug' => $plugin_slug
+        );
+    }
+
+    /**
      * Renderizar página de configuración
      */
     public function render_settings_page() {
@@ -248,6 +441,25 @@ class Imagina_Updater_Client_Admin {
                     set_transient($cache_key, $server_plugins, 24 * HOUR_IN_SECONDS);
                 } else {
                     $server_plugins = array();
+                }
+            }
+
+            // Limpiar plugins habilitados que ya no están disponibles en el servidor
+            if (!empty($server_plugins) && !empty($config['enabled_plugins'])) {
+                $available_slugs = array_column($server_plugins, 'slug');
+                $original_count = count($config['enabled_plugins']);
+                $cleaned_plugins = array_intersect($config['enabled_plugins'], $available_slugs);
+
+                // Si se removieron plugins, actualizar configuración
+                if (count($cleaned_plugins) < $original_count) {
+                    $removed = array_diff($config['enabled_plugins'], $cleaned_plugins);
+                    imagina_updater_client()->update_config(array(
+                        'enabled_plugins' => array_values($cleaned_plugins)
+                    ));
+                    imagina_updater_log('Plugins removidos de enabled_plugins (ya no disponibles en servidor): ' . implode(', ', $removed), 'info');
+
+                    // Recargar configuración para reflejar los cambios
+                    $config = imagina_updater_client()->get_config();
                 }
             }
         }

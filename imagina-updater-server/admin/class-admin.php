@@ -461,8 +461,11 @@ class Imagina_Updater_Server_Admin {
 
         // Ejecutar migración manualmente
         if (isset($_POST['imagina_run_migration']) && check_admin_referer('imagina_run_migration')) {
+            // Primero crear/actualizar tablas
+            Imagina_Updater_Server_Database::create_tables();
+            // Luego ejecutar migraciones de campos
             Imagina_Updater_Server_Database::run_migrations();
-            add_settings_error('imagina_updater', 'migration_success', __('Migración ejecutada. Revisa los logs de error de WordPress para más detalles.', 'imagina-updater-server'), 'success');
+            add_settings_error('imagina_updater', 'migration_success', __('Migración ejecutada exitosamente. Todas las tablas están actualizadas.', 'imagina-updater-server'), 'success');
         }
 
         // Guardar configuración

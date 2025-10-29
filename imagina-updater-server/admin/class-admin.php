@@ -67,6 +67,15 @@ class Imagina_Updater_Server_Admin {
 
         add_submenu_page(
             'imagina-updater-server',
+            __('Grupos de Plugins', 'imagina-updater-server'),
+            __('Grupos de Plugins', 'imagina-updater-server'),
+            'manage_options',
+            'imagina-updater-plugin-groups',
+            array($this, 'render_plugin_groups_page')
+        );
+
+        add_submenu_page(
+            'imagina-updater-server',
             __('API Keys', 'imagina-updater-server'),
             __('API Keys', 'imagina-updater-server'),
             'manage_options',
@@ -352,6 +361,74 @@ class Imagina_Updater_Server_Admin {
             ), 'error');
         }
 
+        // Crear grupo de plugins
+        if (isset($_POST['imagina_create_group']) && check_admin_referer('imagina_create_group')) {
+            $name = sanitize_text_field($_POST['group_name']);
+            $description = sanitize_textarea_field($_POST['group_description']);
+            $plugin_ids = isset($_POST['plugin_ids']) ? array_map('intval', $_POST['plugin_ids']) : array();
+
+            $result = Imagina_Updater_Server_Plugin_Groups::create_group($name, $description, $plugin_ids);
+
+            if (is_wp_error($result)) {
+                imagina_updater_server_log('Error al crear grupo: ' . $result->get_error_message(), 'error');
+                set_transient('imagina_updater_group_error', $result->get_error_message(), 30);
+            } else {
+                imagina_updater_server_log('Grupo creado exitosamente: ' . $name, 'info');
+                set_transient('imagina_updater_group_success', __('Grupo creado exitosamente', 'imagina-updater-server'), 30);
+            }
+
+            wp_redirect(admin_url('admin.php?page=imagina-updater-plugin-groups'));
+            exit;
+        }
+
+        // Actualizar grupo de plugins
+        if (isset($_POST['imagina_update_group']) && check_admin_referer('imagina_update_group')) {
+            $group_id = intval($_POST['group_id']);
+            $name = sanitize_text_field($_POST['group_name']);
+            $description = sanitize_textarea_field($_POST['group_description']);
+            $plugin_ids = isset($_POST['plugin_ids']) ? array_map('intval', $_POST['plugin_ids']) : array();
+
+            $result = Imagina_Updater_Server_Plugin_Groups::update_group($group_id, $name, $description, $plugin_ids);
+
+            if (is_wp_error($result)) {
+                imagina_updater_server_log('Error al actualizar grupo ID ' . $group_id . ': ' . $result->get_error_message(), 'error');
+                set_transient('imagina_updater_group_error', $result->get_error_message(), 30);
+            } else {
+                imagina_updater_server_log('Grupo actualizado exitosamente: ID ' . $group_id, 'info');
+                set_transient('imagina_updater_group_success', __('Grupo actualizado exitosamente', 'imagina-updater-server'), 30);
+            }
+
+            wp_redirect(admin_url('admin.php?page=imagina-updater-plugin-groups'));
+            exit;
+        }
+
+        // Eliminar grupo de plugins
+        if (isset($_GET['action']) && $_GET['action'] === 'delete_group' && isset($_GET['group_id']) && check_admin_referer('delete_group_' . $_GET['group_id'])) {
+            $group_id = intval($_GET['group_id']);
+            $result = Imagina_Updater_Server_Plugin_Groups::delete_group($group_id);
+
+            if (is_wp_error($result)) {
+                imagina_updater_server_log('Error al eliminar grupo ID ' . $group_id . ': ' . $result->get_error_message(), 'error');
+                set_transient('imagina_updater_group_error', $result->get_error_message(), 30);
+            } else {
+                imagina_updater_server_log('Grupo eliminado exitosamente: ID ' . $group_id, 'info');
+                set_transient('imagina_updater_group_success', __('Grupo eliminado', 'imagina-updater-server'), 30);
+            }
+
+            wp_redirect(admin_url('admin.php?page=imagina-updater-plugin-groups'));
+            exit;
+        }
+
+        // Mostrar mensajes de grupos
+        if ($group_success = get_transient('imagina_updater_group_success')) {
+            delete_transient('imagina_updater_group_success');
+            add_settings_error('imagina_updater', 'group_success', $group_success, 'success');
+        }
+        if ($group_error = get_transient('imagina_updater_group_error')) {
+            delete_transient('imagina_updater_group_error');
+            add_settings_error('imagina_updater', 'group_error', $group_error, 'error');
+        }
+
         // Ejecutar migración manualmente
         if (isset($_POST['imagina_run_migration']) && check_admin_referer('imagina_run_migration')) {
             Imagina_Updater_Server_Database::run_migrations();
@@ -423,6 +500,28 @@ class Imagina_Updater_Server_Admin {
         $plugins = Imagina_Updater_Server_Plugin_Manager::get_all_plugins();
 
         include IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'admin/views/plugins.php';
+    }
+
+    /**
+     * Renderizar página de grupos de plugins
+     */
+    public function render_plugin_groups_page() {
+        $action = isset($_GET['action']) ? $_GET['action'] : '';
+        $group_id = isset($_GET['group_id']) ? intval($_GET['group_id']) : 0;
+
+        // Si estamos editando o creando, cargar datos necesarios
+        $editing_group = null;
+        if ($action === 'edit' && $group_id > 0) {
+            $editing_group = Imagina_Updater_Server_Plugin_Groups::get_group($group_id);
+            if ($editing_group) {
+                $editing_group->plugin_ids = Imagina_Updater_Server_Plugin_Groups::get_group_plugin_ids($group_id);
+            }
+        }
+
+        $groups = Imagina_Updater_Server_Plugin_Groups::get_all_groups();
+        $all_plugins = Imagina_Updater_Server_Plugin_Manager::get_all_plugins();
+
+        include IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'admin/views/plugin-groups.php';
     }
 
     /**

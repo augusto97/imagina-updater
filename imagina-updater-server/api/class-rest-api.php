@@ -135,18 +135,18 @@ class Imagina_Updater_Server_REST_API {
      * Registrar rutas de la API
      */
     public function register_routes() {
-        // Listar todos los plugins disponibles
+        // Listar todos los plugins disponibles (SOLO activation token)
         register_rest_route(self::NAMESPACE, '/plugins', array(
             'methods' => WP_REST_Server::READABLE,
             'callback' => array($this, 'get_plugins'),
-            'permission_callback' => array($this, 'check_api_key')
+            'permission_callback' => array($this, 'check_activation_token_only')
         ));
 
-        // Obtener información de un plugin específico
+        // Obtener información de un plugin específico (SOLO activation token)
         register_rest_route(self::NAMESPACE, '/plugin/(?P<slug>[a-zA-Z0-9-_]+)', array(
             'methods' => WP_REST_Server::READABLE,
             'callback' => array($this, 'get_plugin_info'),
-            'permission_callback' => array($this, 'check_api_key'),
+            'permission_callback' => array($this, 'check_activation_token_only'),
             'args' => array(
                 'slug' => array(
                     'required' => true,
@@ -157,18 +157,18 @@ class Imagina_Updater_Server_REST_API {
             )
         ));
 
-        // Verificar actualizaciones para múltiples plugins
+        // Verificar actualizaciones para múltiples plugins (SOLO activation token)
         register_rest_route(self::NAMESPACE, '/check-updates', array(
             'methods' => WP_REST_Server::CREATABLE,
             'callback' => array($this, 'check_updates'),
-            'permission_callback' => array($this, 'check_api_key')
+            'permission_callback' => array($this, 'check_activation_token_only')
         ));
 
-        // Descargar plugin
+        // Descargar plugin (SOLO activation token)
         register_rest_route(self::NAMESPACE, '/download/(?P<slug>[a-zA-Z0-9-_]+)', array(
             'methods' => WP_REST_Server::READABLE,
             'callback' => array($this, 'download_plugin'),
-            'permission_callback' => array($this, 'check_api_key'),
+            'permission_callback' => array($this, 'check_activation_token_only'),
             'args' => array(
                 'slug' => array(
                     'required' => true,
@@ -179,11 +179,11 @@ class Imagina_Updater_Server_REST_API {
             )
         ));
 
-        // Validar API Key (para testing)
+        // Validar API Key (SOLO API key - antes de activar)
         register_rest_route(self::NAMESPACE, '/validate', array(
             'methods' => WP_REST_Server::READABLE,
             'callback' => array($this, 'validate_api_key'),
-            'permission_callback' => array($this, 'check_api_key')
+            'permission_callback' => array($this, 'check_api_key_only')
         ));
 
         // Activar sitio con API Key
@@ -209,11 +209,11 @@ class Imagina_Updater_Server_REST_API {
             )
         ));
 
-        // Desactivar sitio (admin)
+        // Desactivar sitio (admin - SOLO activation token)
         register_rest_route(self::NAMESPACE, '/deactivate/(?P<activation_id>\d+)', array(
             'methods' => WP_REST_Server::CREATABLE,
             'callback' => array($this, 'deactivate_site'),
-            'permission_callback' => array($this, 'check_api_key'),
+            'permission_callback' => array($this, 'check_activation_token_only'),
             'args' => array(
                 'activation_id' => array(
                     'required' => true,
@@ -227,33 +227,66 @@ class Imagina_Updater_Server_REST_API {
     }
 
     /**
-     * Verificar API Key o Activation Token en la petición
+     * Verificar SOLO Activation Token (para endpoints regulares)
+     * NO acepta API keys
      *
      * @param WP_REST_Request $request
      * @return bool|WP_Error
      */
-    public function check_api_key($request) {
+    public function check_activation_token_only($request) {
         $token = $this->get_api_key_from_request($request);
 
         if (empty($token)) {
             return new WP_Error(
                 'missing_credentials',
-                __('Se requiere API Key o token de activación', 'imagina-updater-server'),
+                __('Se requiere token de activación. Activa tu sitio primero.', 'imagina-updater-server'),
                 array('status' => 401)
             );
         }
 
-        // Determinar si es activation token o API key por el prefijo
+        // SOLO aceptar activation tokens
         if (strpos($token, 'iat_') === 0) {
-            // Es un activation token
             return $this->validate_activation_token($request, $token);
         } elseif (strpos($token, 'ius_') === 0) {
-            // Es un API key
+            return new WP_Error(
+                'api_key_not_allowed',
+                __('Debe usar token de activación, no API Key. Por favor activa tu sitio primero.', 'imagina-updater-server'),
+                array('status' => 403)
+            );
+        } else {
+            return new WP_Error(
+                'invalid_credentials',
+                __('Formato de token inválido', 'imagina-updater-server'),
+                array('status' => 401)
+            );
+        }
+    }
+
+    /**
+     * Verificar SOLO API Key (para endpoint /validate)
+     * NO acepta activation tokens
+     *
+     * @param WP_REST_Request $request
+     * @return bool|WP_Error
+     */
+    public function check_api_key_only($request) {
+        $token = $this->get_api_key_from_request($request);
+
+        if (empty($token)) {
+            return new WP_Error(
+                'missing_credentials',
+                __('Se requiere API Key', 'imagina-updater-server'),
+                array('status' => 401)
+            );
+        }
+
+        // SOLO aceptar API keys
+        if (strpos($token, 'ius_') === 0) {
             return $this->validate_api_key_auth($request, $token);
         } else {
             return new WP_Error(
                 'invalid_credentials',
-                __('Formato de credenciales inválido', 'imagina-updater-server'),
+                __('Debe usar API Key para validación', 'imagina-updater-server'),
                 array('status' => 401)
             );
         }

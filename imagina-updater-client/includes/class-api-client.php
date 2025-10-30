@@ -139,6 +139,7 @@ class Imagina_Updater_Client_API {
         }
 
         return $this->request('activate', 'POST', array(
+            'api_key' => $this->api_key,
             'site_domain' => $site_domain
         ));
     }

@@ -125,9 +125,10 @@ class Imagina_Updater_Client {
 
     /**
      * Verificar si el plugin está configurado
+     * Requiere activation_token (no solo API key)
      */
     public function is_configured() {
-        return !empty($this->config['server_url']) && !empty($this->config['api_key']);
+        return !empty($this->config['server_url']) && !empty($this->config['activation_token']);
     }
 
     /**
@@ -142,8 +143,8 @@ class Imagina_Updater_Client {
     }
 
     /**
-     * Obtener instancia del API client con el token correcto
-     * Usa activation_token si está disponible, sino usa api_key
+     * Obtener instancia del API client
+     * SOLO funciona con activation_token (requiere sitio activado)
      *
      * @return Imagina_Updater_Client_API|null
      */
@@ -152,12 +153,7 @@ class Imagina_Updater_Client {
             return null;
         }
 
-        // Preferir activation_token sobre api_key
-        $token = !empty($this->config['activation_token'])
-            ? $this->config['activation_token']
-            : $this->config['api_key'];
-
-        return new Imagina_Updater_Client_API($this->config['server_url'], $token);
+        return new Imagina_Updater_Client_API($this->config['server_url'], $this->config['activation_token']);
     }
 
     /**

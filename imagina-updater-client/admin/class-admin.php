@@ -105,7 +105,13 @@ class Imagina_Updater_Client_Admin {
         // Guardar configuración
         if (isset($_POST['imagina_save_config']) && check_admin_referer('imagina_save_config')) {
             $server_url = esc_url_raw($_POST['server_url']);
+
+            // Manejar API Key: si está vacío pero existe api_key_current, mantener el actual
             $api_key = sanitize_text_field($_POST['api_key']);
+            if (empty($api_key) && isset($_POST['api_key_current']) && !empty($_POST['api_key_current'])) {
+                $api_key = sanitize_text_field($_POST['api_key_current']);
+            }
+
             $enable_logging = isset($_POST['enable_logging']) ? true : false;
             $log_level = isset($_POST['log_level']) ? sanitize_text_field($_POST['log_level']) : 'INFO';
 

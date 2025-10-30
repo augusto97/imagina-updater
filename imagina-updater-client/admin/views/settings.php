@@ -46,16 +46,72 @@ if (!defined('ABSPATH')) {
                             <label for="api_key"><?php _e('API Key', 'imagina-updater-client'); ?></label>
                         </th>
                         <td>
-                            <input type="text"
-                                   name="api_key"
-                                   id="api_key"
-                                   class="regular-text"
-                                   value="<?php echo esc_attr($config['api_key']); ?>"
-                                   placeholder="ius_..."
-                                   required>
-                            <p class="description">
-                                <?php _e('API Key proporcionada por el administrador del servidor central.', 'imagina-updater-client'); ?>
-                            </p>
+                            <?php
+                            $has_api_key = !empty($config['api_key']);
+                            ?>
+
+                            <?php if ($has_api_key): ?>
+                                <!-- Campo con API Key oculto (solo lectura) -->
+                                <div id="api_key_hidden_wrapper">
+                                    <input type="password"
+                                           id="api_key_masked"
+                                           class="regular-text"
+                                           value="<?php echo str_repeat('•', 40); ?>"
+                                           disabled
+                                           style="background-color: #f0f0f1; cursor: not-allowed;">
+                                    <button type="button"
+                                            id="toggle_api_key_edit"
+                                            class="button"
+                                            style="margin-left: 5px;">
+                                        <span class="dashicons dashicons-edit"></span>
+                                        <?php _e('Cambiar API Key', 'imagina-updater-client'); ?>
+                                    </button>
+                                </div>
+
+                                <!-- Campo real oculto (se muestra al hacer clic en "Cambiar API Key") -->
+                                <div id="api_key_edit_wrapper" style="display: none;">
+                                    <input type="text"
+                                           name="api_key"
+                                           id="api_key"
+                                           class="regular-text"
+                                           value=""
+                                           placeholder="ius_...">
+                                    <button type="button"
+                                            id="cancel_api_key_edit"
+                                            class="button"
+                                            style="margin-left: 5px;">
+                                        <span class="dashicons dashicons-no"></span>
+                                        <?php _e('Cancelar', 'imagina-updater-client'); ?>
+                                    </button>
+                                    <p class="description">
+                                        <?php _e('Ingresa una nueva API Key. Deja el campo vacío para mantener la actual.', 'imagina-updater-client'); ?>
+                                    </p>
+                                </div>
+
+                                <!-- Campo oculto con el API Key actual para enviar si no se cambia -->
+                                <input type="hidden"
+                                       name="api_key_current"
+                                       value="<?php echo esc_attr($config['api_key']); ?>">
+                            <?php else: ?>
+                                <!-- Sin API Key guardado, mostrar campo normal -->
+                                <input type="text"
+                                       name="api_key"
+                                       id="api_key"
+                                       class="regular-text"
+                                       value=""
+                                       placeholder="ius_..."
+                                       required>
+                            <?php endif; ?>
+
+                            <?php if (!$has_api_key): ?>
+                                <p class="description">
+                                    <?php _e('API Key proporcionada por el administrador del servidor central.', 'imagina-updater-client'); ?>
+                                </p>
+                            <?php else: ?>
+                                <p class="description" id="api_key_description">
+                                    <?php _e('Tu API Key está guardada de forma segura.', 'imagina-updater-client'); ?>
+                                </p>
+                            <?php endif; ?>
                         </td>
                     </tr>
                 </table>

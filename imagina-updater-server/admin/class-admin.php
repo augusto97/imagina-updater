@@ -215,6 +215,30 @@ class Imagina_Updater_Server_Admin {
             add_settings_error('imagina_updater', 'toggle_success', __('Estado actualizado', 'imagina-updater-server'), 'success');
         }
 
+        // Regenerar API Key
+        if (isset($_GET['action']) && $_GET['action'] === 'regenerate_api_key' && isset($_GET['id']) && check_admin_referer('regenerate_api_key_' . $_GET['id'])) {
+            $id = intval($_GET['id']);
+            $result = Imagina_Updater_Server_API_Keys::regenerate_key($id);
+
+            if (is_wp_error($result)) {
+                imagina_updater_server_log('Error al regenerar API Key ID ' . $id . ': ' . $result->get_error_message(), 'error');
+                set_transient('imagina_updater_api_error', $result->get_error_message(), 30);
+            } else {
+                imagina_updater_server_log('API Key regenerada exitosamente para: ' . $result['site_name'] . ' (ID: ' . $id . ')', 'info');
+                set_transient('imagina_updater_api_regenerated', true, 30);
+                set_transient('imagina_regenerated_api_key', $result['api_key'], 60);
+            }
+
+            wp_redirect(admin_url('admin.php?page=imagina-updater-api-keys'));
+            exit;
+        }
+
+        // Mostrar mensaje de regeneración de API Key
+        if (get_transient('imagina_updater_api_regenerated')) {
+            delete_transient('imagina_updater_api_regenerated');
+            add_settings_error('imagina_updater', 'regenerate_success', __('API Key regenerada exitosamente', 'imagina-updater-server'), 'success');
+        }
+
         // Actualizar permisos de API Key
         if (isset($_POST['imagina_update_api_permissions']) && check_admin_referer('imagina_update_api_permissions')) {
             $api_key_id = intval($_POST['api_key_id']);

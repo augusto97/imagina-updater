@@ -231,6 +231,46 @@ class Imagina_Updater_Server_API_Keys {
     }
 
     /**
+     * Regenerar API Key manteniendo todos los demás datos
+     *
+     * @param int $id ID de la API Key a regenerar
+     * @return array|WP_Error Array con el nuevo API key o WP_Error en caso de error
+     */
+    public static function regenerate_key($id) {
+        global $wpdb;
+
+        // Validar que la API key existe
+        $existing_key = self::get_by_id($id);
+        if (!$existing_key) {
+            return new WP_Error('not_found', __('API Key no encontrada', 'imagina-updater-server'));
+        }
+
+        // Generar nueva API Key
+        $new_api_key = self::generate_key();
+        $table = $wpdb->prefix . 'imagina_updater_api_keys';
+
+        // Actualizar solo el campo api_key, manteniendo todo lo demás
+        $result = $wpdb->update(
+            $table,
+            array('api_key' => $new_api_key),
+            array('id' => $id),
+            array('%s'),
+            array('%d')
+        );
+
+        if ($result === false) {
+            return new WP_Error('db_error', __('Error al regenerar la API Key', 'imagina-updater-server'));
+        }
+
+        return array(
+            'id' => $id,
+            'api_key' => $new_api_key,
+            'site_name' => $existing_key->site_name,
+            'site_url' => $existing_key->site_url
+        );
+    }
+
+    /**
      * Eliminar una API Key
      *
      * @param int $id ID de la API Key

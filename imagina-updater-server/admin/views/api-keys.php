@@ -26,6 +26,23 @@ if (!defined('ABSPATH')) {
         </div>
     <?php endif; ?>
 
+    <?php
+    $regenerated_api_key = get_transient('imagina_regenerated_api_key');
+    if ($regenerated_api_key) {
+        delete_transient('imagina_regenerated_api_key');
+    ?>
+        <div class="notice notice-warning">
+            <h3><?php _e('¡API Key Regenerada Exitosamente!', 'imagina-updater-server'); ?></h3>
+            <p><?php _e('Se ha generado una nueva API Key. La anterior ya no es válida. Guarda esta clave en un lugar seguro y actualiza la configuración en el cliente.', 'imagina-updater-server'); ?></p>
+            <p class="imagina-api-key-display">
+                <code><?php echo esc_html($regenerated_api_key); ?></code>
+                <button type="button" class="button" onclick="navigator.clipboard.writeText('<?php echo esc_js($regenerated_api_key); ?>'); this.textContent='<?php esc_attr_e('¡Copiado!', 'imagina-updater-server'); ?>'">
+                    <?php _e('Copiar', 'imagina-updater-server'); ?>
+                </button>
+            </p>
+        </div>
+    <?php } ?>
+
     <div class="imagina-create-section">
         <h2><?php _e('Crear Nueva API Key', 'imagina-updater-server'); ?></h2>
 
@@ -233,14 +250,20 @@ if (!defined('ABSPATH')) {
                                 <?php _e('Permisos', 'imagina-updater-server'); ?>
                             </a>
                             <br>
-                            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-api-keys&action=toggle_api_key&id=' . $key->id), 'toggle_api_key_' . $key->id)); ?>" class="button button-small">
+                            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-api-keys&action=regenerate_api_key&id=' . $key->id), 'regenerate_api_key_' . $key->id)); ?>" class="button button-small" onclick="return confirm('<?php esc_attr_e('¿Regenerar esta API Key? El cliente deberá ingresar la nueva clave. Esta acción no puede deshacerse.', 'imagina-updater-server'); ?>');" style="margin-top: 2px;">
+                                <span class="dashicons dashicons-update"></span>
+                                <?php _e('Regenerar', 'imagina-updater-server'); ?>
+                            </a>
+                            <br>
+                            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-api-keys&action=toggle_api_key&id=' . $key->id), 'toggle_api_key_' . $key->id)); ?>" class="button button-small" style="margin-top: 2px;">
                                 <?php if ($key->is_active): ?>
                                     <?php _e('Desactivar', 'imagina-updater-server'); ?>
                                 <?php else: ?>
                                     <?php _e('Activar', 'imagina-updater-server'); ?>
                                 <?php endif; ?>
                             </a>
-                            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-api-keys&action=delete_api_key&id=' . $key->id), 'delete_api_key_' . $key->id)); ?>" class="button button-small button-link-delete" onclick="return confirm('<?php esc_attr_e('¿Estás seguro de eliminar esta API Key?', 'imagina-updater-server'); ?>');">
+                            <br>
+                            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-api-keys&action=delete_api_key&id=' . $key->id), 'delete_api_key_' . $key->id)); ?>" class="button button-small button-link-delete" onclick="return confirm('<?php esc_attr_e('¿Estás seguro de eliminar esta API Key?', 'imagina-updater-server'); ?>');" style="margin-top: 2px;">
                                 <span class="dashicons dashicons-trash"></span>
                                 <?php _e('Eliminar', 'imagina-updater-server'); ?>
                             </a>

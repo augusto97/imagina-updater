@@ -17,4 +17,20 @@ jQuery(document).ready(function($) {
 
         $('#select_all_plugins').prop('checked', total === checked);
     });
+
+    // API Key - Toggle edit mode
+    $('#toggle_api_key_edit').on('click', function() {
+        $('#api_key_hidden_wrapper').hide();
+        $('#api_key_edit_wrapper').show();
+        $('#api_key').focus();
+        $('#api_key_description').hide();
+    });
+
+    // API Key - Cancel edit mode
+    $('#cancel_api_key_edit').on('click', function() {
+        $('#api_key_edit_wrapper').hide();
+        $('#api_key_hidden_wrapper').show();
+        $('#api_key').val(''); // Limpiar el campo
+        $('#api_key_description').show();
+    });
 });

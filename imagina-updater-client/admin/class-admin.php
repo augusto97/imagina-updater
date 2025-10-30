@@ -45,19 +45,6 @@ class Imagina_Updater_Client_Admin {
             'imagina-updater-client',
             array($this, 'render_settings_page')
         );
-
-        // Submenú para logs (solo si está habilitado)
-        $config = imagina_updater_client()->get_config();
-        if (isset($config['enable_logging']) && $config['enable_logging']) {
-            add_submenu_page(
-                'options-general.php',
-                __('Imagina Updater - Logs', 'imagina-updater-client'),
-                __('Imagina Updater Logs', 'imagina-updater-client'),
-                'manage_options',
-                'imagina-updater-client-logs',
-                array($this, 'render_logs_page')
-            );
-        }
     }
 
     /**
@@ -175,15 +162,12 @@ class Imagina_Updater_Client_Admin {
                         __('Error al instalar plugin: %s', 'imagina-updater-client'),
                         $result->get_error_message()
                     ), 'error');
-                    imagina_updater_log('Error instalando plugin ' . $plugin_slug . ': ' . $result->get_error_message(), 'error');
                 } else {
                     // Guardar mensaje en transient para mostrarlo después del redirect
                     set_transient('imagina_updater_install_success', array(
                         'name' => $result['name'],
                         'version' => $result['version']
                     ), 30);
-
-                    imagina_updater_log('Plugin instalado exitosamente: ' . $plugin_slug, 'info');
 
                     // Redirect para limpiar la URL
                     wp_redirect(admin_url('options-general.php?page=imagina-updater-client'));
@@ -203,8 +187,6 @@ class Imagina_Updater_Client_Admin {
             imagina_updater_client()->update_config(array(
                 'enabled_plugins' => array_values(array_unique($enabled_plugins))
             ));
-
-            imagina_updater_log('Plugins actualizados: ' . count($enabled_plugins) . ' plugins habilitados', 'info');
 
             add_settings_error('imagina_updater_client', 'plugins_saved', __('Plugins actualizados exitosamente', 'imagina-updater-client'), 'success');
 
@@ -272,8 +254,6 @@ class Imagina_Updater_Client_Admin {
             delete_transient('imagina_updater_cached_updates');
             delete_site_transient('update_plugins');
 
-            imagina_updater_log('Cachés limpiados, refrescando lista de plugins desde servidor', 'info');
-
             // Consultar servidor directamente
             $api_client = new Imagina_Updater_Client_API($config['server_url'], $config['api_key']);
             $result = $api_client->get_plugins();
@@ -283,7 +263,6 @@ class Imagina_Updater_Client_Admin {
                     __('Error al refrescar: %s', 'imagina-updater-client'),
                     $result->get_error_message()
                 ), 'error');
-                imagina_updater_log('Error al refrescar plugins: ' . $result->get_error_message(), 'error');
             } else {
                 // Guardar en caché
                 set_transient($cache_key, $result, 24 * HOUR_IN_SECONDS);
@@ -296,42 +275,11 @@ class Imagina_Updater_Client_Admin {
                     $count
                 ), 'success');
 
-                imagina_updater_log('Lista de plugins refrescada: ' . $count . ' plugins disponibles', 'info');
-
                 // Redirect para recargar página con nuevo caché
                 wp_redirect(admin_url('options-general.php?page=imagina-updater-client'));
                 exit;
             }
         }
-
-        // Limpiar logs
-        if (isset($_POST['imagina_clear_logs']) && check_admin_referer('imagina_clear_logs')) {
-            Imagina_Updater_Client_Logger::get_instance()->clear_logs();
-            add_settings_error('imagina_updater_client', 'logs_cleared', __('Logs eliminados exitosamente', 'imagina-updater-client'), 'success');
-        }
-
-        // Descargar logs
-        if (isset($_GET['action']) && $_GET['action'] === 'download_log' && check_admin_referer('download_log', 'nonce')) {
-            $this->download_log();
-        }
-    }
-
-    /**
-     * Descargar archivo de log
-     */
-    private function download_log() {
-        $logger = Imagina_Updater_Client_Logger::get_instance();
-        $log_file = $logger->get_log_file_path();
-
-        if (!file_exists($log_file)) {
-            wp_die(__('Archivo de log no encontrado', 'imagina-updater-client'));
-        }
-
-        header('Content-Type: text/plain');
-        header('Content-Disposition: attachment; filename="imagina-updater-' . date('Y-m-d-His') . '.log"');
-        header('Content-Length: ' . filesize($log_file));
-        readfile($log_file);
-        exit;
     }
 
     /**
@@ -366,8 +314,6 @@ class Imagina_Updater_Client_Admin {
         }
 
         // Descargar el plugin
-        imagina_updater_log('Descargando plugin desde servidor: ' . $plugin_slug, 'info');
-
         $download_url = trailingslashit($config['server_url']) . 'wp-json/imagina-updater/v1/download/' . $plugin_slug;
 
         // Usar WordPress HTTP API para descargar
@@ -393,8 +339,6 @@ class Imagina_Updater_Client_Admin {
         // Guardar archivo temporal
         $temp_file = wp_tempnam($plugin_slug . '.zip');
         file_put_contents($temp_file, wp_remote_retrieve_body($response));
-
-        imagina_updater_log('Plugin descargado, instalando...', 'info');
 
         // Instalar usando Plugin_Upgrader
         require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
@@ -465,7 +409,6 @@ class Imagina_Updater_Client_Admin {
                     imagina_updater_client()->update_config(array(
                         'enabled_plugins' => array_values($cleaned_plugins)
                     ));
-                    imagina_updater_log('Plugins removidos de enabled_plugins (ya no disponibles en servidor): ' . implode(', ', $removed), 'info');
 
                     // Recargar configuración para reflejar los cambios
                     $config = imagina_updater_client()->get_config();
@@ -483,16 +426,4 @@ class Imagina_Updater_Client_Admin {
         include IMAGINA_UPDATER_CLIENT_PLUGIN_DIR . 'admin/views/settings.php';
     }
 
-    /**
-     * Renderizar página de logs
-     */
-    public function render_logs_page() {
-        $logger = Imagina_Updater_Client_Logger::get_instance();
-        $log_content = $logger->get_log_content(1000); // Últimas 1000 líneas
-        $log_size = $logger->get_log_size();
-        $log_files = $logger->get_log_files();
-        $is_enabled = $logger->is_enabled();
-
-        include IMAGINA_UPDATER_CLIENT_PLUGIN_DIR . 'admin/views/logs.php';
-    }
 }

@@ -24,9 +24,10 @@ class Imagina_Updater_Server_API_Keys {
      * @param string $access_type Tipo de acceso: 'all', 'specific', 'groups'
      * @param array $allowed_plugins IDs de plugins permitidos (si access_type es 'specific')
      * @param array $allowed_groups IDs de grupos permitidos (si access_type es 'groups')
+     * @param int $max_activations Límite de activaciones (0 = ilimitado)
      * @return array|WP_Error Array con la API key o WP_Error en caso de error
      */
-    public static function create($site_name, $site_url, $access_type = 'all', $allowed_plugins = array(), $allowed_groups = array()) {
+    public static function create($site_name, $site_url, $access_type = 'all', $allowed_plugins = array(), $allowed_groups = array(), $max_activations = 1) {
         global $wpdb;
 
         // Validar datos
@@ -68,9 +69,10 @@ class Imagina_Updater_Server_API_Keys {
                 'access_type' => $access_type,
                 'allowed_plugins' => $allowed_plugins_json,
                 'allowed_groups' => $allowed_groups_json,
+                'max_activations' => max(0, intval($max_activations)),
                 'created_at' => current_time('mysql')
             ),
-            array('%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s')
+            array('%s', '%s', '%s', '%d', '%s', '%s', '%s', '%d', '%s')
         );
 
         if ($result === false) {

@@ -113,6 +113,8 @@ class Imagina_Updater_Client_Admin {
             $change_api_key = isset($_POST['change_api_key']) && $_POST['change_api_key'] === '1';
 
             // Determinar qué API Key usar
+            $activation_token = isset($current_config['activation_token']) ? $current_config['activation_token'] : '';
+
             if ($change_api_key) {
                 // Usuario quiere cambiar el API Key
                 $api_key = isset($_POST['api_key']) ? sanitize_text_field($_POST['api_key']) : '';
@@ -122,7 +124,7 @@ class Imagina_Updater_Client_Admin {
                     return;
                 }
 
-                // Validar la nueva API Key
+                // Validar la nueva API Key y activar el sitio
                 $api_client = new Imagina_Updater_Client_API($server_url, $api_key);
                 $validation = $api_client->validate();
 
@@ -133,6 +135,25 @@ class Imagina_Updater_Client_Admin {
                     ), 'error');
                     return;
                 }
+
+                // Activar sitio para obtener activation token
+                $activation_result = $api_client->activate_site();
+
+                if (is_wp_error($activation_result)) {
+                    add_settings_error('imagina_updater_client', 'activation_error', sprintf(
+                        __('Error al activar el sitio: %s', 'imagina-updater-client'),
+                        $activation_result->get_error_message()
+                    ), 'error');
+                    return;
+                }
+
+                // Guardar activation token
+                $activation_token = $activation_result['activation_token'];
+
+                imagina_updater_client_log(sprintf(
+                    'Sitio activado exitosamente. Token: %s',
+                    substr($activation_token, 0, 10) . '...'
+                ), 'info');
             } else {
                 // Mantener el API Key actual (sin validar nuevamente)
                 $api_key = isset($current_config['api_key']) ? $current_config['api_key'] : '';
@@ -153,6 +174,7 @@ class Imagina_Updater_Client_Admin {
             imagina_updater_client()->update_config(array(
                 'server_url' => $server_url,
                 'api_key' => $api_key,
+                'activation_token' => $activation_token,
                 'enable_logging' => $enable_logging,
                 'log_level' => $log_level
             ));
@@ -248,9 +270,13 @@ class Imagina_Updater_Client_Admin {
 
         // Test de conexión
         if (isset($_POST['imagina_test_connection']) && check_admin_referer('imagina_test_connection')) {
-            $config = imagina_updater_client()->get_config();
+            $api_client = imagina_updater_client()->get_api_client();
 
-            $api_client = new Imagina_Updater_Client_API($config['server_url'], $config['api_key']);
+            if (!$api_client) {
+                add_settings_error('imagina_updater_client', 'test_failed', __('Plugin no configurado', 'imagina-updater-client'), 'error');
+                return;
+            }
+
             $validation = $api_client->validate();
 
             if (is_wp_error($validation)) {
@@ -277,7 +303,13 @@ class Imagina_Updater_Client_Admin {
             delete_site_transient('update_plugins');
 
             // Consultar servidor directamente
-            $api_client = new Imagina_Updater_Client_API($config['server_url'], $config['api_key']);
+            $api_client = imagina_updater_client()->get_api_client();
+
+            if (!$api_client) {
+                add_settings_error('imagina_updater_client', 'refresh_failed', __('Plugin no configurado', 'imagina-updater-client'), 'error');
+                return;
+            }
+
             $result = $api_client->get_plugins();
 
             if (is_wp_error($result)) {
@@ -315,7 +347,12 @@ class Imagina_Updater_Client_Admin {
         }
 
         // Obtener información del plugin desde el servidor
-        $api_client = new Imagina_Updater_Client_API($config['server_url'], $config['api_key']);
+        $api_client = imagina_updater_client()->get_api_client();
+
+        if (!$api_client) {
+            return new WP_Error('not_configured', __('El plugin no está configurado', 'imagina-updater-client'));
+        }
+
         $plugins = $api_client->get_plugins();
 
         if (is_wp_error($plugins)) {
@@ -407,15 +444,20 @@ class Imagina_Updater_Client_Admin {
 
             if ($server_plugins === false) {
                 // No hay caché, consultar servidor
-                $api_client = new Imagina_Updater_Client_API($config['server_url'], $config['api_key']);
-                $result = $api_client->get_plugins();
+                $api_client = imagina_updater_client()->get_api_client();
 
-                if (!is_wp_error($result)) {
-                    $server_plugins = $result;
-                    // Guardar en caché por 24 horas
-                    set_transient($cache_key, $server_plugins, 24 * HOUR_IN_SECONDS);
-                } else {
+                if (!$api_client) {
                     $server_plugins = array();
+                } else {
+                    $result = $api_client->get_plugins();
+
+                    if (!is_wp_error($result)) {
+                        $server_plugins = $result;
+                        // Guardar en caché por 24 horas
+                        set_transient($cache_key, $server_plugins, 24 * HOUR_IN_SECONDS);
+                    } else {
+                        $server_plugins = array();
+                    }
                 }
             }
 

@@ -40,7 +40,13 @@ class Imagina_Updater_Server_REST_API {
      * Obtener dominio del cliente desde headers HTTP
      */
     private function get_client_domain($request) {
-        // Intentar obtener desde HTTP_REFERER
+        // Prioridad 1: Header personalizado enviado por el cliente
+        $client_domain = $request->get_header('X-Client-Domain');
+        if (!empty($client_domain)) {
+            return $client_domain;
+        }
+
+        // Prioridad 2: HTTP_REFERER (para peticiones desde navegador)
         $referer = $request->get_header('Referer');
         if (!empty($referer)) {
             $parsed = parse_url($referer);
@@ -49,7 +55,7 @@ class Imagina_Updater_Server_REST_API {
             }
         }
 
-        // Intentar obtener desde HTTP_ORIGIN
+        // Prioridad 3: HTTP_ORIGIN (para peticiones AJAX)
         $origin = $request->get_header('Origin');
         if (!empty($origin)) {
             return $origin;
@@ -292,7 +298,7 @@ class Imagina_Updater_Server_REST_API {
                 imagina_updater_server_log('No se pudo determinar el dominio del cliente para API key: ' . substr($api_key, 0, 10) . '...', 'warning');
                 return new WP_Error(
                     'domain_verification_failed',
-                    __('No se pudo verificar el dominio del cliente. Asegúrate de que las peticiones incluyan headers Origin o Referer.', 'imagina-updater-server'),
+                    __('No se pudo verificar el dominio. Contacta al administrador.', 'imagina-updater-server'),
                     array('status' => 403)
                 );
             }
@@ -301,11 +307,7 @@ class Imagina_Updater_Server_REST_API {
                 imagina_updater_server_log('Dominio no coincide. Cliente: ' . $client_domain . ' | Registrado: ' . $key_data->site_url . ' | API key: ' . substr($api_key, 0, 10) . '...', 'warning');
                 return new WP_Error(
                     'domain_mismatch',
-                    sprintf(
-                        __('Esta API Key está registrada para %s y no puede ser usada desde %s. Contacta al administrador si cambiaste de dominio.', 'imagina-updater-server'),
-                        $key_data->site_url,
-                        $client_domain
-                    ),
+                    __('Esta API Key no está autorizada para este sitio. Contacta al administrador si cambiaste de dominio.', 'imagina-updater-server'),
                     array('status' => 403)
                 );
             }

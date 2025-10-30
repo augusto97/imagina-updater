@@ -156,36 +156,55 @@ class Imagina_Updater_Client_Admin {
             delete_transient('imagina_updater_server_plugins_' . md5($server_url));
         }
 
+        // Instalar plugin desde servidor (GET con nonce en URL)
+        if (isset($_GET['action']) && $_GET['action'] === 'install_plugin' && isset($_GET['plugin_slug'])) {
+            $plugin_slug = sanitize_text_field($_GET['plugin_slug']);
+
+            // Verificar nonce específico del plugin
+            if (!wp_verify_nonce($_GET['_wpnonce'], 'imagina_install_plugin_' . $plugin_slug)) {
+                wp_die(__('Error de seguridad: Nonce inválido', 'imagina-updater-client'));
+            }
+
+            if (empty($plugin_slug)) {
+                add_settings_error('imagina_updater_client', 'install_error', __('Slug de plugin no válido', 'imagina-updater-client'), 'error');
+            } else {
+                $result = $this->install_plugin_from_server($plugin_slug);
+
+                if (is_wp_error($result)) {
+                    add_settings_error('imagina_updater_client', 'install_error', sprintf(
+                        __('Error al instalar plugin: %s', 'imagina-updater-client'),
+                        $result->get_error_message()
+                    ), 'error');
+                    imagina_updater_log('Error instalando plugin ' . $plugin_slug . ': ' . $result->get_error_message(), 'error');
+                } else {
+                    // Guardar mensaje en transient para mostrarlo después del redirect
+                    set_transient('imagina_updater_install_success', array(
+                        'name' => $result['name'],
+                        'version' => $result['version']
+                    ), 30);
+
+                    imagina_updater_log('Plugin instalado exitosamente: ' . $plugin_slug, 'info');
+
+                    // Redirect para limpiar la URL
+                    wp_redirect(admin_url('options-general.php?page=imagina-updater-client'));
+                    exit;
+                }
+            }
+        }
+
         // Guardar plugins habilitados
         if (isset($_POST['imagina_save_plugins']) && check_admin_referer('imagina_save_plugins')) {
-            // Obtener selección actual del formulario
-            $selected_in_form = isset($_POST['enabled_plugins']) && is_array($_POST['enabled_plugins'])
+            // Obtener selección del formulario
+            $enabled_plugins = isset($_POST['enabled_plugins']) && is_array($_POST['enabled_plugins'])
                 ? array_map('sanitize_text_field', $_POST['enabled_plugins'])
                 : array();
 
-            // Obtener todos los plugins que están visibles en la página actual
-            // (necesitamos saber cuáles están en el formulario para fusionar correctamente)
-            $plugins_in_current_page = isset($_POST['plugins_in_page']) && is_array($_POST['plugins_in_page'])
-                ? array_map('sanitize_text_field', $_POST['plugins_in_page'])
-                : array();
-
-            // Obtener configuración actual
-            $current_config = imagina_updater_client()->get_config();
-            $currently_enabled = isset($current_config['enabled_plugins']) ? $current_config['enabled_plugins'] : array();
-
-            // Fusionar selecciones:
-            // 1. Quitar de la lista actual todos los plugins que están en la página actual (para actualizarlos)
-            $enabled_from_other_pages = array_diff($currently_enabled, $plugins_in_current_page);
-
-            // 2. Agregar los que se seleccionaron en esta página
-            $final_enabled = array_unique(array_merge($enabled_from_other_pages, $selected_in_form));
-
-            // Guardar configuración fusionada
+            // Guardar configuración
             imagina_updater_client()->update_config(array(
-                'enabled_plugins' => array_values($final_enabled) // array_values para reindexar
+                'enabled_plugins' => array_values(array_unique($enabled_plugins))
             ));
 
-            imagina_updater_log('Plugins actualizados: ' . count($final_enabled) . ' plugins habilitados en total (página actual: ' . count($selected_in_form) . ' seleccionados)', 'info');
+            imagina_updater_log('Plugins actualizados: ' . count($enabled_plugins) . ' plugins habilitados', 'info');
 
             add_settings_error('imagina_updater_client', 'plugins_saved', __('Plugins actualizados exitosamente', 'imagina-updater-client'), 'success');
 
@@ -210,37 +229,6 @@ class Imagina_Updater_Client_Admin {
             ));
 
             add_settings_error('imagina_updater_client', 'display_mode_saved', __('Modo de visualización actualizado', 'imagina-updater-client'), 'success');
-        }
-
-        // Instalar plugin desde servidor Imagina
-        if (isset($_POST['imagina_install_plugin']) && check_admin_referer('imagina_install_plugin')) {
-            $plugin_slug = isset($_POST['plugin_slug']) ? sanitize_text_field($_POST['plugin_slug']) : '';
-
-            if (empty($plugin_slug)) {
-                add_settings_error('imagina_updater_client', 'install_error', __('Slug de plugin no válido', 'imagina-updater-client'), 'error');
-            } else {
-                $result = $this->install_plugin_from_server($plugin_slug);
-
-                if (is_wp_error($result)) {
-                    add_settings_error('imagina_updater_client', 'install_error', sprintf(
-                        __('Error al instalar plugin: %s', 'imagina-updater-client'),
-                        $result->get_error_message()
-                    ), 'error');
-                    imagina_updater_log('Error instalando plugin ' . $plugin_slug . ': ' . $result->get_error_message(), 'error');
-                } else {
-                    // Guardar mensaje en transient para mostrarlo después del redirect
-                    set_transient('imagina_updater_install_success', array(
-                        'name' => $result['name'],
-                        'version' => $result['version']
-                    ), 30);
-
-                    imagina_updater_log('Plugin instalado exitosamente: ' . $plugin_slug, 'info');
-
-                    // Redirect para evitar reenvío de formulario
-                    wp_redirect(admin_url('options-general.php?page=imagina-updater-client'));
-                    exit;
-                }
-            }
         }
 
         // Mostrar mensaje de instalación exitosa (después del redirect)

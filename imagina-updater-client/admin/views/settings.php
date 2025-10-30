@@ -282,16 +282,6 @@ if (!defined('ABSPATH')) {
                 <form method="post">
                     <?php wp_nonce_field('imagina_save_plugins'); ?>
 
-                    <?php
-                    // Campos ocultos para trackear qué plugins están en esta página
-                    // Esto permite fusionar selecciones entre páginas paginadas
-                    foreach ($plugins_to_show as $plugin) {
-                        if (isset($installed_plugins[$plugin['slug']])) {
-                            echo '<input type="hidden" name="plugins_in_page[]" value="' . esc_attr($plugin['slug']) . '">';
-                        }
-                    }
-                    ?>
-
                     <?php if (empty($server_plugins)): ?>
                         <div class="imagina-notice-info">
                             <span class="dashicons dashicons-info"></span>
@@ -379,14 +369,13 @@ if (!defined('ABSPATH')) {
                                                     <?php _e('No instalado', 'imagina-updater-client'); ?>
                                                 </span>
                                                 <br>
-                                                <form method="post" style="display: inline; margin-top: 5px;">
-                                                    <?php wp_nonce_field('imagina_install_plugin'); ?>
-                                                    <input type="hidden" name="plugin_slug" value="<?php echo esc_attr($plugin['slug']); ?>">
-                                                    <button type="submit" name="imagina_install_plugin" class="button button-small">
-                                                        <span class="dashicons dashicons-download" style="font-size: 14px; margin-top: 3px;"></span>
-                                                        <?php _e('Instalar Plugin', 'imagina-updater-client'); ?>
-                                                    </button>
-                                                </form>
+                                                <a href="<?php echo wp_nonce_url(
+                                                    admin_url('options-general.php?page=imagina-updater-client&action=install_plugin&plugin_slug=' . urlencode($plugin['slug'])),
+                                                    'imagina_install_plugin_' . $plugin['slug']
+                                                ); ?>" class="button button-small" style="margin-top: 5px;">
+                                                    <span class="dashicons dashicons-download" style="font-size: 14px; margin-top: 3px;"></span>
+                                                    <?php _e('Instalar Plugin', 'imagina-updater-client'); ?>
+                                                </a>
                                             <?php elseif ($needs_update): ?>
                                                 <span class="imagina-badge imagina-badge-warning">
                                                     <?php _e('Actualización disponible', 'imagina-updater-client'); ?>

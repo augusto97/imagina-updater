@@ -46,16 +46,57 @@ if (!defined('ABSPATH')) {
                             <label for="api_key"><?php _e('API Key', 'imagina-updater-client'); ?></label>
                         </th>
                         <td>
-                            <input type="text"
-                                   name="api_key"
-                                   id="api_key"
-                                   class="regular-text"
-                                   value="<?php echo esc_attr($config['api_key']); ?>"
-                                   placeholder="ius_..."
-                                   required>
-                            <p class="description">
-                                <?php _e('API Key proporcionada por el administrador del servidor central.', 'imagina-updater-client'); ?>
-                            </p>
+                            <?php
+                            $has_api_key = !empty($config['api_key']);
+                            ?>
+
+                            <?php if ($has_api_key): ?>
+                                <!-- Mostrar que hay API Key configurado -->
+                                <div id="api_key_status_wrapper">
+                                    <input type="password"
+                                           class="regular-text"
+                                           value="<?php echo str_repeat('•', 40); ?>"
+                                           disabled
+                                           style="background-color: #f0f0f1; cursor: not-allowed;">
+                                    <p class="description">
+                                        <?php _e('Tu API Key está guardada de forma segura. Marca la casilla de abajo si deseas cambiarla.', 'imagina-updater-client'); ?>
+                                    </p>
+                                </div>
+
+                                <!-- Checkbox para cambiar API Key -->
+                                <label style="margin-top: 10px; display: block;">
+                                    <input type="checkbox"
+                                           name="change_api_key"
+                                           id="change_api_key"
+                                           value="1">
+                                    <strong><?php _e('Cambiar API Key', 'imagina-updater-client'); ?></strong>
+                                </label>
+
+                                <!-- Campo para nueva API Key (oculto por defecto) -->
+                                <div id="new_api_key_wrapper" style="display: none; margin-top: 10px;">
+                                    <input type="text"
+                                           name="api_key"
+                                           id="api_key"
+                                           class="regular-text"
+                                           value=""
+                                           placeholder="ius_...">
+                                    <p class="description">
+                                        <?php _e('Ingresa la nueva API Key proporcionada por el administrador.', 'imagina-updater-client'); ?>
+                                    </p>
+                                </div>
+                            <?php else: ?>
+                                <!-- Sin API Key guardado, mostrar campo normal -->
+                                <input type="text"
+                                       name="api_key"
+                                       id="api_key"
+                                       class="regular-text"
+                                       value=""
+                                       placeholder="ius_..."
+                                       required>
+                                <p class="description">
+                                    <?php _e('API Key proporcionada por el administrador del servidor central.', 'imagina-updater-client'); ?>
+                                </p>
+                            <?php endif; ?>
                         </td>
                     </tr>
                 </table>

@@ -26,6 +26,23 @@ if (!defined('ABSPATH')) {
         </div>
     <?php endif; ?>
 
+    <?php
+    $regenerated_api_key = get_transient('imagina_regenerated_api_key');
+    if ($regenerated_api_key) {
+        delete_transient('imagina_regenerated_api_key');
+    ?>
+        <div class="notice notice-warning">
+            <h3><?php _e('¡API Key Regenerada Exitosamente!', 'imagina-updater-server'); ?></h3>
+            <p><?php _e('Se ha generado una nueva API Key. La anterior ya no es válida. Guarda esta clave en un lugar seguro y actualiza la configuración en el cliente.', 'imagina-updater-server'); ?></p>
+            <p class="imagina-api-key-display">
+                <code><?php echo esc_html($regenerated_api_key); ?></code>
+                <button type="button" class="button" onclick="navigator.clipboard.writeText('<?php echo esc_js($regenerated_api_key); ?>'); this.textContent='<?php esc_attr_e('¡Copiado!', 'imagina-updater-server'); ?>'">
+                    <?php _e('Copiar', 'imagina-updater-server'); ?>
+                </button>
+            </p>
+        </div>
+    <?php } ?>
+
     <div class="imagina-create-section">
         <h2><?php _e('Crear Nueva API Key', 'imagina-updater-server'); ?></h2>
 
@@ -233,14 +250,25 @@ if (!defined('ABSPATH')) {
                                 <?php _e('Permisos', 'imagina-updater-server'); ?>
                             </a>
                             <br>
-                            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-api-keys&action=toggle_api_key&id=' . $key->id), 'toggle_api_key_' . $key->id)); ?>" class="button button-small">
+                            <a href="#" class="button button-small edit-site-info-btn" data-key-id="<?php echo esc_attr($key->id); ?>" style="margin-top: 2px;">
+                                <span class="dashicons dashicons-edit"></span>
+                                <?php _e('Editar Dominio', 'imagina-updater-server'); ?>
+                            </a>
+                            <br>
+                            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-api-keys&action=regenerate_api_key&id=' . $key->id), 'regenerate_api_key_' . $key->id)); ?>" class="button button-small" onclick="return confirm('<?php esc_attr_e('¿Regenerar esta API Key? El cliente deberá ingresar la nueva clave. Esta acción no puede deshacerse.', 'imagina-updater-server'); ?>');" style="margin-top: 2px;">
+                                <span class="dashicons dashicons-update"></span>
+                                <?php _e('Regenerar Key', 'imagina-updater-server'); ?>
+                            </a>
+                            <br>
+                            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-api-keys&action=toggle_api_key&id=' . $key->id), 'toggle_api_key_' . $key->id)); ?>" class="button button-small" style="margin-top: 2px;">
                                 <?php if ($key->is_active): ?>
                                     <?php _e('Desactivar', 'imagina-updater-server'); ?>
                                 <?php else: ?>
                                     <?php _e('Activar', 'imagina-updater-server'); ?>
                                 <?php endif; ?>
                             </a>
-                            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-api-keys&action=delete_api_key&id=' . $key->id), 'delete_api_key_' . $key->id)); ?>" class="button button-small button-link-delete" onclick="return confirm('<?php esc_attr_e('¿Estás seguro de eliminar esta API Key?', 'imagina-updater-server'); ?>');">
+                            <br>
+                            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-api-keys&action=delete_api_key&id=' . $key->id), 'delete_api_key_' . $key->id)); ?>" class="button button-small button-link-delete" onclick="return confirm('<?php esc_attr_e('¿Estás seguro de eliminar esta API Key?', 'imagina-updater-server'); ?>');" style="margin-top: 2px;">
                                 <span class="dashicons dashicons-trash"></span>
                                 <?php _e('Eliminar', 'imagina-updater-server'); ?>
                             </a>
@@ -321,6 +349,59 @@ if (!defined('ABSPATH')) {
                             </form>
                         </td>
                     </tr>
+                    <!-- Row expandable para editar información del sitio -->
+                    <tr id="site-info-row-<?php echo esc_attr($key->id); ?>" class="site-info-edit-row" style="display: none;">
+                        <td colspan="8" style="background: #f9f9f9; padding: 20px;">
+                            <h3><?php _e('Editar Información del Sitio', 'imagina-updater-server'); ?> - <?php echo esc_html($key->site_name); ?></h3>
+                            <form method="post">
+                                <?php wp_nonce_field('imagina_update_site_info'); ?>
+                                <input type="hidden" name="api_key_id" value="<?php echo esc_attr($key->id); ?>">
+
+                                <table class="form-table">
+                                    <tr>
+                                        <th scope="row">
+                                            <label for="site_name_<?php echo esc_attr($key->id); ?>"><?php _e('Nombre del Sitio', 'imagina-updater-server'); ?></label>
+                                        </th>
+                                        <td>
+                                            <input type="text"
+                                                   name="site_name"
+                                                   id="site_name_<?php echo esc_attr($key->id); ?>"
+                                                   class="regular-text"
+                                                   value="<?php echo esc_attr($key->site_name); ?>"
+                                                   required>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th scope="row">
+                                            <label for="site_url_<?php echo esc_attr($key->id); ?>"><?php _e('URL del Sitio', 'imagina-updater-server'); ?></label>
+                                        </th>
+                                        <td>
+                                            <input type="url"
+                                                   name="site_url"
+                                                   id="site_url_<?php echo esc_attr($key->id); ?>"
+                                                   class="regular-text"
+                                                   value="<?php echo esc_attr($key->site_url); ?>"
+                                                   placeholder="https://ejemplo.com"
+                                                   required>
+                                            <p class="description">
+                                                <?php _e('Actualiza el dominio si el cliente cambió de URL o instaló el plugin en otro sitio.', 'imagina-updater-server'); ?>
+                                            </p>
+                                        </td>
+                                    </tr>
+                                </table>
+
+                                <p class="submit">
+                                    <button type="submit" name="imagina_update_site_info" class="button button-primary">
+                                        <span class="dashicons dashicons-yes"></span>
+                                        <?php _e('Guardar Cambios', 'imagina-updater-server'); ?>
+                                    </button>
+                                    <button type="button" class="button cancel-site-info-btn" data-key-id="<?php echo esc_attr($key->id); ?>">
+                                        <?php _e('Cancelar', 'imagina-updater-server'); ?>
+                                    </button>
+                                </p>
+                            </form>
+                        </td>
+                    </tr>
                 <?php endforeach; ?>
             </tbody>
         </table>
@@ -331,7 +412,7 @@ if (!defined('ABSPATH')) {
             $('.edit-permissions-btn').on('click', function(e) {
                 e.preventDefault();
                 var keyId = $(this).data('key-id');
-                $('.permissions-edit-row').not('#permissions-row-' + keyId).hide();
+                $('.permissions-edit-row, .site-info-edit-row').hide();
                 $('#permissions-row-' + keyId).toggle();
             });
 
@@ -339,6 +420,20 @@ if (!defined('ABSPATH')) {
                 e.preventDefault();
                 var keyId = $(this).data('key-id');
                 $('#permissions-row-' + keyId).hide();
+            });
+
+            // Toggle inline edit form for site info
+            $('.edit-site-info-btn').on('click', function(e) {
+                e.preventDefault();
+                var keyId = $(this).data('key-id');
+                $('.permissions-edit-row, .site-info-edit-row').hide();
+                $('#site-info-row-' + keyId).toggle();
+            });
+
+            $('.cancel-site-info-btn').on('click', function(e) {
+                e.preventDefault();
+                var keyId = $(this).data('key-id');
+                $('#site-info-row-' + keyId).hide();
             });
 
             // Handle access type change in edit forms

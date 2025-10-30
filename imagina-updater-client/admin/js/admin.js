@@ -17,4 +17,15 @@ jQuery(document).ready(function($) {
 
         $('#select_all_plugins').prop('checked', total === checked);
     });
+
+    // API Key - Show/hide new API key field
+    $('#change_api_key').on('change', function() {
+        if ($(this).is(':checked')) {
+            $('#new_api_key_wrapper').slideDown();
+            $('#api_key').focus();
+        } else {
+            $('#new_api_key_wrapper').slideUp();
+            $('#api_key').val(''); // Limpiar el campo
+        }
+    });
 });

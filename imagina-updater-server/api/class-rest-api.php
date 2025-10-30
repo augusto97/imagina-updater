@@ -204,15 +204,7 @@ class Imagina_Updater_Server_REST_API {
             );
         }
 
-        // Verificar rate limiting
-        if (!$this->check_rate_limit($api_key)) {
-            return new WP_Error(
-                'rate_limit_exceeded',
-                __('Límite de peticiones excedido. Máximo 60 peticiones por minuto.', 'imagina-updater-server'),
-                array('status' => 429)
-            );
-        }
-
+        // Primero validar que el API key existe y es válido
         $key_data = Imagina_Updater_Server_API_Keys::validate($api_key);
 
         if (!$key_data) {
@@ -220,6 +212,15 @@ class Imagina_Updater_Server_REST_API {
                 'invalid_api_key',
                 __('API Key inválida o inactiva', 'imagina-updater-server'),
                 array('status' => 403)
+            );
+        }
+
+        // Solo aplicar rate limiting si el API key es válido
+        if (!$this->check_rate_limit($api_key)) {
+            return new WP_Error(
+                'rate_limit_exceeded',
+                __('Límite de peticiones excedido. Máximo 60 peticiones por minuto.', 'imagina-updater-server'),
+                array('status' => 429)
             );
         }
 

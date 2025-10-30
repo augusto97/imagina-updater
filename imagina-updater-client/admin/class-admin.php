@@ -158,15 +158,34 @@ class Imagina_Updater_Client_Admin {
 
         // Guardar plugins habilitados
         if (isset($_POST['imagina_save_plugins']) && check_admin_referer('imagina_save_plugins')) {
-            $enabled_plugins = isset($_POST['enabled_plugins']) && is_array($_POST['enabled_plugins'])
+            // Obtener selección actual del formulario
+            $selected_in_form = isset($_POST['enabled_plugins']) && is_array($_POST['enabled_plugins'])
                 ? array_map('sanitize_text_field', $_POST['enabled_plugins'])
                 : array();
 
+            // Obtener todos los plugins que están visibles en la página actual
+            // (necesitamos saber cuáles están en el formulario para fusionar correctamente)
+            $plugins_in_current_page = isset($_POST['plugins_in_page']) && is_array($_POST['plugins_in_page'])
+                ? array_map('sanitize_text_field', $_POST['plugins_in_page'])
+                : array();
+
+            // Obtener configuración actual
+            $current_config = imagina_updater_client()->get_config();
+            $currently_enabled = isset($current_config['enabled_plugins']) ? $current_config['enabled_plugins'] : array();
+
+            // Fusionar selecciones:
+            // 1. Quitar de la lista actual todos los plugins que están en la página actual (para actualizarlos)
+            $enabled_from_other_pages = array_diff($currently_enabled, $plugins_in_current_page);
+
+            // 2. Agregar los que se seleccionaron en esta página
+            $final_enabled = array_unique(array_merge($enabled_from_other_pages, $selected_in_form));
+
+            // Guardar configuración fusionada
             imagina_updater_client()->update_config(array(
-                'enabled_plugins' => $enabled_plugins
+                'enabled_plugins' => array_values($final_enabled) // array_values para reindexar
             ));
 
-            imagina_updater_log('Plugins actualizados: ' . count($enabled_plugins) . ' plugins seleccionados', 'info');
+            imagina_updater_log('Plugins actualizados: ' . count($final_enabled) . ' plugins habilitados en total (página actual: ' . count($selected_in_form) . ' seleccionados)', 'info');
 
             add_settings_error('imagina_updater_client', 'plugins_saved', __('Plugins actualizados exitosamente', 'imagina-updater-client'), 'success');
 

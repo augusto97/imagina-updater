@@ -282,6 +282,16 @@ if (!defined('ABSPATH')) {
                 <form method="post">
                     <?php wp_nonce_field('imagina_save_plugins'); ?>
 
+                    <?php
+                    // Campos ocultos para trackear qué plugins están en esta página
+                    // Esto permite fusionar selecciones entre páginas paginadas
+                    foreach ($plugins_to_show as $plugin) {
+                        if (isset($installed_plugins[$plugin['slug']])) {
+                            echo '<input type="hidden" name="plugins_in_page[]" value="' . esc_attr($plugin['slug']) . '">';
+                        }
+                    }
+                    ?>
+
                     <?php if (empty($server_plugins)): ?>
                         <div class="imagina-notice-info">
                             <span class="dashicons dashicons-info"></span>

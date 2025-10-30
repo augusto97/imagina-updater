@@ -48,8 +48,7 @@ class Imagina_Updater_Client_API {
             'timeout' => $timeout,
             'headers' => array(
                 'Authorization' => 'Bearer ' . $this->api_key,
-                'Content-Type' => 'application/json',
-                'X-Client-Domain' => home_url() // Enviar dominio explícitamente
+                'Content-Type' => 'application/json'
             )
         );
 

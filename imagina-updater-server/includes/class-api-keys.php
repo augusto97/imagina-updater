@@ -122,6 +122,27 @@ class Imagina_Updater_Server_API_Keys {
     }
 
     /**
+     * Obtener API Key por key (sin validar is_active ni actualizar last_used)
+     *
+     * @param string $api_key API Key
+     * @return object|null
+     */
+    public static function get_by_key($api_key) {
+        global $wpdb;
+
+        if (empty($api_key) || !is_string($api_key)) {
+            return null;
+        }
+
+        $table = $wpdb->prefix . 'imagina_updater_api_keys';
+
+        return $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $table WHERE api_key = %s",
+            $api_key
+        ));
+    }
+
+    /**
      * Obtener todas las API Keys
      *
      * @return array

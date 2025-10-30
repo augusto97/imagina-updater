@@ -37,78 +37,6 @@ class Imagina_Updater_Server_REST_API {
     }
 
     /**
-     * Obtener dominio del cliente desde headers HTTP
-     */
-    private function get_client_domain($request) {
-        // Prioridad 1: Header personalizado enviado por el cliente
-        $client_domain = $request->get_header('X-Client-Domain');
-        if (!empty($client_domain)) {
-            return $client_domain;
-        }
-
-        // Prioridad 2: HTTP_REFERER (para peticiones desde navegador)
-        $referer = $request->get_header('Referer');
-        if (!empty($referer)) {
-            $parsed = parse_url($referer);
-            if (isset($parsed['host'])) {
-                return $parsed['scheme'] . '://' . $parsed['host'];
-            }
-        }
-
-        // Prioridad 3: HTTP_ORIGIN (para peticiones AJAX)
-        $origin = $request->get_header('Origin');
-        if (!empty($origin)) {
-            return $origin;
-        }
-
-        // Si no hay headers, no se puede determinar
-        return null;
-    }
-
-    /**
-     * Normalizar dominio para comparación (elimina www, trailing slash, etc.)
-     */
-    private function normalize_domain($url) {
-        if (empty($url)) {
-            return '';
-        }
-
-        // Asegurarse de que tenga esquema
-        if (strpos($url, 'http') !== 0) {
-            $url = 'https://' . $url;
-        }
-
-        $parsed = parse_url($url);
-        if (!isset($parsed['host'])) {
-            return '';
-        }
-
-        $host = strtolower($parsed['host']);
-
-        // Eliminar www.
-        $host = preg_replace('/^www\./', '', $host);
-
-        return $host;
-    }
-
-    /**
-     * Validar si el dominio del cliente coincide con el registrado
-     */
-    private function validate_domain($client_url, $registered_url) {
-        // Normalizar ambos dominios
-        $client_domain = $this->normalize_domain($client_url);
-        $registered_domain = $this->normalize_domain($registered_url);
-
-        // Si alguno está vacío, no se puede validar
-        if (empty($client_domain) || empty($registered_domain)) {
-            return false;
-        }
-
-        // Comparar dominios normalizados
-        return $client_domain === $registered_domain;
-    }
-
-    /**
      * Obtener IP del cliente (compatible con proxies, CDN, load balancers)
      */
     private function get_client_ip() {
@@ -285,32 +213,6 @@ class Imagina_Updater_Server_REST_API {
                 __('API Key inválida o inactiva', 'imagina-updater-server'),
                 array('status' => 403)
             );
-        }
-
-        // Validar dominio (si está habilitado en configuración)
-        $config = get_option('imagina_updater_server_config', array());
-        $validate_domain = isset($config['validate_domain']) ? $config['validate_domain'] : true; // Por defecto habilitado
-
-        if ($validate_domain && !empty($key_data->site_url)) {
-            $client_domain = $this->get_client_domain($request);
-
-            if (empty($client_domain)) {
-                imagina_updater_server_log('No se pudo determinar el dominio del cliente para API key: ' . substr($api_key, 0, 10) . '...', 'warning');
-                return new WP_Error(
-                    'domain_verification_failed',
-                    __('No se pudo verificar el dominio. Contacta al administrador.', 'imagina-updater-server'),
-                    array('status' => 403)
-                );
-            }
-
-            if (!$this->validate_domain($client_domain, $key_data->site_url)) {
-                imagina_updater_server_log('Dominio no coincide. Cliente: ' . $client_domain . ' | Registrado: ' . $key_data->site_url . ' | API key: ' . substr($api_key, 0, 10) . '...', 'warning');
-                return new WP_Error(
-                    'domain_mismatch',
-                    __('Esta API Key no está autorizada para este sitio. Contacta al administrador si cambiaste de dominio.', 'imagina-updater-server'),
-                    array('status' => 403)
-                );
-            }
         }
 
         // Solo aplicar rate limiting si el API key es válido

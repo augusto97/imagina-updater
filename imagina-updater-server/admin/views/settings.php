@@ -73,35 +73,6 @@ if (!defined('ABSPATH')) {
                     </tr>
                 </table>
 
-                <h3 style="margin: 20px 20px 0 20px; padding-top: 20px; border-top: 1px solid #ccd0d4;">
-                    <span class="dashicons dashicons-shield" style="color: #2271b1;"></span>
-                    <?php _e('Seguridad', 'imagina-updater-server'); ?>
-                </h3>
-
-                <table class="form-table">
-                    <tr>
-                        <th scope="row">
-                            <label for="validate_domain"><?php _e('Validar Dominio', 'imagina-updater-server'); ?></label>
-                        </th>
-                        <td>
-                            <label for="validate_domain">
-                                <input type="checkbox"
-                                       name="validate_domain"
-                                       id="validate_domain"
-                                       value="1"
-                                       <?php checked(isset($config['validate_domain']) ? $config['validate_domain'] : true); ?>>
-                                <?php _e('Validar que el dominio del cliente coincida con el registrado en la API Key', 'imagina-updater-server'); ?>
-                            </label>
-                            <p class="description">
-                                <strong><?php _e('Recomendado: Habilitado', 'imagina-updater-server'); ?></strong><br>
-                                <?php _e('Cuando está habilitado, el sistema verifica que las peticiones provengan del dominio registrado en la licencia.', 'imagina-updater-server'); ?>
-                                <?php _e('Esto previene que un API Key robado sea usado desde otro dominio.', 'imagina-updater-server'); ?><br>
-                                <strong style="color: #d63638;"><?php _e('Deshabilitar solo para pruebas o si tienes problemas con múltiples subdominios.', 'imagina-updater-server'); ?></strong>
-                            </p>
-                        </td>
-                    </tr>
-                </table>
-
                 <p class="submit">
                     <button type="submit" name="imagina_save_settings" class="button button-primary">
                         <?php _e('Guardar Configuración', 'imagina-updater-server'); ?>

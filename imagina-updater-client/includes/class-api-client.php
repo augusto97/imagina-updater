@@ -147,4 +147,13 @@ class Imagina_Updater_Client_API {
             'site_domain' => $site_domain
         ));
     }
+
+    /**
+     * Desactivar licencia (eliminar activación en el servidor)
+     *
+     * @return array|WP_Error
+     */
+    public function deactivate_license() {
+        return $this->request('deactivate-self', 'POST');
+    }
 }

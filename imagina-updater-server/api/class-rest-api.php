@@ -224,6 +224,13 @@ class Imagina_Updater_Server_REST_API {
                 )
             )
         ));
+
+        // Desactivar sitio actual (cliente desactiva su propia licencia)
+        register_rest_route(self::NAMESPACE, '/deactivate-self', array(
+            'methods' => WP_REST_Server::CREATABLE,
+            'callback' => array($this, 'deactivate_self'),
+            'permission_callback' => array($this, 'check_activation_token_only')
+        ));
     }
 
     /**
@@ -679,7 +686,7 @@ class Imagina_Updater_Server_REST_API {
     }
 
     /**
-     * Endpoint: Desactivar sitio
+     * Endpoint: Desactivar sitio (admin)
      */
     public function deactivate_site($request) {
         $activation_id = $request->get_param('activation_id');
@@ -697,6 +704,38 @@ class Imagina_Updater_Server_REST_API {
         return rest_ensure_response(array(
             'success' => true,
             'message' => __('Sitio desactivado correctamente', 'imagina-updater-server')
+        ));
+    }
+
+    /**
+     * Endpoint: Desactivar sitio actual (cliente se desactiva a sí mismo)
+     */
+    public function deactivate_self($request) {
+        // Obtener activation token y dominio del request
+        $token = $this->get_api_key_from_request($request);
+        $site_domain = $request->get_header('X-Site-Domain');
+
+        if (empty($token) || empty($site_domain)) {
+            return new WP_Error(
+                'missing_data',
+                __('Datos insuficientes para desactivar', 'imagina-updater-server'),
+                array('status' => 400)
+            );
+        }
+
+        $result = Imagina_Updater_Server_Activations::deactivate_by_token($token, $site_domain);
+
+        if (!$result) {
+            return new WP_Error(
+                'deactivation_failed',
+                __('No se pudo desactivar tu licencia', 'imagina-updater-server'),
+                array('status' => 500)
+            );
+        }
+
+        return rest_ensure_response(array(
+            'success' => true,
+            'message' => __('Licencia desactivada correctamente', 'imagina-updater-server')
         ));
     }
 

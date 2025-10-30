@@ -184,7 +184,14 @@ class Imagina_Updater_Client_Admin {
 
         // Desactivar licencia
         if (isset($_GET['action']) && $_GET['action'] === 'deactivate_license' && check_admin_referer('deactivate_license')) {
-            // Limpiar toda la configuración
+            // Primero intentar desactivar en el servidor
+            $api_client = imagina_updater_client()->get_api_client();
+            if ($api_client) {
+                $deactivation = $api_client->deactivate_license();
+                // Ignorar errores, desactivar localmente de todas formas
+            }
+
+            // Limpiar toda la configuración local
             imagina_updater_client()->update_config(array(
                 'server_url' => '',
                 'api_key' => '',

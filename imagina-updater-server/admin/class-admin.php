@@ -522,13 +522,15 @@ class Imagina_Updater_Server_Admin {
         if (isset($_POST['imagina_save_settings']) && check_admin_referer('imagina_save_settings')) {
             $enable_logging = isset($_POST['enable_logging']) ? true : false;
             $log_level = isset($_POST['log_level']) ? sanitize_text_field($_POST['log_level']) : 'INFO';
+            $validate_domain = isset($_POST['validate_domain']) ? true : false;
 
             update_option('imagina_updater_server_config', array(
                 'enable_logging' => $enable_logging,
-                'log_level' => $log_level
+                'log_level' => $log_level,
+                'validate_domain' => $validate_domain
             ));
 
-            imagina_updater_server_log('Configuración actualizada: logging=' . ($enable_logging ? 'enabled' : 'disabled') . ', level=' . $log_level, 'info');
+            imagina_updater_server_log('Configuración actualizada: logging=' . ($enable_logging ? 'enabled' : 'disabled') . ', level=' . $log_level . ', validate_domain=' . ($validate_domain ? 'enabled' : 'disabled'), 'info');
             set_transient('imagina_updater_settings_saved', true, 30);
 
             wp_redirect(admin_url('admin.php?page=imagina-updater-settings'));

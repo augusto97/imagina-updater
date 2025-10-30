@@ -157,20 +157,7 @@ class Imagina_Updater_Client_Admin {
         }
 
         // Guardar plugins habilitados
-        if (isset($_POST['imagina_save_plugins'])) {
-            // Verificar nonce manualmente (sin morir si falla)
-            $nonce = isset($_POST['_wpnonce']) ? $_POST['_wpnonce'] : '';
-
-            if (!wp_verify_nonce($nonce, 'imagina_save_plugins')) {
-                imagina_updater_log('Error de seguridad al guardar plugins: Nonce inválido o expirado', 'warning');
-
-                add_settings_error('imagina_updater_client', 'nonce_error',
-                    __('Error de seguridad: El formulario ha caducado. Por favor, recarga la página e intenta de nuevo.', 'imagina-updater-client'),
-                    'error'
-                );
-                return;
-            }
-
+        if (isset($_POST['imagina_save_plugins']) && check_admin_referer('imagina_save_plugins')) {
             $enabled_plugins = isset($_POST['enabled_plugins']) && is_array($_POST['enabled_plugins'])
                 ? array_map('sanitize_text_field', $_POST['enabled_plugins'])
                 : array();
@@ -181,22 +168,11 @@ class Imagina_Updater_Client_Admin {
 
             imagina_updater_log('Plugins actualizados: ' . count($enabled_plugins) . ' plugins seleccionados', 'info');
 
-            // Guardar mensaje en transient para Post/Redirect/Get
-            set_transient('imagina_updater_plugins_saved', true, 30);
+            add_settings_error('imagina_updater_client', 'plugins_saved', __('Plugins actualizados exitosamente', 'imagina-updater-client'), 'success');
 
             // Limpiar cache de actualizaciones
             delete_site_transient('update_plugins');
             delete_transient('imagina_updater_cached_updates');
-
-            // Redirect para evitar reenvío de formulario
-            wp_redirect(admin_url('options-general.php?page=imagina-updater-client'));
-            exit;
-        }
-
-        // Mostrar mensaje después del redirect
-        if (get_transient('imagina_updater_plugins_saved')) {
-            delete_transient('imagina_updater_plugins_saved');
-            add_settings_error('imagina_updater_client', 'plugins_saved', __('Plugins actualizados exitosamente', 'imagina-updater-client'), 'success');
         }
 
         // Guardar modo de visualización

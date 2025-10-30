@@ -43,12 +43,16 @@ class Imagina_Updater_Client_API {
             }
         }
 
+        // Obtener dominio del sitio para validación
+        $site_domain = parse_url(home_url(), PHP_URL_HOST);
+
         $args = array(
             'method' => $method,
             'timeout' => $timeout,
             'headers' => array(
                 'Authorization' => 'Bearer ' . $this->api_key,
-                'Content-Type' => 'application/json'
+                'Content-Type' => 'application/json',
+                'X-Site-Domain' => $site_domain // Enviar dominio para validación de activation token
             )
         );
 
@@ -139,7 +143,17 @@ class Imagina_Updater_Client_API {
         }
 
         return $this->request('activate', 'POST', array(
+            'api_key' => $this->api_key,
             'site_domain' => $site_domain
         ));
+    }
+
+    /**
+     * Desactivar licencia (eliminar activación en el servidor)
+     *
+     * @return array|WP_Error
+     */
+    public function deactivate_license() {
+        return $this->request('deactivate-self', 'POST');
     }
 }

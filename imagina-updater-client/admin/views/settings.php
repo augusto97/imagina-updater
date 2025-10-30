@@ -84,6 +84,20 @@ if (!defined('ABSPATH')) {
                                         <?php _e('Ingresa la nueva API Key proporcionada por el administrador.', 'imagina-updater-client'); ?>
                                     </p>
                                 </div>
+
+                                <!-- Opción para desactivar licencia -->
+                                <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;">
+                                    <p class="description" style="color: #d63638; margin-bottom: 10px;">
+                                        <strong><?php _e('Zona de peligro:', 'imagina-updater-client'); ?></strong>
+                                        <?php _e('Si desactivas la licencia, perderás acceso a las actualizaciones.', 'imagina-updater-client'); ?>
+                                    </p>
+                                    <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=imagina-updater-client&action=deactivate_license'), 'deactivate_license'); ?>"
+                                       class="button button-link-delete"
+                                       onclick="return confirm('<?php esc_attr_e('¿Estás seguro de desactivar esta licencia? Perderás acceso a las actualizaciones del servidor.', 'imagina-updater-client'); ?>');">
+                                        <span class="dashicons dashicons-dismiss" style="margin-top: 3px;"></span>
+                                        <?php _e('Desactivar Licencia', 'imagina-updater-client'); ?>
+                                    </a>
+                                </div>
                             <?php else: ?>
                                 <!-- Sin API Key guardado, mostrar campo normal -->
                                 <input type="text"

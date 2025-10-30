@@ -176,7 +176,7 @@ class Imagina_Updater_Server_Activations {
     }
 
     /**
-     * Desactivar un sitio
+     * Desactivar un sitio por ID (elimina el registro completamente)
      *
      * @param int $activation_id ID de la activación
      * @return bool
@@ -186,30 +186,68 @@ class Imagina_Updater_Server_Activations {
 
         $table = $wpdb->prefix . 'imagina_updater_activations';
 
-        $result = $wpdb->update(
+        // Obtener datos antes de eliminar para el log
+        $activation = $wpdb->get_row($wpdb->prepare(
+            "SELECT site_domain, api_key_id FROM $table WHERE id = %d",
+            $activation_id
+        ));
+
+        // Eliminar registro completamente
+        $result = $wpdb->delete(
             $table,
-            array(
-                'is_active' => 0,
-                'deactivated_at' => current_time('mysql')
-            ),
             array('id' => $activation_id),
-            array('%d', '%s'),
+            array('%d')
+        );
+
+        if ($result !== false && $activation) {
+            imagina_updater_server_log(sprintf(
+                'Activación eliminada: %s (API key ID: %d, Activation ID: %d)',
+                $activation->site_domain,
+                $activation->api_key_id,
+                $activation_id
+            ), 'info');
+        }
+
+        return $result !== false;
+    }
+
+    /**
+     * Desactivar sitio por token de activación (para que el cliente pueda desactivarse)
+     *
+     * @param string $activation_token Token de activación
+     * @param string $site_domain Dominio del sitio
+     * @return bool
+     */
+    public static function deactivate_by_token($activation_token, $site_domain) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'imagina_updater_activations';
+        $site_domain = self::normalize_domain($site_domain);
+
+        // Buscar la activación
+        $activation = $wpdb->get_row($wpdb->prepare(
+            "SELECT id, api_key_id FROM $table WHERE activation_token = %s AND site_domain = %s AND is_active = 1",
+            $activation_token,
+            $site_domain
+        ));
+
+        if (!$activation) {
+            return false;
+        }
+
+        // Eliminar registro
+        $result = $wpdb->delete(
+            $table,
+            array('id' => $activation->id),
             array('%d')
         );
 
         if ($result !== false) {
-            $activation = $wpdb->get_row($wpdb->prepare(
-                "SELECT site_domain, api_key_id FROM $table WHERE id = %d",
-                $activation_id
-            ));
-
-            if ($activation) {
-                imagina_updater_server_log(sprintf(
-                    'Sitio desactivado: %s (API key ID: %d)',
-                    $activation->site_domain,
-                    $activation->api_key_id
-                ), 'info');
-            }
+            imagina_updater_server_log(sprintf(
+                'Cliente desactivó su licencia: %s (API key ID: %d)',
+                $site_domain,
+                $activation->api_key_id
+            ), 'info');
         }
 
         return $result !== false;

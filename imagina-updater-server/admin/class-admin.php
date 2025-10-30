@@ -156,7 +156,7 @@ class Imagina_Updater_Server_Admin {
         // Crear API Key
         if (isset($_POST['imagina_create_api_key']) && check_admin_referer('imagina_create_api_key')) {
             $site_name = sanitize_text_field($_POST['site_name']);
-            $site_url = esc_url_raw($_POST['site_url']);
+            $site_url = '-'; // Ya no se usa site_url, solo site_name (cliente/descripción)
             $max_activations = isset($_POST['max_activations']) ? max(0, intval($_POST['max_activations'])) : 1;
             $access_type = isset($_POST['access_type']) ? sanitize_text_field($_POST['access_type']) : 'all';
             $allowed_plugins = isset($_POST['allowed_plugins']) ? array_map('intval', $_POST['allowed_plugins']) : array();

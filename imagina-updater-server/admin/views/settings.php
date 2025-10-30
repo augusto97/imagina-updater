@@ -83,6 +83,25 @@ if (!defined('ABSPATH')) {
 
         <div class="imagina-card" style="margin-top: 20px;">
             <h2 class="imagina-card-title">
+                <span class="dashicons dashicons-database"></span>
+                <?php _e('Mantenimiento de Base de Datos', 'imagina-updater-server'); ?>
+            </h2>
+
+            <div style="padding: 20px;">
+                <p><?php _e('Si has actualizado el plugin y experimentas errores, ejecuta las migraciones de base de datos para actualizar las tablas.', 'imagina-updater-server'); ?></p>
+
+                <form method="post">
+                    <?php wp_nonce_field('imagina_run_migration'); ?>
+                    <button type="submit" name="imagina_run_migration" class="button button-secondary">
+                        <span class="dashicons dashicons-update"></span>
+                        <?php _e('Ejecutar Migraciones de Base de Datos', 'imagina-updater-server'); ?>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="imagina-card" style="margin-top: 20px;">
+            <h2 class="imagina-card-title">
                 <span class="dashicons dashicons-info"></span>
                 <?php _e('Información del Sistema', 'imagina-updater-server'); ?>
             </h2>

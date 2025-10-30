@@ -1,11 +1,11 @@
 <?php
 /**
  * Plugin Name: Imagina Updater Server
- * Plugin URI: https://imaginawp.com
+ * Plugin URI: https://imaginawp.com/actualizador-de-plugins/
  * Description: Sistema central para gestionar y distribuir actualizaciones de plugins propios a sitios cliente
  * Version: 1.0.0
  * Author: Imagina WP
- * Author URI: https://imaginawp.com/actualizador-de-plugins/
+ * Author URI: https://imaginawp.com
  * License: GPL v2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: imagina-updater-server
@@ -83,6 +83,7 @@ class Imagina_Updater_Server {
         require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'includes/class-database.php';
         require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'includes/class-api-keys.php';
         require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'includes/class-plugin-manager.php';
+        require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'includes/class-plugin-groups.php';
         require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'admin/class-admin.php';
         require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'api/class-rest-api.php';
     }

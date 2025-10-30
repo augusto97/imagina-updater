@@ -21,9 +21,12 @@ class Imagina_Updater_Server_API_Keys {
      *
      * @param string $site_name Nombre del sitio
      * @param string $site_url URL del sitio
+     * @param string $access_type Tipo de acceso: 'all', 'specific', 'groups'
+     * @param array $allowed_plugins IDs de plugins permitidos (si access_type es 'specific')
+     * @param array $allowed_groups IDs de grupos permitidos (si access_type es 'groups')
      * @return array|WP_Error Array con la API key o WP_Error en caso de error
      */
-    public static function create($site_name, $site_url) {
+    public static function create($site_name, $site_url, $access_type = 'all', $allowed_plugins = array(), $allowed_groups = array()) {
         global $wpdb;
 
         // Validar datos
@@ -34,9 +37,26 @@ class Imagina_Updater_Server_API_Keys {
             return new WP_Error('invalid_data', __('Nombre y URL del sitio son obligatorios', 'imagina-updater-server'));
         }
 
+        // Validar access_type
+        if (!in_array($access_type, array('all', 'specific', 'groups'))) {
+            $access_type = 'all';
+        }
+
         // Generar API Key única
         $api_key = self::generate_key();
         $table = $wpdb->prefix . 'imagina_updater_api_keys';
+
+        // Preparar datos de permisos
+        $allowed_plugins_json = null;
+        $allowed_groups_json = null;
+
+        if ($access_type === 'specific' && !empty($allowed_plugins)) {
+            $allowed_plugins_json = json_encode(array_map('intval', $allowed_plugins));
+        }
+
+        if ($access_type === 'groups' && !empty($allowed_groups)) {
+            $allowed_groups_json = json_encode(array_map('intval', $allowed_groups));
+        }
 
         $result = $wpdb->insert(
             $table,
@@ -45,9 +65,12 @@ class Imagina_Updater_Server_API_Keys {
                 'site_name' => $site_name,
                 'site_url' => $site_url,
                 'is_active' => 1,
+                'access_type' => $access_type,
+                'allowed_plugins' => $allowed_plugins_json,
+                'allowed_groups' => $allowed_groups_json,
                 'created_at' => current_time('mysql')
             ),
-            array('%s', '%s', '%s', '%d', '%s')
+            array('%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s')
         );
 
         if ($result === false) {
@@ -149,6 +172,62 @@ class Imagina_Updater_Server_API_Keys {
         );
 
         return $result !== false;
+    }
+
+    /**
+     * Actualizar permisos de una API Key
+     *
+     * @param int $id ID de la API Key
+     * @param string $access_type Tipo de acceso: 'all', 'specific', 'groups'
+     * @param array $allowed_plugins IDs de plugins permitidos (si access_type es 'specific')
+     * @param array $allowed_groups IDs de grupos permitidos (si access_type es 'groups')
+     * @return bool|WP_Error
+     */
+    public static function update_permissions($id, $access_type, $allowed_plugins = array(), $allowed_groups = array()) {
+        global $wpdb;
+
+        // Validar que la API key existe
+        $key = self::get_by_id($id);
+        if (!$key) {
+            return new WP_Error('not_found', __('API Key no encontrada', 'imagina-updater-server'));
+        }
+
+        // Validar access_type
+        if (!in_array($access_type, array('all', 'specific', 'groups'))) {
+            return new WP_Error('invalid_access_type', __('Tipo de acceso inválido', 'imagina-updater-server'));
+        }
+
+        // Preparar datos de permisos
+        $allowed_plugins_json = null;
+        $allowed_groups_json = null;
+
+        if ($access_type === 'specific' && !empty($allowed_plugins)) {
+            $allowed_plugins_json = json_encode(array_map('intval', $allowed_plugins));
+        }
+
+        if ($access_type === 'groups' && !empty($allowed_groups)) {
+            $allowed_groups_json = json_encode(array_map('intval', $allowed_groups));
+        }
+
+        $table = $wpdb->prefix . 'imagina_updater_api_keys';
+
+        $result = $wpdb->update(
+            $table,
+            array(
+                'access_type' => $access_type,
+                'allowed_plugins' => $allowed_plugins_json,
+                'allowed_groups' => $allowed_groups_json
+            ),
+            array('id' => $id),
+            array('%s', '%s', '%s'),
+            array('%d')
+        );
+
+        if ($result === false) {
+            return new WP_Error('db_error', __('Error al actualizar permisos', 'imagina-updater-server'));
+        }
+
+        return true;
     }
 
     /**

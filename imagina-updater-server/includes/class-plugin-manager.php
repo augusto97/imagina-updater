@@ -29,7 +29,69 @@ class Imagina_Updater_Server_Plugin_Manager {
      */
     public static function get_upload_dir() {
         $upload_dir = wp_upload_dir();
-        return $upload_dir['basedir'] . '/imagina-updater-plugins';
+        $plugin_dir = $upload_dir['basedir'] . '/imagina-updater-plugins';
+
+        // Asegurar que el directorio existe con permisos correctos
+        if (!file_exists($plugin_dir)) {
+            wp_mkdir_p($plugin_dir);
+            self::create_protection_files($plugin_dir);
+        } elseif (!file_exists($plugin_dir . '/.htaccess')) {
+            // Si el directorio existe pero no tiene protección, agregarla
+            self::create_protection_files($plugin_dir);
+        }
+
+        return $plugin_dir;
+    }
+
+    /**
+     * Crear archivos de protección en el directorio de uploads
+     */
+    private static function create_protection_files($dir) {
+        // .htaccess para Apache
+        $htaccess_content = "# Imagina Updater - Protección de archivos
+# Solo permite acceso a través de la API REST de WordPress
+
+Order Deny,Allow
+Deny from all
+
+# Bloquear acceso directo
+<Files *.zip>
+    Deny from all
+</Files>";
+
+        @file_put_contents($dir . '/.htaccess', $htaccess_content);
+
+        // web.config para IIS
+        $webconfig_content = '<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <system.webServer>
+        <security>
+            <requestFiltering>
+                <fileExtensions>
+                    <add fileExtension=".zip" allowed="false" />
+                </fileExtensions>
+            </requestFiltering>
+        </security>
+    </system.webServer>
+</configuration>';
+
+        @file_put_contents($dir . '/web.config', $webconfig_content);
+
+        // index.php para prevenir listado de directorios
+        @file_put_contents($dir . '/index.php', '<?php // Silence is golden');
+
+        // Archivo de configuración para Nginx (para que el admin lo copie)
+        $nginx_content = "# Imagina Updater - Configuración para Nginx
+# Agregar dentro del bloque server {}
+
+location ~ ^/wp-content/uploads/imagina-updater-plugins/.*\\.zip$ {
+    deny all;
+    return 403;
+}";
+
+        @file_put_contents($dir . '/nginx.conf.example', $nginx_content);
+
+        imagina_updater_server_log('Archivos de protección creados en: ' . $dir, 'info');
     }
 
     /**

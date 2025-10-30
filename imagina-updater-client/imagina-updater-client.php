@@ -1,11 +1,11 @@
 <?php
 /**
  * Plugin Name: Imagina Updater Client
- * Plugin URI: https://imaginawp.com
+ * Plugin URI: https://imaginawp.com/actualizador-de-plugins/
  * Description: Cliente para recibir actualizaciones de plugins desde un servidor central Imagina Updater
  * Version: 1.0.0
  * Author: Imagina WP
- * Author URI: https://imaginawp.com/actualizador-de-plugins/
+ * Author URI: https://imaginawp.com
  * License: GPL v2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: imagina-updater-client

@@ -149,11 +149,6 @@ class Imagina_Updater_Client_Admin {
 
                 // Guardar activation token
                 $activation_token = $activation_result['activation_token'];
-
-                imagina_updater_client_log(sprintf(
-                    'Sitio activado exitosamente. Token: %s',
-                    substr($activation_token, 0, 10) . '...'
-                ), 'info');
             } else {
                 // Mantener el API Key actual (sin validar nuevamente)
                 $api_key = isset($current_config['api_key']) ? $current_config['api_key'] : '';
@@ -185,6 +180,31 @@ class Imagina_Updater_Client_Admin {
             delete_site_transient('update_plugins');
             delete_transient('imagina_updater_cached_updates');
             delete_transient('imagina_updater_server_plugins_' . md5($server_url));
+        }
+
+        // Desactivar licencia
+        if (isset($_GET['action']) && $_GET['action'] === 'deactivate_license' && check_admin_referer('deactivate_license')) {
+            // Limpiar toda la configuración
+            imagina_updater_client()->update_config(array(
+                'server_url' => '',
+                'api_key' => '',
+                'activation_token' => '',
+                'enabled_plugins' => array(),
+                'plugin_display_mode' => 'installed_only'
+            ));
+
+            // Limpiar cachés
+            delete_site_transient('update_plugins');
+            delete_transient('imagina_updater_cached_updates');
+            $config = imagina_updater_client()->get_config();
+            if (!empty($config['server_url'])) {
+                delete_transient('imagina_updater_server_plugins_' . md5($config['server_url']));
+            }
+
+            add_settings_error('imagina_updater_client', 'license_deactivated', __('Licencia desactivada exitosamente', 'imagina-updater-client'), 'success');
+
+            wp_redirect(admin_url('options-general.php?page=imagina-updater-client'));
+            exit;
         }
 
         // Instalar plugin desde servidor (GET con nonce en URL)

@@ -43,12 +43,16 @@ class Imagina_Updater_Client_API {
             }
         }
 
+        // Obtener dominio del sitio para validación
+        $site_domain = parse_url(home_url(), PHP_URL_HOST);
+
         $args = array(
             'method' => $method,
             'timeout' => $timeout,
             'headers' => array(
                 'Authorization' => 'Bearer ' . $this->api_key,
-                'Content-Type' => 'application/json'
+                'Content-Type' => 'application/json',
+                'X-Site-Domain' => $site_domain // Enviar dominio para validación de activation token
             )
         );
 

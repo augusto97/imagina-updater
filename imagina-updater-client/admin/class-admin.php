@@ -293,21 +293,23 @@ class Imagina_Updater_Client_Admin {
             $api_client = imagina_updater_client()->get_api_client();
 
             if (!$api_client) {
-                add_settings_error('imagina_updater_client', 'test_failed', __('Plugin no configurado', 'imagina-updater-client'), 'error');
+                add_settings_error('imagina_updater_client', 'test_failed', __('Plugin no configurado. Activa el sitio primero.', 'imagina-updater-client'), 'error');
                 return;
             }
 
-            $validation = $api_client->validate();
+            // Probar conexión obteniendo lista de plugins (usa activation_token)
+            $result = $api_client->get_plugins();
 
-            if (is_wp_error($validation)) {
+            if (is_wp_error($result)) {
                 add_settings_error('imagina_updater_client', 'test_failed', sprintf(
                     __('Test fallido: %s', 'imagina-updater-client'),
-                    $validation->get_error_message()
+                    $result->get_error_message()
                 ), 'error');
             } else {
+                $plugin_count = is_array($result) ? count($result) : 0;
                 add_settings_error('imagina_updater_client', 'test_success', sprintf(
-                    __('Conexión exitosa con: %s', 'imagina-updater-client'),
-                    $validation['site_name']
+                    __('Conexión exitosa. %d plugin(s) disponible(s).', 'imagina-updater-client'),
+                    $plugin_count
                 ), 'success');
             }
         }

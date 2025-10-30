@@ -85,6 +85,15 @@ class Imagina_Updater_Server_Admin {
 
         add_submenu_page(
             'imagina-updater-server',
+            __('Activaciones', 'imagina-updater-server'),
+            __('Activaciones', 'imagina-updater-server'),
+            'manage_options',
+            'imagina-updater-activations',
+            array($this, 'render_activations_page')
+        );
+
+        add_submenu_page(
+            'imagina-updater-server',
             __('Logs', 'imagina-updater-server'),
             __('Logs', 'imagina-updater-server'),
             'manage_options',
@@ -148,11 +157,12 @@ class Imagina_Updater_Server_Admin {
         if (isset($_POST['imagina_create_api_key']) && check_admin_referer('imagina_create_api_key')) {
             $site_name = sanitize_text_field($_POST['site_name']);
             $site_url = esc_url_raw($_POST['site_url']);
+            $max_activations = isset($_POST['max_activations']) ? max(0, intval($_POST['max_activations'])) : 1;
             $access_type = isset($_POST['access_type']) ? sanitize_text_field($_POST['access_type']) : 'all';
             $allowed_plugins = isset($_POST['allowed_plugins']) ? array_map('intval', $_POST['allowed_plugins']) : array();
             $allowed_groups = isset($_POST['allowed_groups']) ? array_map('intval', $_POST['allowed_groups']) : array();
 
-            $result = Imagina_Updater_Server_API_Keys::create($site_name, $site_url, $access_type, $allowed_plugins, $allowed_groups);
+            $result = Imagina_Updater_Server_API_Keys::create($site_name, $site_url, $access_type, $allowed_plugins, $allowed_groups, $max_activations);
 
             if (is_wp_error($result)) {
                 imagina_updater_server_log('Error al crear API Key: ' . $result->get_error_message(), 'error');
@@ -284,6 +294,39 @@ class Imagina_Updater_Server_Admin {
 
             wp_redirect(admin_url('admin.php?page=imagina-updater-api-keys'));
             exit;
+        }
+
+        // Desactivar activación de sitio
+        if (isset($_GET['action']) && $_GET['action'] === 'deactivate_activation' && isset($_GET['id']) && check_admin_referer('deactivate_activation_' . $_GET['id'])) {
+            $activation_id = intval($_GET['id']);
+            $result = Imagina_Updater_Server_Activations::deactivate_site($activation_id);
+
+            if ($result) {
+                imagina_updater_server_log('Activación ID ' . $activation_id . ' desactivada', 'info');
+                set_transient('imagina_updater_activation_deactivated', true, 30);
+            } else {
+                imagina_updater_server_log('Error al desactivar activación ID ' . $activation_id, 'error');
+                set_transient('imagina_updater_activation_error', __('Error al desactivar sitio', 'imagina-updater-server'), 30);
+            }
+
+            // Redirigir a la página de activaciones
+            $redirect_url = admin_url('admin.php?page=imagina-updater-activations');
+            if (isset($_GET['api_key_id'])) {
+                $redirect_url = add_query_arg('api_key_id', intval($_GET['api_key_id']), $redirect_url);
+            }
+
+            wp_redirect($redirect_url);
+            exit;
+        }
+
+        // Mostrar mensajes de activaciones
+        if (get_transient('imagina_updater_activation_deactivated')) {
+            delete_transient('imagina_updater_activation_deactivated');
+            add_settings_error('imagina_updater', 'activation_deactivated', __('Sitio desactivado exitosamente', 'imagina-updater-server'), 'success');
+        }
+        if ($activation_error = get_transient('imagina_updater_activation_error')) {
+            delete_transient('imagina_updater_activation_error');
+            add_settings_error('imagina_updater', 'activation_error', $activation_error, 'error');
         }
 
         // Mostrar mensaje de actualización de permisos
@@ -623,6 +666,37 @@ class Imagina_Updater_Server_Admin {
         $all_groups = Imagina_Updater_Server_Plugin_Groups::get_all_groups();
 
         include IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'admin/views/api-keys.php';
+    }
+
+    /**
+     * Renderizar página de activaciones
+     */
+    public function render_activations_page() {
+        global $wpdb;
+
+        // Filtrar por API key si se especifica
+        $api_key_id = isset($_GET['api_key_id']) ? intval($_GET['api_key_id']) : null;
+
+        // Obtener todas las activaciones con información de API key
+        $table_activations = $wpdb->prefix . 'imagina_updater_activations';
+        $table_api_keys = $wpdb->prefix . 'imagina_updater_api_keys';
+
+        $query = "SELECT a.*, k.site_name, k.api_key
+                  FROM $table_activations a
+                  INNER JOIN $table_api_keys k ON a.api_key_id = k.id";
+
+        if ($api_key_id) {
+            $query .= $wpdb->prepare(" WHERE a.api_key_id = %d", $api_key_id);
+        }
+
+        $query .= " ORDER BY a.is_active DESC, a.activated_at DESC";
+
+        $activations = $wpdb->get_results($query);
+
+        // Obtener todas las API keys para el filtro
+        $api_keys = Imagina_Updater_Server_API_Keys::get_all();
+
+        include IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'admin/views/activations.php';
     }
 
     /**

@@ -126,4 +126,20 @@ class Imagina_Updater_Client_API {
     public function get_server_url() {
         return $this->server_url;
     }
+
+    /**
+     * Activar sitio (usar API key para obtener activation token)
+     *
+     * @return array|WP_Error Array con activation_token o WP_Error
+     */
+    public function activate_site() {
+        $site_domain = parse_url(home_url(), PHP_URL_HOST);
+        if (empty($site_domain)) {
+            return new WP_Error('invalid_domain', __('No se pudo determinar el dominio del sitio', 'imagina-updater-client'));
+        }
+
+        return $this->request('activate', 'POST', array(
+            'site_domain' => $site_domain
+        ));
+    }
 }

@@ -76,6 +76,18 @@ if (!defined('ABSPATH')) {
 
                 <tr>
                     <th scope="row">
+                        <label for="max_activations"><?php _e('Límite de Activaciones', 'imagina-updater-server'); ?></label>
+                    </th>
+                    <td>
+                        <input type="number" name="max_activations" id="max_activations" class="small-text" value="1" min="0" step="1">
+                        <p class="description">
+                            <?php _e('Número máximo de sitios donde se puede activar esta licencia. Usa 0 para activaciones ilimitadas.', 'imagina-updater-server'); ?>
+                        </p>
+                    </td>
+                </tr>
+
+                <tr>
+                    <th scope="row">
                         <?php _e('Permisos de Acceso', 'imagina-updater-server'); ?>
                     </th>
                     <td>
@@ -169,20 +181,25 @@ if (!defined('ABSPATH')) {
         <table class="wp-list-table widefat fixed striped">
             <thead>
                 <tr>
-                    <th style="width: 15%;"><?php _e('Sitio', 'imagina-updater-server'); ?></th>
-                    <th style="width: 15%;"><?php _e('URL', 'imagina-updater-server'); ?></th>
-                    <th style="width: 8%;"><?php _e('Estado', 'imagina-updater-server'); ?></th>
-                    <th style="width: 18%;"><?php _e('Permisos', 'imagina-updater-server'); ?></th>
-                    <th style="width: 8%;"><?php _e('Creada', 'imagina-updater-server'); ?></th>
-                    <th style="width: 10%;"><?php _e('Último Uso', 'imagina-updater-server'); ?></th>
-                    <th style="width: 10%;"><?php _e('Estadísticas', 'imagina-updater-server'); ?></th>
-                    <th style="width: 16%;"><?php _e('Acciones', 'imagina-updater-server'); ?></th>
+                    <th style="width: 13%;"><?php _e('Sitio', 'imagina-updater-server'); ?></th>
+                    <th style="width: 13%;"><?php _e('URL', 'imagina-updater-server'); ?></th>
+                    <th style="width: 7%;"><?php _e('Estado', 'imagina-updater-server'); ?></th>
+                    <th style="width: 8%;"><?php _e('Activaciones', 'imagina-updater-server'); ?></th>
+                    <th style="width: 16%;"><?php _e('Permisos', 'imagina-updater-server'); ?></th>
+                    <th style="width: 7%;"><?php _e('Creada', 'imagina-updater-server'); ?></th>
+                    <th style="width: 9%;"><?php _e('Último Uso', 'imagina-updater-server'); ?></th>
+                    <th style="width: 9%;"><?php _e('Estadísticas', 'imagina-updater-server'); ?></th>
+                    <th style="width: 18%;"><?php _e('Acciones', 'imagina-updater-server'); ?></th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($api_keys as $key): ?>
                     <?php
                     $stats = Imagina_Updater_Server_API_Keys::get_usage_stats($key->id);
+
+                    // Obtener activaciones
+                    $active_count = Imagina_Updater_Server_Activations::count_active_activations($key->id);
+                    $max_activations = isset($key->max_activations) ? (int)$key->max_activations : 1;
 
                     // Determinar permisos
                     $access_type = isset($key->access_type) ? $key->access_type : 'all';
@@ -225,6 +242,16 @@ if (!defined('ABSPATH')) {
                                     <span class="dashicons dashicons-dismiss"></span>
                                     <?php _e('Inactiva', 'imagina-updater-server'); ?>
                                 </span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <strong><?php echo esc_html($active_count); ?></strong> /
+                            <?php echo $max_activations == 0 ? '∞' : esc_html($max_activations); ?>
+                            <?php if ($active_count > 0): ?>
+                                <br>
+                                <a href="<?php echo admin_url('admin.php?page=imagina-updater-activations&api_key_id=' . $key->id); ?>" class="description">
+                                    <?php _e('Ver sitios', 'imagina-updater-server'); ?>
+                                </a>
                             <?php endif; ?>
                         </td>
                         <td>

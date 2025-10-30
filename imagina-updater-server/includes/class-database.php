@@ -108,6 +108,24 @@ class Imagina_Updater_Server_Database {
             KEY plugin_id (plugin_id)
         ) $charset_collate;";
 
+        // Tabla de activaciones de sitios
+        $table_activations = $wpdb->prefix . 'imagina_updater_activations';
+        $sql_activations = "CREATE TABLE IF NOT EXISTS $table_activations (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            api_key_id bigint(20) unsigned NOT NULL,
+            site_domain varchar(255) NOT NULL COMMENT 'Dominio del sitio activado',
+            activation_token varchar(64) NOT NULL COMMENT 'Token único de activación',
+            is_active tinyint(1) NOT NULL DEFAULT 1,
+            activated_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_verified datetime DEFAULT NULL COMMENT 'Última vez que se verificó la activación',
+            deactivated_at datetime DEFAULT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY activation_token (activation_token),
+            KEY api_key_id (api_key_id),
+            KEY is_active (is_active),
+            KEY site_domain (site_domain)
+        ) $charset_collate;";
+
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql_api_keys);
         dbDelta($sql_plugins);
@@ -115,6 +133,7 @@ class Imagina_Updater_Server_Database {
         dbDelta($sql_downloads);
         dbDelta($sql_groups);
         dbDelta($sql_group_items);
+        dbDelta($sql_activations);
 
         // Ejecutar migraciones si es necesario
         self::run_migrations();
@@ -130,6 +149,7 @@ class Imagina_Updater_Server_Database {
         // Siempre intentar ejecutar migraciones (verifican internamente si son necesarias)
         self::migrate_add_slug_override();
         self::migrate_add_api_key_permissions();
+        self::migrate_add_max_activations();
     }
 
     /**
@@ -223,6 +243,44 @@ class Imagina_Updater_Server_Database {
             return true;
         } else {
             error_log('IMAGINA UPDATER SERVER: Campos de permisos ya existen en API keys, migración no necesaria');
+            return true;
+        }
+    }
+
+    /**
+     * Migración: Agregar campo max_activations a API keys
+     */
+    private static function migrate_add_max_activations() {
+        global $wpdb;
+
+        $table_api_keys = $wpdb->prefix . 'imagina_updater_api_keys';
+
+        // Verificar si el campo ya existe
+        $column_exists = $wpdb->get_results(
+            $wpdb->prepare(
+                "SHOW COLUMNS FROM $table_api_keys LIKE %s",
+                'max_activations'
+            )
+        );
+
+        if (empty($column_exists)) {
+            error_log('IMAGINA UPDATER SERVER: Iniciando migración para agregar max_activations a API keys');
+
+            // Agregar columna max_activations (0 = ilimitado, >0 = límite específico)
+            $result = $wpdb->query(
+                "ALTER TABLE $table_api_keys
+                ADD COLUMN max_activations int(11) NOT NULL DEFAULT 1 COMMENT 'Máximo de sitios activados (0 = ilimitado)' AFTER allowed_groups"
+            );
+
+            if ($result === false) {
+                error_log('IMAGINA UPDATER SERVER: ERROR en migración al agregar max_activations - ' . $wpdb->last_error);
+                return false;
+            }
+
+            error_log('IMAGINA UPDATER SERVER: Migración completada exitosamente - Campo max_activations agregado');
+            return true;
+        } else {
+            error_log('IMAGINA UPDATER SERVER: Campo max_activations ya existe, migración no necesaria');
             return true;
         }
     }

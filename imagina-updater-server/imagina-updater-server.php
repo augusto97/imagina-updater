@@ -82,6 +82,7 @@ class Imagina_Updater_Server {
         require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'includes/class-logger.php';
         require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'includes/class-database.php';
         require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'includes/class-api-keys.php';
+        require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'includes/class-activations.php';
         require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'includes/class-plugin-manager.php';
         require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'includes/class-plugin-groups.php';
         require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'admin/class-admin.php';

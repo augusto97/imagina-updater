@@ -48,11 +48,8 @@ class Imagina_Updater_Client_Updater {
         $this->config = imagina_updater_client()->get_config();
         imagina_updater_log('Configuración cargada en Updater: ' . print_r($this->config, true));
 
-        // Crear cliente API
-        $this->api_client = new Imagina_Updater_Client_API(
-            $this->config['server_url'],
-            $this->config['api_key']
-        );
+        // Crear cliente API con el token correcto (activation_token o api_key)
+        $this->api_client = imagina_updater_client()->get_api_client();
 
         imagina_updater_log('Cliente API creado');
 

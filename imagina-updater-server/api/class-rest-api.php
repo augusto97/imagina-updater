@@ -185,34 +185,85 @@ class Imagina_Updater_Server_REST_API {
             'callback' => array($this, 'validate_api_key'),
             'permission_callback' => array($this, 'check_api_key')
         ));
+
+        // Activar sitio con API Key
+        register_rest_route(self::NAMESPACE, '/activate', array(
+            'methods' => WP_REST_Server::CREATABLE,
+            'callback' => array($this, 'activate_site'),
+            'permission_callback' => '__return_true', // No requiere autenticación previa
+            'args' => array(
+                'api_key' => array(
+                    'required' => true,
+                    'type' => 'string',
+                    'validate_callback' => function($param) {
+                        return is_string($param) && !empty($param);
+                    }
+                ),
+                'site_domain' => array(
+                    'required' => true,
+                    'type' => 'string',
+                    'validate_callback' => function($param) {
+                        return is_string($param) && !empty($param);
+                    }
+                )
+            )
+        ));
+
+        // Desactivar sitio (admin)
+        register_rest_route(self::NAMESPACE, '/deactivate/(?P<activation_id>\d+)', array(
+            'methods' => WP_REST_Server::CREATABLE,
+            'callback' => array($this, 'deactivate_site'),
+            'permission_callback' => array($this, 'check_api_key'),
+            'args' => array(
+                'activation_id' => array(
+                    'required' => true,
+                    'type' => 'integer',
+                    'validate_callback' => function($param) {
+                        return is_numeric($param) && $param > 0;
+                    }
+                )
+            )
+        ));
     }
 
     /**
-     * Verificar API Key en la petición
+     * Verificar API Key o Activation Token en la petición
      *
      * @param WP_REST_Request $request
-     * @return bool
+     * @return bool|WP_Error
      */
     public function check_api_key($request) {
-        $api_key = $this->get_api_key_from_request($request);
+        $token = $this->get_api_key_from_request($request);
 
-        if (empty($api_key)) {
+        if (empty($token)) {
             return new WP_Error(
-                'missing_api_key',
-                __('API Key es requerida', 'imagina-updater-server'),
+                'missing_credentials',
+                __('Se requiere API Key o token de activación', 'imagina-updater-server'),
                 array('status' => 401)
             );
         }
 
-        // Verificar rate limiting
-        if (!$this->check_rate_limit($api_key)) {
+        // Determinar si es activation token o API key por el prefijo
+        if (strpos($token, 'iat_') === 0) {
+            // Es un activation token
+            return $this->validate_activation_token($request, $token);
+        } elseif (strpos($token, 'ius_') === 0) {
+            // Es un API key
+            return $this->validate_api_key_auth($request, $token);
+        } else {
             return new WP_Error(
-                'rate_limit_exceeded',
-                __('Límite de peticiones excedido. Máximo 60 peticiones por minuto.', 'imagina-updater-server'),
-                array('status' => 429)
+                'invalid_credentials',
+                __('Formato de credenciales inválido', 'imagina-updater-server'),
+                array('status' => 401)
             );
         }
+    }
 
+    /**
+     * Validar API Key
+     */
+    private function validate_api_key_auth($request, $api_key) {
+        // Validar que el API key existe y es válido
         $key_data = Imagina_Updater_Server_API_Keys::validate($api_key);
 
         if (!$key_data) {
@@ -223,8 +274,60 @@ class Imagina_Updater_Server_REST_API {
             );
         }
 
-        // Guardar datos de la API key en el request para uso posterior
+        // Rate limiting
+        if (!$this->check_rate_limit($api_key)) {
+            return new WP_Error(
+                'rate_limit_exceeded',
+                __('Límite de peticiones excedido. Máximo 60 peticiones por minuto.', 'imagina-updater-server'),
+                array('status' => 429)
+            );
+        }
+
+        // Guardar datos de la API key
         $request->set_param('_api_key_data', $key_data);
+
+        return true;
+    }
+
+    /**
+     * Validar Activation Token
+     */
+    private function validate_activation_token($request, $activation_token) {
+        // Obtener dominio del cliente (enviado en headers o body)
+        $site_domain = $request->get_header('X-Site-Domain');
+        if (empty($site_domain)) {
+            $site_domain = $request->get_param('site_domain');
+        }
+        if (empty($site_domain)) {
+            $site_domain = home_url(); // Fallback
+        }
+
+        // Validar token
+        $activation = Imagina_Updater_Server_Activations::validate_token($activation_token, $site_domain);
+
+        if (!$activation) {
+            return new WP_Error(
+                'invalid_activation',
+                __('Token de activación inválido o el sitio no coincide', 'imagina-updater-server'),
+                array('status' => 403)
+            );
+        }
+
+        // Rate limiting (usando el token como clave)
+        if (!$this->check_rate_limit($activation_token)) {
+            return new WP_Error(
+                'rate_limit_exceeded',
+                __('Límite de peticiones excedido. Máximo 60 peticiones por minuto.', 'imagina-updater-server'),
+                array('status' => 429)
+            );
+        }
+
+        // Obtener datos del API key asociado
+        $key_data = Imagina_Updater_Server_API_Keys::get_by_id($activation->api_key_id);
+
+        // Guardar datos
+        $request->set_param('_api_key_data', $key_data);
+        $request->set_param('_activation_data', $activation);
 
         return true;
     }
@@ -526,16 +629,65 @@ class Imagina_Updater_Server_REST_API {
     }
 
     /**
+     * Endpoint: Activar sitio
+     */
+    public function activate_site($request) {
+        $api_key = $request->get_param('api_key');
+        $site_domain = $request->get_param('site_domain');
+
+        // Activar el sitio
+        $result = Imagina_Updater_Server_Activations::activate_site($api_key, $site_domain);
+
+        if (is_wp_error($result)) {
+            return $result;
+        }
+
+        return rest_ensure_response($result);
+    }
+
+    /**
+     * Endpoint: Desactivar sitio
+     */
+    public function deactivate_site($request) {
+        $activation_id = $request->get_param('activation_id');
+
+        $result = Imagina_Updater_Server_Activations::deactivate_site($activation_id);
+
+        if (!$result) {
+            return new WP_Error(
+                'deactivation_failed',
+                __('No se pudo desactivar el sitio', 'imagina-updater-server'),
+                array('status' => 500)
+            );
+        }
+
+        return rest_ensure_response(array(
+            'success' => true,
+            'message' => __('Sitio desactivado correctamente', 'imagina-updater-server')
+        ));
+    }
+
+    /**
      * Endpoint: Validar API Key
      */
     public function validate_api_key($request) {
         $api_key_data = $request->get_param('_api_key_data');
+        $activation_data = $request->get_param('_activation_data');
 
-        return rest_ensure_response(array(
+        $response = array(
             'valid' => true,
             'site_name' => $api_key_data->site_name,
             'site_url' => $api_key_data->site_url,
             'created_at' => $api_key_data->created_at
-        ));
+        );
+
+        // Si está usando activation token, agregar info
+        if ($activation_data) {
+            $response['activated'] = true;
+            $response['activation_domain'] = $activation_data->site_domain;
+            $response['activated_at'] = $activation_data->activated_at;
+        }
+
+        return rest_ensure_response($response);
     }
 }

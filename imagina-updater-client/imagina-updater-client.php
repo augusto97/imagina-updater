@@ -142,6 +142,25 @@ class Imagina_Updater_Client {
     }
 
     /**
+     * Obtener instancia del API client con el token correcto
+     * Usa activation_token si está disponible, sino usa api_key
+     *
+     * @return Imagina_Updater_Client_API|null
+     */
+    public function get_api_client() {
+        if (!$this->is_configured()) {
+            return null;
+        }
+
+        // Preferir activation_token sobre api_key
+        $token = !empty($this->config['activation_token'])
+            ? $this->config['activation_token']
+            : $this->config['api_key'];
+
+        return new Imagina_Updater_Client_API($this->config['server_url'], $token);
+    }
+
+    /**
      * Actualizar configuración
      */
     public function update_config($config) {

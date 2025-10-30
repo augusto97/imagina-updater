@@ -110,21 +110,24 @@ class Imagina_Updater_Client_Admin {
 
             // Obtener configuración actual
             $current_config = imagina_updater_client()->get_config();
+            $has_api_key = !empty($current_config['api_key']);
             $change_api_key = isset($_POST['change_api_key']) && $_POST['change_api_key'] === '1';
 
             // Determinar qué API Key usar
             $activation_token = isset($current_config['activation_token']) ? $current_config['activation_token'] : '';
+            $api_key = '';
 
-            if ($change_api_key) {
-                // Usuario quiere cambiar el API Key
+            // Caso 1: Primera vez (no hay API key) O usuario marcó cambiar API key
+            if (!$has_api_key || $change_api_key) {
+                // Obtener API key del formulario
                 $api_key = isset($_POST['api_key']) ? sanitize_text_field($_POST['api_key']) : '';
 
                 if (empty($api_key)) {
-                    add_settings_error('imagina_updater_client', 'missing_api_key', __('Debes ingresar una nueva API Key', 'imagina-updater-client'), 'error');
+                    add_settings_error('imagina_updater_client', 'missing_api_key', __('Debes ingresar una API Key', 'imagina-updater-client'), 'error');
                     return;
                 }
 
-                // Validar la nueva API Key y activar el sitio
+                // Validar la API Key
                 $api_client = new Imagina_Updater_Client_API($server_url, $api_key);
                 $validation = $api_client->validate();
 
@@ -147,16 +150,13 @@ class Imagina_Updater_Client_Admin {
                     return;
                 }
 
-                // Guardar activation token
+                // Guardar nuevo activation token
                 $activation_token = $activation_result['activation_token'];
             } else {
-                // Mantener el API Key actual (sin validar nuevamente)
-                $api_key = isset($current_config['api_key']) ? $current_config['api_key'] : '';
-
-                if (empty($api_key)) {
-                    add_settings_error('imagina_updater_client', 'missing_fields', __('API Key es requerido', 'imagina-updater-client'), 'error');
-                    return;
-                }
+                // Caso 2: Ya hay API key guardada y NO se está cambiando
+                // Mantener configuración actual
+                $api_key = $current_config['api_key'];
+                // No revalidar ni reactivar
             }
 
             // Validar server_url

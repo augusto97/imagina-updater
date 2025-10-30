@@ -37,25 +37,98 @@ class Imagina_Updater_Server_REST_API {
     }
 
     /**
-     * Verificar rate limiting simple (máx 60 peticiones por minuto por API key)
+     * Obtener IP del cliente (compatible con proxies, CDN, load balancers)
+     */
+    private function get_client_ip() {
+        $ip = '';
+
+        if (!empty($_SERVER['HTTP_CF_CONNECTING_IP'])) {
+            // Cloudflare
+            $ip = $_SERVER['HTTP_CF_CONNECTING_IP'];
+        } elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+            // Proxy/Load Balancer
+            $ip = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR'])[0];
+        } elseif (!empty($_SERVER['HTTP_X_REAL_IP'])) {
+            // Nginx
+            $ip = $_SERVER['HTTP_X_REAL_IP'];
+        } else {
+            $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+        }
+
+        return filter_var(trim($ip), FILTER_VALIDATE_IP) ? trim($ip) : '';
+    }
+
+    /**
+     * Verificar rate limiting mejorado con protección multinivel
+     * - 60 peticiones por minuto por API key
+     * - 100 peticiones por minuto por IP (para servidores compartidos)
+     * - Ban temporal después de múltiples violaciones
      */
     private function check_rate_limit($api_key) {
-        $cache_key = 'imagina_updater_rate_limit_' . md5($api_key);
-        $requests = get_transient($cache_key);
+        $client_ip = $this->get_client_ip();
 
-        if ($requests === false) {
-            // Primera petición en este minuto
-            set_transient($cache_key, 1, 60); // 60 segundos
-            return true;
+        // Verificar si la IP está bloqueada temporalmente
+        $ip_ban_key = 'imagina_updater_ip_ban_' . md5($client_ip);
+        if (get_transient($ip_ban_key)) {
+            imagina_updater_server_log('IP bloqueada temporalmente por múltiples violaciones: ' . $client_ip, 'warning');
+            return false;
         }
 
-        if ($requests >= 60) {
-            return false; // Límite excedido
+        // Rate limiting por API key (60/minuto)
+        $api_cache_key = 'imagina_updater_rate_api_' . md5($api_key);
+        $api_requests = get_transient($api_cache_key);
+
+        if ($api_requests === false) {
+            set_transient($api_cache_key, 1, 60);
+        } else {
+            if ($api_requests >= 60) {
+                $this->increment_violation($api_key, $client_ip);
+                imagina_updater_server_log('Rate limit excedido para API key: ' . substr($api_key, 0, 10) . '...', 'warning');
+                return false;
+            }
+            set_transient($api_cache_key, $api_requests + 1, 60);
         }
 
-        // Incrementar contador
-        set_transient($cache_key, $requests + 1, 60);
+        // Rate limiting por IP (100/minuto) - más permisivo para hosting compartido
+        if (!empty($client_ip)) {
+            $ip_cache_key = 'imagina_updater_rate_ip_' . md5($client_ip);
+            $ip_requests = get_transient($ip_cache_key);
+
+            if ($ip_requests === false) {
+                set_transient($ip_cache_key, 1, 60);
+            } else {
+                if ($ip_requests >= 100) {
+                    $this->increment_violation($api_key, $client_ip);
+                    imagina_updater_server_log('Rate limit excedido para IP: ' . $client_ip, 'warning');
+                    return false;
+                }
+                set_transient($ip_cache_key, $ip_requests + 1, 60);
+            }
+        }
+
         return true;
+    }
+
+    /**
+     * Incrementar contador de violaciones y aplicar ban temporal si es necesario
+     */
+    private function increment_violation($api_key, $ip) {
+        if (empty($ip)) {
+            return;
+        }
+
+        $violation_key = 'imagina_updater_violations_' . md5($ip);
+        $violations = get_transient($violation_key) ?: 0;
+        $violations++;
+
+        set_transient($violation_key, $violations, 3600); // Rastrear por 1 hora
+
+        // Ban temporal después de 5 violaciones en 1 hora
+        if ($violations >= 5) {
+            $ban_key = 'imagina_updater_ip_ban_' . md5($ip);
+            set_transient($ban_key, true, 900); // Ban de 15 minutos
+            imagina_updater_server_log('IP baneada temporalmente (15 min) por múltiples violaciones: ' . $ip . ' | API Key: ' . substr($api_key, 0, 10) . '...', 'error');
+        }
     }
 
     /**

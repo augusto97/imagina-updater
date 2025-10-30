@@ -1,0 +1,5 @@
+# Protección del directorio de plugins
+# Solo permite acceso a través de la API REST de WordPress
+
+Order Deny,Allow
+Deny from all

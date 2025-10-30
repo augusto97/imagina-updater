@@ -271,6 +271,52 @@ class Imagina_Updater_Server_API_Keys {
     }
 
     /**
+     * Actualizar información del sitio (nombre y URL)
+     *
+     * @param int $id ID de la API Key
+     * @param string $site_name Nuevo nombre del sitio
+     * @param string $site_url Nueva URL del sitio
+     * @return bool|WP_Error True si se actualizó correctamente, WP_Error en caso de error
+     */
+    public static function update_site_info($id, $site_name, $site_url) {
+        global $wpdb;
+
+        // Validar que la API key existe
+        $existing_key = self::get_by_id($id);
+        if (!$existing_key) {
+            return new WP_Error('not_found', __('API Key no encontrada', 'imagina-updater-server'));
+        }
+
+        // Validar datos
+        $site_name = sanitize_text_field($site_name);
+        $site_url = esc_url_raw($site_url);
+
+        if (empty($site_name) || empty($site_url)) {
+            return new WP_Error('invalid_data', __('Nombre y URL del sitio son obligatorios', 'imagina-updater-server'));
+        }
+
+        $table = $wpdb->prefix . 'imagina_updater_api_keys';
+
+        // Actualizar nombre y URL del sitio
+        $result = $wpdb->update(
+            $table,
+            array(
+                'site_name' => $site_name,
+                'site_url' => $site_url
+            ),
+            array('id' => $id),
+            array('%s', '%s'),
+            array('%d')
+        );
+
+        if ($result === false) {
+            return new WP_Error('db_error', __('Error al actualizar información del sitio', 'imagina-updater-server'));
+        }
+
+        return true;
+    }
+
+    /**
      * Eliminar una API Key
      *
      * @param int $id ID de la API Key

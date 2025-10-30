@@ -105,31 +105,47 @@ class Imagina_Updater_Client_Admin {
         // Guardar configuración
         if (isset($_POST['imagina_save_config']) && check_admin_referer('imagina_save_config')) {
             $server_url = esc_url_raw($_POST['server_url']);
-
-            // Manejar API Key: si está vacío pero existe api_key_current, mantener el actual
-            $api_key = sanitize_text_field($_POST['api_key']);
-            if (empty($api_key) && isset($_POST['api_key_current']) && !empty($_POST['api_key_current'])) {
-                $api_key = sanitize_text_field($_POST['api_key_current']);
-            }
-
             $enable_logging = isset($_POST['enable_logging']) ? true : false;
             $log_level = isset($_POST['log_level']) ? sanitize_text_field($_POST['log_level']) : 'INFO';
 
-            // Validar campos
-            if (empty($server_url) || empty($api_key)) {
-                add_settings_error('imagina_updater_client', 'missing_fields', __('URL del servidor y API Key son requeridos', 'imagina-updater-client'), 'error');
-                return;
+            // Obtener configuración actual
+            $current_config = imagina_updater_client()->get_config();
+            $change_api_key = isset($_POST['change_api_key']) && $_POST['change_api_key'] === '1';
+
+            // Determinar qué API Key usar
+            if ($change_api_key) {
+                // Usuario quiere cambiar el API Key
+                $api_key = isset($_POST['api_key']) ? sanitize_text_field($_POST['api_key']) : '';
+
+                if (empty($api_key)) {
+                    add_settings_error('imagina_updater_client', 'missing_api_key', __('Debes ingresar una nueva API Key', 'imagina-updater-client'), 'error');
+                    return;
+                }
+
+                // Validar la nueva API Key
+                $api_client = new Imagina_Updater_Client_API($server_url, $api_key);
+                $validation = $api_client->validate();
+
+                if (is_wp_error($validation)) {
+                    add_settings_error('imagina_updater_client', 'connection_error', sprintf(
+                        __('Error de conexión: %s', 'imagina-updater-client'),
+                        $validation->get_error_message()
+                    ), 'error');
+                    return;
+                }
+            } else {
+                // Mantener el API Key actual (sin validar nuevamente)
+                $api_key = isset($current_config['api_key']) ? $current_config['api_key'] : '';
+
+                if (empty($api_key)) {
+                    add_settings_error('imagina_updater_client', 'missing_fields', __('API Key es requerido', 'imagina-updater-client'), 'error');
+                    return;
+                }
             }
 
-            // Validar conexión
-            $api_client = new Imagina_Updater_Client_API($server_url, $api_key);
-            $validation = $api_client->validate();
-
-            if (is_wp_error($validation)) {
-                add_settings_error('imagina_updater_client', 'connection_error', sprintf(
-                    __('Error de conexión: %s', 'imagina-updater-client'),
-                    $validation->get_error_message()
-                ), 'error');
+            // Validar server_url
+            if (empty($server_url)) {
+                add_settings_error('imagina_updater_client', 'missing_server_url', __('URL del servidor es requerida', 'imagina-updater-client'), 'error');
                 return;
             }
 

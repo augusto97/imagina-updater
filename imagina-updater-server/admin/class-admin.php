@@ -239,6 +239,32 @@ class Imagina_Updater_Server_Admin {
             add_settings_error('imagina_updater', 'regenerate_success', __('API Key regenerada exitosamente', 'imagina-updater-server'), 'success');
         }
 
+        // Actualizar información del sitio (nombre y URL)
+        if (isset($_POST['imagina_update_site_info']) && check_admin_referer('imagina_update_site_info')) {
+            $api_key_id = intval($_POST['api_key_id']);
+            $site_name = sanitize_text_field($_POST['site_name']);
+            $site_url = esc_url_raw($_POST['site_url']);
+
+            $result = Imagina_Updater_Server_API_Keys::update_site_info($api_key_id, $site_name, $site_url);
+
+            if (is_wp_error($result)) {
+                imagina_updater_server_log('Error al actualizar información del sitio API Key ID ' . $api_key_id . ': ' . $result->get_error_message(), 'error');
+                set_transient('imagina_updater_api_error', $result->get_error_message(), 30);
+            } else {
+                imagina_updater_server_log('Información del sitio actualizada exitosamente para API Key ID ' . $api_key_id, 'info');
+                set_transient('imagina_updater_site_info_success', true, 30);
+            }
+
+            wp_redirect(admin_url('admin.php?page=imagina-updater-api-keys'));
+            exit;
+        }
+
+        // Mostrar mensaje de actualización de información del sitio
+        if (get_transient('imagina_updater_site_info_success')) {
+            delete_transient('imagina_updater_site_info_success');
+            add_settings_error('imagina_updater', 'site_info_success', __('Información del sitio actualizada', 'imagina-updater-server'), 'success');
+        }
+
         // Actualizar permisos de API Key
         if (isset($_POST['imagina_update_api_permissions']) && check_admin_referer('imagina_update_api_permissions')) {
             $api_key_id = intval($_POST['api_key_id']);

@@ -62,7 +62,32 @@ class Imagina_Updater_Client_API {
 
         $response = wp_remote_request($url, $args);
 
+        // Manejo mejorado de errores HTTP
         if (is_wp_error($response)) {
+            $error_code = $response->get_error_code();
+            $error_message = $response->get_error_message();
+
+            // Identificar tipo específico de error
+            if ($error_code === 'http_request_failed' && strpos($error_message, 'timed out') !== false) {
+                return new WP_Error(
+                    'timeout',
+                    __('Tiempo de espera agotado al conectar con el servidor. Por favor, intenta nuevamente.', 'imagina-updater-client'),
+                    array('original_error' => $error_message)
+                );
+            } elseif ($error_code === 'http_request_failed' && strpos($error_message, 'resolve host') !== false) {
+                return new WP_Error(
+                    'dns_error',
+                    __('No se pudo resolver el dominio del servidor. Verifica la URL configurada.', 'imagina-updater-client'),
+                    array('original_error' => $error_message)
+                );
+            } elseif ($error_code === 'http_request_failed') {
+                return new WP_Error(
+                    'connection_error',
+                    __('Error de conexión con el servidor. Verifica tu conexión a internet.', 'imagina-updater-client'),
+                    array('original_error' => $error_message)
+                );
+            }
+
             return $response;
         }
 

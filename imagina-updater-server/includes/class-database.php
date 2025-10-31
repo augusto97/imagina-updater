@@ -150,6 +150,7 @@ class Imagina_Updater_Server_Database {
         self::migrate_add_slug_override();
         self::migrate_add_api_key_permissions();
         self::migrate_add_max_activations();
+        self::migrate_add_performance_indexes();
     }
 
     /**
@@ -282,6 +283,54 @@ class Imagina_Updater_Server_Database {
         } else {
             error_log('IMAGINA UPDATER SERVER: Campo max_activations ya existe, migración no necesaria');
             return true;
+        }
+    }
+
+    /**
+     * Migración: Agregar índices compuestos para mejorar rendimiento de consultas
+     */
+    private static function migrate_add_performance_indexes() {
+        global $wpdb;
+
+        $table_activations = $wpdb->prefix . 'imagina_updater_activations';
+        $table_downloads = $wpdb->prefix . 'imagina_updater_downloads';
+
+        // Verificar y agregar índice compuesto en activations
+        $activation_index_exists = $wpdb->get_results(
+            "SHOW INDEX FROM $table_activations WHERE Key_name = 'api_key_domain_active'"
+        );
+
+        if (empty($activation_index_exists)) {
+            error_log('IMAGINA UPDATER SERVER: Agregando índice compuesto api_key_domain_active a activations');
+            $result = $wpdb->query(
+                "ALTER TABLE $table_activations
+                ADD KEY api_key_domain_active (api_key_id, site_domain, is_active)"
+            );
+
+            if ($result === false) {
+                error_log('IMAGINA UPDATER SERVER: ERROR al crear índice api_key_domain_active - ' . $wpdb->last_error);
+            } else {
+                error_log('IMAGINA UPDATER SERVER: Índice api_key_domain_active creado exitosamente');
+            }
+        }
+
+        // Verificar y agregar índice compuesto en downloads
+        $download_index_exists = $wpdb->get_results(
+            "SHOW INDEX FROM $table_downloads WHERE Key_name = 'api_key_downloaded'"
+        );
+
+        if (empty($download_index_exists)) {
+            error_log('IMAGINA UPDATER SERVER: Agregando índice compuesto api_key_downloaded a downloads');
+            $result = $wpdb->query(
+                "ALTER TABLE $table_downloads
+                ADD KEY api_key_downloaded (api_key_id, downloaded_at)"
+            );
+
+            if ($result === false) {
+                error_log('IMAGINA UPDATER SERVER: ERROR al crear índice api_key_downloaded - ' . $wpdb->last_error);
+            } else {
+                error_log('IMAGINA UPDATER SERVER: Índice api_key_downloaded creado exitosamente');
+            }
         }
     }
 

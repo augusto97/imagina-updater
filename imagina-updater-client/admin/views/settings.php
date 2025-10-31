@@ -321,14 +321,7 @@ if (!defined('ABSPATH')) {
 
                                     // Verificar si el plugin puede ser detectado por el updater
                                     $updater = class_exists('Imagina_Updater_Client_Updater') ? Imagina_Updater_Client_Updater::get_instance() : null;
-                                    $can_detect = false;
-                                    if ($updater) {
-                                        $reflection = new ReflectionClass($updater);
-                                        $method = $reflection->getMethod('find_plugin_file');
-                                        $method->setAccessible(true);
-                                        $detected_file = $method->invoke($updater, $plugin['slug']);
-                                        $can_detect = !empty($detected_file);
-                                    }
+                                    $can_detect = $updater ? $updater->can_detect_plugin($plugin['slug']) : false;
                                     ?>
                                     <tr>
                                         <td class="check-column">

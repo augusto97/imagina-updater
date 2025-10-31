@@ -30,6 +30,12 @@ class Imagina_Updater_Client_Updater {
     private $plugin_file_cache = array();
 
     /**
+     * Índice global de plugins (mapeo slug -> archivo)
+     * Se construye una sola vez al inicio para optimizar búsquedas
+     */
+    private $plugin_index = null;
+
+    /**
      * Obtener instancia
      */
     public static function get_instance() {
@@ -43,29 +49,25 @@ class Imagina_Updater_Client_Updater {
      * Constructor
      */
     private function __construct() {
-        imagina_updater_log('Constructor de Updater ejecutado');
-
         $this->config = imagina_updater_client()->get_config();
-        imagina_updater_log('Configuración cargada en Updater: ' . print_r($this->config, true));
 
         // Crear cliente API con el token correcto (activation_token o api_key)
         $this->api_client = imagina_updater_client()->get_api_client();
 
-        imagina_updater_log('Cliente API creado');
-
         $this->init_hooks();
-        imagina_updater_log('Hooks inicializados');
     }
 
     /**
      * Inicializar hooks
      */
     private function init_hooks() {
-        imagina_updater_log('Registrando hooks...');
+        // Solo cargar hooks de actualización en admin (mejora rendimiento frontend)
+        if (!is_admin()) {
+            return;
+        }
 
         // Hook principal para verificar actualizaciones cuando se GUARDA el transient (prioridad 10)
         add_filter('pre_set_site_transient_update_plugins', array($this, 'check_for_updates'), 10);
-        imagina_updater_log('Hook pre_set_site_transient_update_plugins registrado');
 
         // Hook para inyectar actualizaciones cuando se LEE el transient (prioridad 10 - antes de bloquear)
         add_filter('site_transient_update_plugins', array($this, 'inject_updates_on_read'), 10);
@@ -99,94 +101,61 @@ class Imagina_Updater_Client_Updater {
 
         // Limpiar cache después de actualizar un plugin
         add_action('upgrader_process_complete', array($this, 'clear_cache_after_update'), 10, 2);
-
-        imagina_updater_log('Todos los hooks registrados correctamente');
     }
 
     /**
      * Verificar actualizaciones disponibles
      */
     public function check_for_updates($transient) {
-        imagina_updater_log('check_for_updates EJECUTADO');
-
         if (empty($transient->checked)) {
-            imagina_updater_log('transient->checked está vacío');
             return $transient;
         }
 
         // Solo verificar plugins habilitados
         $enabled_plugins = $this->config['enabled_plugins'];
-        imagina_updater_log('Plugins habilitados: ' . print_r($enabled_plugins, true));
 
         if (empty($enabled_plugins)) {
-            imagina_updater_log('No hay plugins habilitados, retornando');
             return $transient;
         }
 
         // PASO 1: Limpiar actualizaciones previas de plugins gestionados
-        imagina_updater_log('PASO 1 - Limpiar actualizaciones previas');
         $managed_files = array();
         foreach ($enabled_plugins as $plugin_slug) {
-            imagina_updater_log('Buscando archivo para plugin: ' . $plugin_slug);
             $plugin_file = $this->find_plugin_file($plugin_slug);
-            imagina_updater_log('Archivo encontrado: ' . ($plugin_file ? $plugin_file : 'NO ENCONTRADO'));
 
             if ($plugin_file) {
                 $managed_files[] = $plugin_file;
                 // Remover actualizaciones existentes de otros sistemas
                 if (isset($transient->response[$plugin_file])) {
                     unset($transient->response[$plugin_file]);
-                    imagina_updater_log('Actualización externa removida para: ' . $plugin_file);
                 }
             }
         }
 
         // PASO 2: Preparar lista de plugins para verificar
-        imagina_updater_log('PASO 2 - Preparar lista de plugins para verificar');
-        imagina_updater_log('Plugins en transient->checked: ' . print_r(array_keys($transient->checked), true));
         $plugins_to_check = array();
 
         foreach ($enabled_plugins as $plugin_slug) {
             $plugin_file = $this->find_plugin_file($plugin_slug);
 
-            if ($plugin_file) {
-                imagina_updater_log('Plugin ' . $plugin_slug . ' -> archivo: ' . $plugin_file);
-
-                if (isset($transient->checked[$plugin_file])) {
-                    $plugins_to_check[$plugin_slug] = $transient->checked[$plugin_file];
-                    imagina_updater_log('Plugin agregado a verificar: ' . $plugin_slug . ' v' . $transient->checked[$plugin_file]);
-                } else {
-                    imagina_updater_log('Plugin NO está en transient->checked: ' . $plugin_file, 'warning');
-                }
-            } else {
-                imagina_updater_log('NO se encontró archivo para plugin: ' . $plugin_slug, 'error');
+            if ($plugin_file && isset($transient->checked[$plugin_file])) {
+                $plugins_to_check[$plugin_slug] = $transient->checked[$plugin_file];
             }
         }
 
-        imagina_updater_log('Total de plugins a verificar: ' . count($plugins_to_check));
-
         if (empty($plugins_to_check)) {
-            imagina_updater_log('No hay plugins para verificar, retornando');
             return $transient;
         }
 
         // PASO 3: Consultar servidor
-        imagina_updater_log('PASO 3 - Consultando servidor');
-        imagina_updater_log('Enviando al servidor: ' . print_r($plugins_to_check, true));
         $updates = $this->api_client->check_updates($plugins_to_check);
 
         if (is_wp_error($updates)) {
-            // Log del error
-            imagina_updater_log('ERROR del servidor: ' . $updates->get_error_message(), 'error');
             return $transient;
         }
 
-        imagina_updater_log('Respuesta del servidor: ' . print_r($updates, true));
-
         // PASO 4: Forzar actualizaciones desde nuestro servidor
-        imagina_updater_log('PASO 4 - Procesar actualizaciones recibidas');
         foreach ($updates as $plugin_slug => $update_data) {
-            imagina_updater_log('Procesando actualización para: ' . $plugin_slug);
             $plugin_file = $this->find_plugin_file($plugin_slug);
 
             if ($plugin_file) {
@@ -196,11 +165,8 @@ class Imagina_Updater_Client_Updater {
                     $installed_version = $transient->checked[$plugin_file];
                 }
 
-                imagina_updater_log("Comparando versiones: instalada={$installed_version}, nueva={$update_data['new_version']}");
-
                 // Solo agregar si hay una nueva versión disponible
                 if (empty($installed_version) || version_compare($update_data['new_version'], $installed_version, '>')) {
-                    imagina_updater_log('Nueva versión disponible, creando objeto de actualización para: ' . $plugin_file);
 
                     // Crear objeto de actualización con flag especial
                     $update_object = (object) array(
@@ -222,22 +188,14 @@ class Imagina_Updater_Client_Updater {
 
                     // Forzar la actualización en response
                     $transient->response[$plugin_file] = $update_object;
-                    imagina_updater_log('Actualización agregada a transient->response para: ' . $plugin_file);
 
                     // Remover de no_update si existe
                     if (isset($transient->no_update[$plugin_file])) {
                         unset($transient->no_update[$plugin_file]);
-                        imagina_updater_log('Plugin removido de no_update: ' . $plugin_file);
                     }
-                } else {
-                    imagina_updater_log("Plugin ya está actualizado: {$plugin_slug} v{$installed_version}");
                 }
-            } else {
-                imagina_updater_log('ERROR - No se encontró archivo para plugin: ' . $plugin_slug, 'error');
             }
         }
-
-        imagina_updater_log('Proceso completado exitosamente. Total de actualizaciones agregadas: ' . count($transient->response));
 
         return $transient;
     }
@@ -286,7 +244,6 @@ class Imagina_Updater_Client_Updater {
                 }
             }
 
-            imagina_updater_log('Actualizaciones inyectadas desde cache');
             return $transient;
         }
 
@@ -356,10 +313,6 @@ class Imagina_Updater_Client_Updater {
                     if (isset($transient->no_update[$plugin_file])) {
                         unset($transient->no_update[$plugin_file]);
                     }
-
-                    imagina_updater_log("Actualización disponible: {$plugin_slug} {$installed_version} → {$update_data['new_version']}");
-                } else {
-                    imagina_updater_log("Plugin ya está actualizado: {$plugin_slug} v{$installed_version}");
                 }
             }
         }
@@ -367,7 +320,6 @@ class Imagina_Updater_Client_Updater {
         // Cachear actualizaciones por 1 hora
         if (!empty($updates_to_cache)) {
             set_transient($cache_key, $updates_to_cache, HOUR_IN_SECONDS);
-            imagina_updater_log('Actualizaciones cacheadas por 1 hora');
         }
 
         return $transient;
@@ -530,8 +482,6 @@ class Imagina_Updater_Client_Updater {
 
             // Inyectar header de autorización
             $args['headers']['Authorization'] = 'Bearer ' . $this->api_client->get_api_key();
-
-            imagina_updater_log('Headers de autenticación inyectados para descarga: ' . $url);
         }
 
         return $args;
@@ -610,7 +560,6 @@ class Imagina_Updater_Client_Updater {
             foreach ($this->config['enabled_plugins'] as $plugin_slug) {
                 if (stripos($body_content, $plugin_slug) !== false) {
                     $managed_plugin_identified = true;
-                    imagina_updater_log('Bloqueando request externo para plugin gestionado: ' . $plugin_slug . ' a ' . $url);
                     break;
                 }
 
@@ -618,7 +567,6 @@ class Imagina_Updater_Client_Updater {
                 $plugin_file = $this->find_plugin_file($plugin_slug);
                 if ($plugin_file && stripos($body_content, $plugin_file) !== false) {
                     $managed_plugin_identified = true;
-                    imagina_updater_log('Bloqueando request externo para plugin gestionado: ' . $plugin_file . ' a ' . $url);
                     break;
                 }
             }
@@ -686,13 +634,9 @@ class Imagina_Updater_Client_Updater {
             return;
         }
 
-        imagina_updater_log('Plugin actualizado, limpiando cache de actualizaciones');
-
         // Limpiar cache de actualizaciones
         delete_transient('imagina_updater_cached_updates');
         delete_site_transient('update_plugins');
-
-        imagina_updater_log('Cache limpiado exitosamente');
     }
 
     /**
@@ -783,100 +727,92 @@ class Imagina_Updater_Client_Updater {
     }
 
     /**
-     * Encontrar archivo del plugin por slug (optimizado con caché y una sola iteración)
+     * Verificar si se puede detectar un plugin por su slug
+     * Método público para evitar uso de Reflection
+     *
+     * @param string $slug Slug del plugin
+     * @return bool True si el plugin puede ser detectado
      */
-    private function find_plugin_file($slug) {
-        // Verificar caché primero
-        if (isset($this->plugin_file_cache[$slug])) {
-            imagina_updater_log('✓ Plugin encontrado en caché: ' . $slug . ' -> ' . $this->plugin_file_cache[$slug]);
-            return $this->plugin_file_cache[$slug];
-        }
+    public function can_detect_plugin($slug) {
+        return $this->find_plugin_file($slug) !== false;
+    }
 
-        imagina_updater_log('find_plugin_file() iniciado para: ' . $slug);
+    /**
+     * Construir índice de plugins instalados para búsquedas rápidas
+     * Se ejecuta una sola vez y cachea todos los mapeos posibles
+     */
+    private function build_plugin_index() {
+        if ($this->plugin_index !== null) {
+            return; // Ya construido
+        }
 
         if (!function_exists('get_plugins')) {
             require_once ABSPATH . 'wp-admin/includes/plugin.php';
         }
 
         $all_plugins = get_plugins();
-        $slug_lower = strtolower($slug);
-        imagina_updater_log('Total de plugins instalados: ' . count($all_plugins));
+        $this->plugin_index = array();
 
-        // Criterios de búsqueda con prioridad
-        $found = false;
-        $partial_match = false;
-
-        // Una sola iteración para todos los criterios
         foreach ($all_plugins as $plugin_file => $plugin_data) {
             $plugin_slug = dirname($plugin_file);
-            $file_basename = strtolower(basename($plugin_file, '.php'));
+            $file_basename = basename($plugin_file, '.php');
 
-            // Criterio 1: Slug del directorio (EXACTO) - Prioridad alta
-            if ($plugin_slug !== '.' && strtolower($plugin_slug) === $slug_lower) {
-                imagina_updater_log('✓ Encontrado por Criterio 1 (directorio): ' . $plugin_file);
-                $found = $plugin_file;
-                break; // Salir inmediatamente, es coincidencia exacta
+            // Índice 1: Por slug del directorio
+            if ($plugin_slug !== '.') {
+                $this->plugin_index[strtolower($plugin_slug)] = $plugin_file;
+            } else {
+                // Índice 2: Por nombre de archivo (plugins de archivo único)
+                $this->plugin_index[strtolower($file_basename)] = $plugin_file;
             }
 
-            // Criterio 2: Nombre del archivo (para plugins de archivo único) - Prioridad alta
-            if ($plugin_slug === '.' && $file_basename === $slug_lower) {
-                imagina_updater_log('✓ Encontrado por Criterio 2 (archivo único): ' . $plugin_file);
-                $found = $plugin_file;
-                break;
+            // Índice 3: Por TextDomain
+            if (!empty($plugin_data['TextDomain'])) {
+                $text_domain_lower = strtolower($plugin_data['TextDomain']);
+                if (!isset($this->plugin_index[$text_domain_lower])) {
+                    $this->plugin_index[$text_domain_lower] = $plugin_file;
+                }
             }
 
-            // Criterio 3: Comparar con el nombre sanitizado del plugin (EXACTO) - Prioridad media
-            if (!$found) {
-                $plugin_name_slug = sanitize_title($plugin_data['Name']);
-                if (strtolower($plugin_name_slug) === $slug_lower) {
-                    imagina_updater_log('✓ Encontrado por Criterio 3 (nombre sanitizado): ' . $plugin_file);
+            // Índice 4: Por nombre sanitizado (pre-calculado)
+            $plugin_name_slug = strtolower(sanitize_title($plugin_data['Name']));
+            if (!isset($this->plugin_index[$plugin_name_slug])) {
+                $this->plugin_index[$plugin_name_slug] = $plugin_file;
+            }
+        }
+    }
+
+    /**
+     * Encontrar archivo del plugin por slug (optimizado con índice pre-construido)
+     */
+    private function find_plugin_file($slug) {
+        // Verificar caché primero
+        if (isset($this->plugin_file_cache[$slug])) {
+            return $this->plugin_file_cache[$slug];
+        }
+
+        // Construir índice si no existe (solo se ejecuta una vez)
+        $this->build_plugin_index();
+
+        $slug_lower = strtolower($slug);
+
+        // Búsqueda directa en índice (O(1) en lugar de O(n))
+        $found = isset($this->plugin_index[$slug_lower]) ? $this->plugin_index[$slug_lower] : false;
+
+        // Si no se encontró, intentar coincidencia parcial como fallback
+        if (!$found) {
+            foreach ($this->plugin_index as $indexed_slug => $plugin_file) {
+                // Coincidencia parcial: slug-* (ej: "plugin" coincide con "plugin-pro")
+                if (strpos($indexed_slug, $slug_lower . '-') === 0) {
                     $found = $plugin_file;
                     break;
                 }
             }
-
-            // Criterio 4: Comparar con TextDomain si está definido (EXACTO) - Prioridad media
-            if (!$found && !empty($plugin_data['TextDomain'])) {
-                if (strtolower($plugin_data['TextDomain']) === $slug_lower) {
-                    imagina_updater_log('✓ Encontrado por Criterio 4 (TextDomain): ' . $plugin_file);
-                    $found = $plugin_file;
-                    break;
-                }
-            }
-
-            // Criterio 5 (ÚLTIMA OPCIÓN): Coincidencia parcial - Prioridad baja
-            // Solo si no se ha encontrado coincidencia exacta
-            if (!$found && !$partial_match) {
-                if ($plugin_slug !== '.' && strpos($plugin_slug, $slug_lower . '-') === 0) {
-                    imagina_updater_log('⚠ Posible coincidencia parcial (Criterio 5 - slug): ' . $plugin_file);
-                    $partial_match = $plugin_file;
-                }
-
-                if (!$partial_match && strpos($file_basename, $slug_lower . '-') === 0) {
-                    imagina_updater_log('⚠ Posible coincidencia parcial (Criterio 5 - basename): ' . $plugin_file);
-                    $partial_match = $plugin_file;
-                }
-            }
         }
 
-        // Si no se encontró coincidencia exacta, usar la parcial
-        if (!$found && $partial_match) {
-            imagina_updater_log('✓ Usando coincidencia parcial: ' . $partial_match);
-            $found = $partial_match;
-        }
+        // Cachear resultado (positivo o negativo)
+        $this->plugin_file_cache[$slug] = $found;
 
-        if ($found) {
-            // Guardar en caché
-            $this->plugin_file_cache[$slug] = $found;
-            return $found;
-        }
-
-        imagina_updater_log('✗ NO se encontró archivo para slug: ' . $slug . ' (puede que no esté instalado localmente)', 'debug');
-
-        // Guardar resultado negativo en caché para evitar búsquedas repetidas
-        $this->plugin_file_cache[$slug] = false;
-
-        return false;
+        return $found;
     }
 
     /**

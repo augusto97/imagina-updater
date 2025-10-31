@@ -176,10 +176,8 @@ class Imagina_Updater_Client_Admin {
 
             add_settings_error('imagina_updater_client', 'config_saved', __('Configuración guardada exitosamente', 'imagina-updater-client'), 'success');
 
-            // Limpiar cache de actualizaciones y plugins del servidor
-            delete_site_transient('update_plugins');
-            delete_transient('imagina_updater_cached_updates');
-            delete_transient('imagina_updater_server_plugins_' . md5($server_url));
+            // Limpiar cachés usando método centralizado
+            imagina_updater_client()->clear_update_caches();
         }
 
         // Desactivar licencia
@@ -200,13 +198,8 @@ class Imagina_Updater_Client_Admin {
                 'plugin_display_mode' => 'installed_only'
             ));
 
-            // Limpiar cachés
-            delete_site_transient('update_plugins');
-            delete_transient('imagina_updater_cached_updates');
-            $config = imagina_updater_client()->get_config();
-            if (!empty($config['server_url'])) {
-                delete_transient('imagina_updater_server_plugins_' . md5($config['server_url']));
-            }
+            // Limpiar cachés usando método centralizado
+            imagina_updater_client()->clear_update_caches();
 
             add_settings_error('imagina_updater_client', 'license_deactivated', __('Licencia desactivada exitosamente', 'imagina-updater-client'), 'success');
 
@@ -261,9 +254,8 @@ class Imagina_Updater_Client_Admin {
 
             add_settings_error('imagina_updater_client', 'plugins_saved', __('Plugins actualizados exitosamente', 'imagina-updater-client'), 'success');
 
-            // Limpiar cache de actualizaciones
-            delete_site_transient('update_plugins');
-            delete_transient('imagina_updater_cached_updates');
+            // Limpiar cachés usando método centralizado
+            imagina_updater_client()->clear_update_caches();
         }
 
         // Guardar modo de visualización
@@ -325,11 +317,8 @@ class Imagina_Updater_Client_Admin {
         if (isset($_POST['imagina_refresh_plugins']) && check_admin_referer('imagina_refresh_plugins')) {
             $config = imagina_updater_client()->get_config();
 
-            // Limpiar todos los cachés relacionados
-            $cache_key = 'imagina_updater_server_plugins_' . md5($config['server_url']);
-            delete_transient($cache_key);
-            delete_transient('imagina_updater_cached_updates');
-            delete_site_transient('update_plugins');
+            // Limpiar cachés usando método centralizado
+            imagina_updater_client()->clear_update_caches();
 
             // Consultar servidor directamente
             $api_client = imagina_updater_client()->get_api_client();

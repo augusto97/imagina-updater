@@ -26,14 +26,6 @@ define('IMAGINA_UPDATER_CLIENT_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('IMAGINA_UPDATER_CLIENT_PLUGIN_FILE', __FILE__);
 
 /**
- * Función stub vacía para mantener compatibilidad con código existente
- * (el sistema de logs fue removido por no ser útil)
- */
-function imagina_updater_log($message, $level = 'info', $context = array()) {
-    // Sistema de logs deshabilitado
-}
-
-/**
  * Clase principal del plugin cliente
  */
 class Imagina_Updater_Client {
@@ -162,6 +154,21 @@ class Imagina_Updater_Client {
     public function update_config($config) {
         $this->config = array_merge($this->config, $config);
         update_option('imagina_updater_client_config', $this->config);
+    }
+
+    /**
+     * Limpiar todos los cachés de actualizaciones
+     * Método centralizado para evitar duplicación de código
+     */
+    public function clear_update_caches() {
+        delete_site_transient('update_plugins');
+        delete_transient('imagina_updater_cached_updates');
+
+        // Limpiar cache de plugins del servidor si existe configuración
+        $server_url = $this->get_config('server_url');
+        if (!empty($server_url)) {
+            delete_transient('imagina_updater_server_plugins_' . md5($server_url));
+        }
     }
 
     /**

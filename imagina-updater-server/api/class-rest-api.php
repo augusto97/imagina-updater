@@ -59,56 +59,85 @@ class Imagina_Updater_Server_REST_API {
     }
 
     /**
-     * Verificar rate limiting mejorado con protección multinivel
-     * - 60 peticiones por minuto por API key
-     * - 100 peticiones por minuto por IP (para servidores compartidos)
-     * - Ban temporal después de múltiples violaciones
+     * Verificar rate limiting optimizado por sitio
+     * - 120 peticiones por minuto por sitio (API key + dominio)
+     * - 300 peticiones por minuto por IP (para servidores compartidos con múltiples sitios)
+     * - Sistema de "burst" que permite hasta 30 peticiones en los primeros 10 segundos
+     * - Ban temporal solo en casos extremos
      */
     private function check_rate_limit($api_key) {
         $client_ip = $this->get_client_ip();
         $current_time = time();
 
-        // Verificar si la IP está bloqueada temporalmente
-        $ip_ban_key = 'imagina_updater_ip_ban_' . md5($client_ip);
-        if (get_transient($ip_ban_key)) {
-            imagina_updater_server_log('IP bloqueada temporalmente por múltiples violaciones: ' . $client_ip, 'warning');
-            return false;
+        // Obtener dominio del sitio desde los headers
+        $site_domain = isset($_SERVER['HTTP_X_SITE_DOMAIN']) ? sanitize_text_field($_SERVER['HTTP_X_SITE_DOMAIN']) : '';
+
+        // Si no hay dominio en headers, intentar extraerlo del Referer
+        if (empty($site_domain) && isset($_SERVER['HTTP_REFERER'])) {
+            $site_domain = parse_url($_SERVER['HTTP_REFERER'], PHP_URL_HOST);
         }
 
-        // Rate limiting por API key (60/minuto) - CORREGIDO con timestamps
-        $api_cache_key = 'imagina_updater_rate_api_' . md5($api_key);
-        $api_data = get_transient($api_cache_key);
+        // Rate limiting por sitio (API key + dominio) - 120/minuto
+        // Esto permite que cada sitio cliente tenga su propio límite independiente
+        $site_cache_key = 'imagina_updater_rate_site_' . md5($api_key . '_' . $site_domain);
+        $site_data = get_transient($site_cache_key);
 
-        if ($api_data === false) {
+        if ($site_data === false) {
             // Primera petición: crear nuevo contador con timestamp
-            set_transient($api_cache_key, array(
+            set_transient($site_cache_key, array(
                 'count' => 1,
-                'start_time' => $current_time
-            ), 120); // TTL de 2 minutos para seguridad (el límite se controla por timestamp)
+                'start_time' => $current_time,
+                'burst_count' => 1,
+                'burst_start' => $current_time
+            ), 150); // TTL de 2.5 minutos
         } else {
-            $time_elapsed = $current_time - $api_data['start_time'];
+            $time_elapsed = $current_time - $site_data['start_time'];
+            $burst_elapsed = $current_time - $site_data['burst_start'];
 
-            // Si ya pasó más de 1 minuto, resetear contador
-            if ($time_elapsed >= 60) {
-                set_transient($api_cache_key, array(
-                    'count' => 1,
-                    'start_time' => $current_time
-                ), 120);
+            // Verificar burst (30 peticiones en 10 segundos)
+            if ($burst_elapsed < 10) {
+                if ($site_data['burst_count'] >= 30) {
+                    imagina_updater_server_log('Burst limit excedido para sitio: ' . $site_domain . ' (' . $site_data['burst_count'] . ' peticiones en ' . $burst_elapsed . ' segundos)', 'warning');
+                    return array(
+                        'allowed' => false,
+                        'retry_after' => 10 - $burst_elapsed,
+                        'message' => 'Demasiadas peticiones muy rápido. Espera ' . (10 - $burst_elapsed) . ' segundos.'
+                    );
+                }
+                $site_data['burst_count']++;
             } else {
-                // Aún dentro del minuto, verificar límite
-                if ($api_data['count'] >= 60) {
-                    $this->increment_violation($api_key, $client_ip);
-                    imagina_updater_server_log('Rate limit excedido para API key: ' . substr($api_key, 0, 10) . '... (' . $api_data['count'] . ' peticiones en ' . $time_elapsed . ' segundos)', 'warning');
-                    return false;
+                // Reset burst counter
+                $site_data['burst_count'] = 1;
+                $site_data['burst_start'] = $current_time;
+            }
+
+            // Si ya pasó más de 1 minuto, resetear contador principal
+            if ($time_elapsed >= 60) {
+                set_transient($site_cache_key, array(
+                    'count' => 1,
+                    'start_time' => $current_time,
+                    'burst_count' => $site_data['burst_count'],
+                    'burst_start' => $site_data['burst_start']
+                ), 150);
+            } else {
+                // Aún dentro del minuto, verificar límite (120 por minuto)
+                if ($site_data['count'] >= 120) {
+                    imagina_updater_server_log('Rate limit excedido para sitio: ' . $site_domain . ' (' . $site_data['count'] . ' peticiones en ' . $time_elapsed . ' segundos)', 'warning');
+                    return array(
+                        'allowed' => false,
+                        'retry_after' => 60 - $time_elapsed,
+                        'message' => 'Límite de peticiones excedido. Se restablecerá en ' . (60 - $time_elapsed) . ' segundos.'
+                    );
                 }
 
                 // Incrementar contador sin resetear timestamp
-                $api_data['count']++;
-                set_transient($api_cache_key, $api_data, 120);
+                $site_data['count']++;
+                set_transient($site_cache_key, $site_data, 150);
             }
         }
 
-        // Rate limiting por IP (100/minuto) - CORREGIDO con timestamps
+        // Rate limiting por IP global (300/minuto) - Solo para protección extrema
+        // Esto permite múltiples sitios en el mismo servidor compartido
         if (!empty($client_ip)) {
             $ip_cache_key = 'imagina_updater_rate_ip_' . md5($client_ip);
             $ip_data = get_transient($ip_cache_key);
@@ -117,7 +146,7 @@ class Imagina_Updater_Server_REST_API {
                 set_transient($ip_cache_key, array(
                     'count' => 1,
                     'start_time' => $current_time
-                ), 120);
+                ), 150);
             } else {
                 $time_elapsed = $current_time - $ip_data['start_time'];
 
@@ -126,74 +155,51 @@ class Imagina_Updater_Server_REST_API {
                     set_transient($ip_cache_key, array(
                         'count' => 1,
                         'start_time' => $current_time
-                    ), 120);
+                    ), 150);
                 } else {
-                    // Aún dentro del minuto, verificar límite
-                    if ($ip_data['count'] >= 100) {
-                        $this->increment_violation($api_key, $client_ip);
-                        imagina_updater_server_log('Rate limit excedido para IP: ' . $client_ip . ' (' . $ip_data['count'] . ' peticiones en ' . $time_elapsed . ' segundos)', 'warning');
-                        return false;
+                    // Aún dentro del minuto, verificar límite (300 por minuto)
+                    if ($ip_data['count'] >= 300) {
+                        // Solo en casos muy extremos bloquear por IP
+                        imagina_updater_server_log('Rate limit IP excedido (posible abuso): ' . $client_ip . ' (' . $ip_data['count'] . ' peticiones)', 'error');
+                        return array(
+                            'allowed' => false,
+                            'retry_after' => 60 - $time_elapsed,
+                            'message' => 'Límite de peticiones excedido para tu servidor. Espera ' . (60 - $time_elapsed) . ' segundos.'
+                        );
                     }
 
                     // Incrementar contador sin resetear timestamp
                     $ip_data['count']++;
-                    set_transient($ip_cache_key, $ip_data, 120);
+                    set_transient($ip_cache_key, $ip_data, 150);
                 }
             }
         }
 
-        return true;
+        return array('allowed' => true);
     }
 
     /**
-     * Incrementar contador de violaciones y aplicar ban temporal si es necesario
-     */
-    private function increment_violation($api_key, $ip) {
-        if (empty($ip)) {
-            return;
-        }
-
-        $violation_key = 'imagina_updater_violations_' . md5($ip);
-        $violations = get_transient($violation_key) ?: 0;
-        $violations++;
-
-        set_transient($violation_key, $violations, 3600); // Rastrear por 1 hora
-
-        // Ban temporal después de 5 violaciones en 1 hora
-        if ($violations >= 5) {
-            $ban_key = 'imagina_updater_ip_ban_' . md5($ip);
-            set_transient($ban_key, true, 900); // Ban de 15 minutos
-            imagina_updater_server_log('IP baneada temporalmente (15 min) por múltiples violaciones: ' . $ip . ' | API Key: ' . substr($api_key, 0, 10) . '...', 'error');
-        }
-    }
-
-    /**
-     * Limpiar rate limits manualmente (utilidad para emergencias)
+     * Limpiar rate limits manualmente (utilidad para emergencias o debugging)
      * Se puede llamar desde el admin o mediante WP-CLI
      */
-    public static function clear_rate_limits($api_key = null, $ip = null) {
+    public static function clear_rate_limits($api_key = null, $ip = null, $site_domain = null) {
         global $wpdb;
 
-        if ($api_key) {
-            delete_transient('imagina_updater_rate_api_' . md5($api_key));
-            imagina_updater_server_log('Rate limit limpiado para API key: ' . substr($api_key, 0, 10) . '...', 'info');
+        if ($api_key && $site_domain) {
+            // Limpiar rate limit específico de un sitio
+            delete_transient('imagina_updater_rate_site_' . md5($api_key . '_' . $site_domain));
+            imagina_updater_server_log('Rate limit limpiado para sitio: ' . $site_domain, 'info');
         }
 
         if ($ip) {
             delete_transient('imagina_updater_rate_ip_' . md5($ip));
-            delete_transient('imagina_updater_ip_ban_' . md5($ip));
-            delete_transient('imagina_updater_violations_' . md5($ip));
-            imagina_updater_server_log('Rate limit y ban limpiados para IP: ' . $ip, 'info');
+            imagina_updater_server_log('Rate limit limpiado para IP: ' . $ip, 'info');
         }
 
         // Si no se especifica nada, limpiar TODOS los rate limits
-        if (!$api_key && !$ip) {
+        if (!$api_key && !$ip && !$site_domain) {
             $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_imagina_updater_rate_%'");
             $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_imagina_updater_rate_%'");
-            $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_imagina_updater_ip_ban_%'");
-            $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_imagina_updater_ip_ban_%'");
-            $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_imagina_updater_violations_%'");
-            $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_imagina_updater_violations_%'");
             imagina_updater_server_log('Todos los rate limits limpiados manualmente', 'info');
         }
     }
@@ -382,11 +388,12 @@ class Imagina_Updater_Server_REST_API {
         }
 
         // Rate limiting
-        if (!$this->check_rate_limit($api_key)) {
+        $rate_check = $this->check_rate_limit($api_key);
+        if (!$rate_check['allowed']) {
             return new WP_Error(
                 'rate_limit_exceeded',
-                __('Límite de peticiones excedido. Máximo 60 peticiones por minuto.', 'imagina-updater-server'),
-                array('status' => 429)
+                $rate_check['message'],
+                array('status' => 429, 'retry_after' => $rate_check['retry_after'])
             );
         }
 
@@ -421,11 +428,12 @@ class Imagina_Updater_Server_REST_API {
         }
 
         // Rate limiting (usando el token como clave)
-        if (!$this->check_rate_limit($activation_token)) {
+        $rate_check = $this->check_rate_limit($activation_token);
+        if (!$rate_check['allowed']) {
             return new WP_Error(
                 'rate_limit_exceeded',
-                __('Límite de peticiones excedido. Máximo 60 peticiones por minuto.', 'imagina-updater-server'),
-                array('status' => 429)
+                $rate_check['message'],
+                array('status' => 429, 'retry_after' => $rate_check['retry_after'])
             );
         }
 

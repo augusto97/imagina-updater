@@ -382,6 +382,7 @@ class Imagina_Updater_Server_Admin {
             }
 
             $changelog = isset($_POST['changelog']) ? $_POST['changelog'] : '';
+            $plugin_groups = isset($_POST['plugin_groups']) ? array_map('intval', $_POST['plugin_groups']) : array();
 
             imagina_updater_server_log('Iniciando subida de plugin: ' . $_FILES['plugin_file']['name'], 'info');
             $result = Imagina_Updater_Server_Plugin_Manager::upload_plugin($_FILES['plugin_file'], $changelog);
@@ -391,6 +392,12 @@ class Imagina_Updater_Server_Admin {
                 add_settings_error('imagina_updater', 'upload_error', $result->get_error_message(), 'error');
             } else {
                 imagina_updater_server_log(sprintf('Plugin subido exitosamente: %s v%s', $result['name'], $result['version']), 'info');
+
+                // Asignar plugin a los grupos seleccionados
+                if (!empty($plugin_groups) && isset($result['id'])) {
+                    $this->add_plugin_to_groups($result['id'], $plugin_groups);
+                    imagina_updater_server_log(sprintf('Plugin ID %d asignado a %d grupo(s)', $result['id'], count($plugin_groups)), 'info');
+                }
 
                 // Guardar mensaje de éxito en transient para mostrarlo después del redirect
                 set_transient('imagina_updater_upload_success', array(
@@ -624,8 +631,60 @@ class Imagina_Updater_Server_Admin {
      */
     public function render_plugins_page() {
         $plugins = Imagina_Updater_Server_Plugin_Manager::get_all_plugins();
+        $all_groups = Imagina_Updater_Server_Plugin_Groups::get_all_groups();
+
+        // Obtener grupos para cada plugin
+        $plugin_groups = array();
+        foreach ($plugins as $plugin) {
+            $plugin_groups[$plugin->id] = $this->get_plugin_groups($plugin->id);
+        }
 
         include IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'admin/views/plugins.php';
+    }
+
+    /**
+     * Obtener grupos de un plugin específico
+     */
+    private function get_plugin_groups($plugin_id) {
+        global $wpdb;
+
+        $table_items = $wpdb->prefix . 'imagina_updater_plugin_group_items';
+        $table_groups = $wpdb->prefix . 'imagina_updater_plugin_groups';
+
+        return $wpdb->get_results($wpdb->prepare(
+            "SELECT g.*
+            FROM $table_groups g
+            INNER JOIN $table_items gi ON g.id = gi.group_id
+            WHERE gi.plugin_id = %d
+            ORDER BY g.name ASC",
+            $plugin_id
+        ));
+    }
+
+    /**
+     * Agregar un plugin a múltiples grupos
+     */
+    private function add_plugin_to_groups($plugin_id, $group_ids) {
+        global $wpdb;
+
+        $table_items = $wpdb->prefix . 'imagina_updater_plugin_group_items';
+
+        // Eliminar relaciones existentes para este plugin
+        $wpdb->delete($table_items, array('plugin_id' => $plugin_id), array('%d'));
+
+        // Agregar nuevas relaciones
+        foreach ($group_ids as $group_id) {
+            $wpdb->insert(
+                $table_items,
+                array(
+                    'group_id' => intval($group_id),
+                    'plugin_id' => intval($plugin_id)
+                ),
+                array('%d', '%d')
+            );
+        }
+
+        return true;
     }
 
     /**

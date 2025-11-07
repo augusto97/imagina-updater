@@ -43,6 +43,40 @@ if (!defined('ABSPATH')) {
                         </p>
                     </td>
                 </tr>
+
+                <tr>
+                    <th scope="row">
+                        <label for="plugin_groups"><?php _e('Categoría / Grupo (Opcional)', 'imagina-updater-server'); ?></label>
+                    </th>
+                    <td>
+                        <?php if (empty($all_groups)): ?>
+                            <p class="description">
+                                <?php _e('No hay grupos creados. ', 'imagina-updater-server'); ?>
+                                <a href="<?php echo admin_url('admin.php?page=imagina-updater-plugin-groups&action=new'); ?>" target="_blank">
+                                    <?php _e('Crear primer grupo', 'imagina-updater-server'); ?>
+                                </a>
+                            </p>
+                        <?php else: ?>
+                            <select name="plugin_groups[]" id="plugin_groups" class="regular-text" multiple size="5" style="height: auto;">
+                                <?php foreach ($all_groups as $group): ?>
+                                    <option value="<?php echo esc_attr($group->id); ?>">
+                                        <?php echo esc_html($group->name); ?>
+                                        <?php if (!empty($group->description)): ?>
+                                            - <?php echo esc_html($group->description); ?>
+                                        <?php endif; ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="description">
+                                <?php _e('Selecciona uno o más grupos a los que pertenece este plugin. Mantén presionado Ctrl (o Cmd en Mac) para seleccionar múltiples.', 'imagina-updater-server'); ?>
+                                <br>
+                                <a href="<?php echo admin_url('admin.php?page=imagina-updater-plugin-groups'); ?>" target="_blank">
+                                    <?php _e('Gestionar grupos', 'imagina-updater-server'); ?>
+                                </a>
+                            </p>
+                        <?php endif; ?>
+                    </td>
+                </tr>
             </table>
 
             <p class="submit">
@@ -70,6 +104,7 @@ if (!defined('ABSPATH')) {
                     <th><?php _e('Plugin', 'imagina-updater-server'); ?></th>
                     <th><?php _e('Slug', 'imagina-updater-server'); ?></th>
                     <th><?php _e('Versión', 'imagina-updater-server'); ?></th>
+                    <th><?php _e('Categorías', 'imagina-updater-server'); ?></th>
                     <th><?php _e('Autor', 'imagina-updater-server'); ?></th>
                     <th><?php _e('Última Actualización', 'imagina-updater-server'); ?></th>
                     <th><?php _e('Tamaño', 'imagina-updater-server'); ?></th>
@@ -113,6 +148,25 @@ if (!defined('ABSPATH')) {
                             </div>
                         </td>
                         <td><strong><?php echo esc_html($plugin->current_version); ?></strong></td>
+                        <td>
+                            <?php
+                            $groups = isset($plugin_groups[$plugin->id]) ? $plugin_groups[$plugin->id] : array();
+                            if (!empty($groups)):
+                                foreach ($groups as $group):
+                                    ?>
+                                    <span class="imagina-group-badge" style="display: inline-block; background: #2271b1; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px; margin: 2px;">
+                                        <span class="dashicons dashicons-category" style="font-size: 11px; width: 11px; height: 11px; margin-top: 2px;"></span>
+                                        <?php echo esc_html($group->name); ?>
+                                    </span>
+                                    <?php
+                                endforeach;
+                            else:
+                                ?>
+                                <span class="description"><?php _e('Sin categoría', 'imagina-updater-server'); ?></span>
+                                <?php
+                            endif;
+                            ?>
+                        </td>
                         <td><?php echo esc_html($plugin->author); ?></td>
                         <td><?php echo esc_html(mysql2date(get_option('date_format') . ' ' . get_option('time_format'), $plugin->uploaded_at)); ?></td>
                         <td><?php echo size_format($plugin->file_size); ?></td>

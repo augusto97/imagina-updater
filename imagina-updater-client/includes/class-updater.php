@@ -827,14 +827,6 @@ class Imagina_Updater_Client_Updater {
         $plugins = array();
 
         foreach ($all_plugins as $plugin_file => $plugin_data) {
-            // Saltar este plugin y plugins de WordPress.org que tienen update_uri
-            if (
-                $plugin_file === plugin_basename(IMAGINA_UPDATER_CLIENT_PLUGIN_FILE) ||
-                strpos($plugin_file, 'imagina-updater-client') !== false
-            ) {
-                continue;
-            }
-
             $plugin_slug = dirname($plugin_file);
 
             if ($plugin_slug === '.') {

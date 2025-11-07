@@ -390,14 +390,18 @@ class Imagina_Updater_Client_Admin {
             return new WP_Error('plugin_not_found', __('Plugin no encontrado en el servidor', 'imagina-updater-client'));
         }
 
-        // Descargar el plugin
+        // Descargar el plugin con headers de autenticación correctos
         $download_url = trailingslashit($config['server_url']) . 'wp-json/imagina-updater/v1/download/' . $plugin_slug;
 
-        // Usar WordPress HTTP API para descargar
+        // Obtener dominio del sitio
+        $site_domain = parse_url(home_url(), PHP_URL_HOST);
+
+        // Usar WordPress HTTP API para descargar con autenticación correcta
         $response = wp_remote_get($download_url, array(
             'timeout' => 300,
             'headers' => array(
-                'X-API-Key' => $config['api_key']
+                'Authorization' => 'Bearer ' . $api_client->get_api_key(),  // activation_token
+                'X-Site-Domain' => $site_domain  // Dominio para validación
             )
         ));
 

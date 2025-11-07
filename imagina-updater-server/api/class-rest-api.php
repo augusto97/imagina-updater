@@ -563,34 +563,66 @@ class Imagina_Updater_Server_REST_API {
      * @return bool
      */
     private function is_plugin_allowed($plugin, $api_key_data) {
-        // Si no hay datos de API key o access_type es 'all', permitir
-        if (!$api_key_data || $api_key_data->access_type === 'all') {
+        // Si no hay datos de API key, denegar por seguridad
+        if (!$api_key_data) {
+            imagina_updater_server_log('is_plugin_allowed: No hay api_key_data', 'warning');
+            return false;
+        }
+
+        // Si access_type es 'all', permitir todo
+        if (!isset($api_key_data->access_type) || $api_key_data->access_type === 'all') {
             return true;
         }
 
         $plugin_id = $plugin->id;
 
         // Verificar si está en plugins específicos
-        if ($api_key_data->access_type === 'specific' && !empty($api_key_data->allowed_plugins)) {
+        if ($api_key_data->access_type === 'specific') {
+            if (empty($api_key_data->allowed_plugins)) {
+                imagina_updater_server_log('is_plugin_allowed: access_type=specific pero allowed_plugins está vacío para plugin ID ' . $plugin_id, 'warning');
+                return false;
+            }
+
             $allowed_plugin_ids = json_decode($api_key_data->allowed_plugins, true);
-            if (is_array($allowed_plugin_ids) && in_array($plugin_id, $allowed_plugin_ids)) {
+            if (!is_array($allowed_plugin_ids)) {
+                imagina_updater_server_log('is_plugin_allowed: No se pudo decodificar allowed_plugins JSON', 'error');
+                return false;
+            }
+
+            if (in_array($plugin_id, $allowed_plugin_ids)) {
                 return true;
             }
+
+            imagina_updater_server_log('is_plugin_allowed: Plugin ID ' . $plugin_id . ' no está en allowed_plugins', 'warning');
+            return false;
         }
 
         // Verificar si está en grupos permitidos
-        if ($api_key_data->access_type === 'groups' && !empty($api_key_data->allowed_groups)) {
+        if ($api_key_data->access_type === 'groups') {
+            if (empty($api_key_data->allowed_groups)) {
+                imagina_updater_server_log('is_plugin_allowed: access_type=groups pero allowed_groups está vacío para plugin ID ' . $plugin_id, 'warning');
+                return false;
+            }
+
             $allowed_group_ids = json_decode($api_key_data->allowed_groups, true);
-            if (is_array($allowed_group_ids)) {
-                foreach ($allowed_group_ids as $group_id) {
-                    $group_plugin_ids = Imagina_Updater_Server_Plugin_Groups::get_group_plugin_ids($group_id);
-                    if (in_array($plugin_id, $group_plugin_ids)) {
-                        return true;
-                    }
+            if (!is_array($allowed_group_ids)) {
+                imagina_updater_server_log('is_plugin_allowed: No se pudo decodificar allowed_groups JSON', 'error');
+                return false;
+            }
+
+            foreach ($allowed_group_ids as $group_id) {
+                $group_plugin_ids = Imagina_Updater_Server_Plugin_Groups::get_group_plugin_ids($group_id);
+                if (in_array($plugin_id, $group_plugin_ids)) {
+                    return true;
                 }
             }
+
+            imagina_updater_server_log('is_plugin_allowed: Plugin ID ' . $plugin_id . ' no está en ningún grupo permitido', 'warning');
+            return false;
         }
 
+        // Tipo de acceso desconocido
+        imagina_updater_server_log('is_plugin_allowed: access_type desconocido: ' . $api_key_data->access_type, 'error');
         return false;
     }
 

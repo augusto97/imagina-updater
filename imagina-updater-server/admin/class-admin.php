@@ -450,6 +450,53 @@ class Imagina_Updater_Server_Admin {
             add_settings_error('imagina_updater', 'delete_error', $delete_error, 'error');
         }
 
+        // Descargar plugin directamente (sin REST API)
+        if (isset($_GET['action']) && $_GET['action'] === 'download_plugin' && isset($_GET['slug'])) {
+            $slug = sanitize_text_field($_GET['slug']);
+
+            // Verificar nonce
+            if (!check_admin_referer('download_plugin_' . $slug)) {
+                wp_die(__('Error de seguridad: Nonce inválido', 'imagina-updater-server'));
+            }
+
+            // Verificar permisos de administrador
+            if (!current_user_can('manage_options')) {
+                wp_die(__('No tienes permisos para descargar plugins', 'imagina-updater-server'));
+            }
+
+            // Obtener información del plugin
+            $plugin = Imagina_Updater_Server_Plugin_Manager::get_plugin_by_slug($slug);
+
+            if (!$plugin) {
+                wp_die(__('Plugin no encontrado', 'imagina-updater-server'));
+            }
+
+            // Verificar que el archivo existe
+            if (!file_exists($plugin->file_path)) {
+                imagina_updater_server_log('Archivo de plugin no encontrado: ' . $plugin->file_path, 'error');
+                wp_die(__('Archivo de plugin no encontrado', 'imagina-updater-server'));
+            }
+
+            // Registrar la descarga
+            imagina_updater_server_log(sprintf('Admin descarga plugin: %s v%s', $plugin->name, $plugin->current_version), 'info');
+
+            // Enviar archivo
+            header('Content-Description: File Transfer');
+            header('Content-Type: application/zip');
+            header('Content-Disposition: attachment; filename="' . basename($plugin->file_path) . '"');
+            header('Content-Length: ' . filesize($plugin->file_path));
+            header('Cache-Control: must-revalidate');
+            header('Pragma: public');
+
+            // Limpiar buffer de salida antes de enviar archivo
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+
+            readfile($plugin->file_path);
+            exit;
+        }
+
         // Actualizar slug del plugin
         if (isset($_POST['imagina_update_slug'])) {
             $plugin_id = intval($_POST['plugin_id']);

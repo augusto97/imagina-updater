@@ -171,7 +171,7 @@ if (!defined('ABSPATH')) {
                         <td><?php echo esc_html(mysql2date(get_option('date_format') . ' ' . get_option('time_format'), $plugin->uploaded_at)); ?></td>
                         <td><?php echo size_format($plugin->file_size); ?></td>
                         <td>
-                            <a href="<?php echo esc_url(rest_url('imagina-updater/v1/download/' . $plugin->slug)); ?>" class="button button-small">
+                            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-plugins&action=download_plugin&slug=' . urlencode($effective_slug)), 'download_plugin_' . $effective_slug)); ?>" class="button button-small">
                                 <span class="dashicons dashicons-download"></span>
                                 <?php _e('Descargar', 'imagina-updater-server'); ?>
                             </a>

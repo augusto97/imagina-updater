@@ -72,11 +72,6 @@ class Imagina_Updater_Server_REST_API {
         // Obtener dominio del sitio desde los headers
         $site_domain = isset($_SERVER['HTTP_X_SITE_DOMAIN']) ? sanitize_text_field($_SERVER['HTTP_X_SITE_DOMAIN']) : '';
 
-        // Si no hay dominio en headers, intentar extraerlo del Referer
-        if (empty($site_domain) && isset($_SERVER['HTTP_REFERER'])) {
-            $site_domain = parse_url($_SERVER['HTTP_REFERER'], PHP_URL_HOST);
-        }
-
         // Rate limiting por sitio (API key + dominio) - 120/minuto
         // Esto permite que cada sitio cliente tenga su propio límite independiente
         $site_cache_key = 'imagina_updater_rate_site_' . md5($api_key . '_' . $site_domain);
@@ -412,8 +407,15 @@ class Imagina_Updater_Server_REST_API {
         if (empty($site_domain)) {
             $site_domain = $request->get_param('site_domain');
         }
+
+        // Si no hay dominio, rechazar la petición
         if (empty($site_domain)) {
-            $site_domain = home_url(); // Fallback
+            imagina_updater_server_log('validate_activation_token: No se recibió X-Site-Domain del cliente', 'error');
+            return new WP_Error(
+                'missing_site_domain',
+                __('No se pudo determinar el dominio del sitio cliente', 'imagina-updater-server'),
+                array('status' => 400)
+            );
         }
 
         // Validar token

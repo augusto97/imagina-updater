@@ -480,8 +480,12 @@ class Imagina_Updater_Client_Updater {
                 $args['headers'] = array();
             }
 
-            // Inyectar header de autorización
+            // Obtener dominio del sitio
+            $site_domain = parse_url(home_url(), PHP_URL_HOST);
+
+            // Inyectar headers de autorización
             $args['headers']['Authorization'] = 'Bearer ' . $this->api_client->get_api_key();
+            $args['headers']['X-Site-Domain'] = $site_domain; // Requerido para validación de activation token
         }
 
         return $args;

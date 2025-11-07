@@ -237,11 +237,11 @@ class Imagina_Updater_Server_REST_API {
             'permission_callback' => array($this, 'check_activation_token_only')
         ));
 
-        // Descargar plugin (activation token O admin de WordPress)
+        // Descargar plugin (SOLO activation token)
         register_rest_route(self::NAMESPACE, '/download/(?P<slug>[a-zA-Z0-9-_]+)', array(
             'methods' => WP_REST_Server::READABLE,
             'callback' => array($this, 'download_plugin'),
-            'permission_callback' => array($this, 'check_activation_token_or_admin'),
+            'permission_callback' => array($this, 'check_activation_token_only'),
             'args' => array(
                 'slug' => array(
                     'required' => true,
@@ -340,25 +340,6 @@ class Imagina_Updater_Server_REST_API {
                 array('status' => 401)
             );
         }
-    }
-
-    /**
-     * Verificar activation token O admin de WordPress
-     * Permite que admins del servidor descarguen plugins sin autenticación externa
-     *
-     * @param WP_REST_Request $request
-     * @return bool|WP_Error
-     */
-    public function check_activation_token_or_admin($request) {
-        // Primero verificar si es un admin de WordPress autenticado
-        // Esto permite a los admins del servidor descargar plugins directamente
-        if (is_user_logged_in() && current_user_can('manage_options')) {
-            imagina_updater_server_log('Descarga autorizada para admin de WordPress', 'info');
-            return true;
-        }
-
-        // Si no es admin, verificar activation token como de costumbre
-        return $this->check_activation_token_only($request);
     }
 
     /**

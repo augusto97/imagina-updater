@@ -36,6 +36,17 @@ class Imagina_Updater_Client_Updater {
     private $plugin_index = null;
 
     /**
+     * Caché de archivos de plugins gestionados (cacheado en transient)
+     * Evita llamadas repetidas a find_plugin_file()
+     */
+    private $managed_plugin_files = null;
+
+    /**
+     * Flag para evitar re-ejecución de disable_custom_update_checks
+     */
+    private $custom_updates_disabled = false;
+
+    /**
      * Obtener instancia
      */
     public static function get_instance() {
@@ -109,6 +120,7 @@ class Imagina_Updater_Client_Updater {
 
     /**
      * Verificar actualizaciones disponibles
+     * OPTIMIZACIÓN: Usa caché de managed files
      */
     public function check_for_updates($transient) {
         if (empty($transient->checked)) {
@@ -122,17 +134,14 @@ class Imagina_Updater_Client_Updater {
             return $transient;
         }
 
-        // PASO 1: Limpiar actualizaciones previas de plugins gestionados
-        $managed_files = array();
-        foreach ($enabled_plugins as $plugin_slug) {
-            $plugin_file = $this->find_plugin_file($plugin_slug);
+        // OPTIMIZACIÓN: Obtener managed files una sola vez
+        $managed_files = $this->get_managed_plugin_files();
 
-            if ($plugin_file) {
-                $managed_files[] = $plugin_file;
-                // Remover actualizaciones existentes de otros sistemas
-                if (isset($transient->response[$plugin_file])) {
-                    unset($transient->response[$plugin_file]);
-                }
+        // PASO 1: Limpiar actualizaciones previas de plugins gestionados
+        foreach ($managed_files as $plugin_file) {
+            // Remover actualizaciones existentes de otros sistemas
+            if (isset($transient->response[$plugin_file])) {
+                unset($transient->response[$plugin_file]);
             }
         }
 
@@ -220,6 +229,7 @@ class Imagina_Updater_Client_Updater {
 
     /**
      * Inyectar actualizaciones cuando se lee el transient (para evitar problemas con cache)
+     * OPTIMIZACIÓN: Retorna temprano si ya tenemos updates, usa caché agresivo
      */
     public function inject_updates_on_read($transient) {
         if (empty($transient) || !is_object($transient)) {
@@ -265,21 +275,21 @@ class Imagina_Updater_Client_Updater {
             return $transient;
         }
 
-        // Si no hay cache, realizar verificación completa
-        // Preparar lista de plugins para verificar
+        // OPTIMIZACIÓN: Si no hay caché pero el transient tiene checked, usar eso en lugar de get_plugin_data
+        // get_plugin_data es MUY costoso porque abre y parsea archivos
         $plugins_to_check = array();
 
-        foreach ($enabled_plugins as $plugin_slug) {
-            $plugin_file = $this->find_plugin_file($plugin_slug);
+        if (!empty($transient->checked)) {
+            foreach ($enabled_plugins as $plugin_slug) {
+                $plugin_file = $this->find_plugin_file($plugin_slug);
 
-            if ($plugin_file && function_exists('get_plugin_data')) {
-                $plugin_data = get_plugin_data(WP_PLUGIN_DIR . '/' . $plugin_file, false, false);
-                if (!empty($plugin_data['Version'])) {
-                    $plugins_to_check[$plugin_slug] = $plugin_data['Version'];
+                if ($plugin_file && isset($transient->checked[$plugin_file])) {
+                    $plugins_to_check[$plugin_slug] = $transient->checked[$plugin_file];
                 }
             }
         }
 
+        // Si no podemos usar checked, retornar temprano (no hacer consultas costosas)
         if (empty($plugins_to_check)) {
             return $transient;
         }
@@ -297,16 +307,11 @@ class Imagina_Updater_Client_Updater {
         foreach ($updates as $plugin_slug => $update_data) {
             $plugin_file = $this->find_plugin_file($plugin_slug);
 
-            if ($plugin_file) {
-                // Obtener versión instalada actual
-                $installed_version = '';
-                if (function_exists('get_plugin_data')) {
-                    $plugin_data = get_plugin_data(WP_PLUGIN_DIR . '/' . $plugin_file, false, false);
-                    $installed_version = !empty($plugin_data['Version']) ? $plugin_data['Version'] : '';
-                }
+            if ($plugin_file && isset($plugins_to_check[$plugin_slug])) {
+                $installed_version = $plugins_to_check[$plugin_slug];
 
                 // Solo agregar si hay una nueva versión disponible
-                if (empty($installed_version) || version_compare($update_data['new_version'], $installed_version, '>')) {
+                if (version_compare($update_data['new_version'], $installed_version, '>')) {
                     $update_object = (object) array(
                         'id' => 'imagina-updater/' . $plugin_slug,
                         'slug' => $plugin_slug,
@@ -386,25 +391,18 @@ class Imagina_Updater_Client_Updater {
     /**
      * Bloquear actualizaciones externas para plugins gestionados
      * Este se ejecuta al final (PHP_INT_MAX) para limpiar cualquier cosa que hayan agregado otros plugins
+     * OPTIMIZACIÓN: Usa caché de managed files
      */
     public function block_external_updates($transient) {
         if (empty($transient) || !is_object($transient)) {
             return $transient;
         }
 
-        $enabled_plugins = $this->config['enabled_plugins'];
+        // OPTIMIZACIÓN: Usar método cacheado
+        $managed_plugin_files = $this->get_managed_plugin_files();
 
-        if (empty($enabled_plugins)) {
+        if (empty($managed_plugin_files)) {
             return $transient;
-        }
-
-        // Obtener todos los plugin files de los plugins gestionados
-        $managed_plugin_files = array();
-        foreach ($enabled_plugins as $plugin_slug) {
-            $plugin_file = $this->find_plugin_file($plugin_slug);
-            if ($plugin_file) {
-                $managed_plugin_files[] = $plugin_file;
-            }
         }
 
         // LIMPIEZA AGRESIVA: Remover TODAS las actualizaciones externas de plugins gestionados
@@ -660,10 +658,16 @@ class Imagina_Updater_Client_Updater {
         global $wpdb;
         $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_imagina_updater_check_%'");
         $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_imagina_updater_check_%'");
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_imagina_updater_managed_files_%'");
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_imagina_updater_managed_files_%'");
 
         delete_transient('imagina_updater_cached_updates');
-        delete_transient('imagina_updater_plugin_index'); // Limpiar índice de plugins
+        delete_transient('imagina_updater_plugin_index');
         delete_site_transient('update_plugins');
+
+        // Limpiar caché en memoria
+        $this->plugin_index = null;
+        $this->managed_plugin_files = null;
     }
 
     /**
@@ -671,20 +675,42 @@ class Imagina_Updater_Client_Updater {
      * Se ejecuta cuando se activan/desactivan plugins
      */
     public function clear_plugin_index_cache() {
+        global $wpdb;
+
         delete_transient('imagina_updater_plugin_index');
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_imagina_updater_managed_files_%'");
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_imagina_updater_managed_files_%'");
+
         // Limpiar también la caché en memoria para esta request
         $this->plugin_index = null;
+        $this->managed_plugin_files = null;
     }
 
     /**
-     * Deshabilitar verificaciones de actualización personalizadas
+     * Obtener archivos de plugins gestionados (con caché)
+     * OPTIMIZACIÓN: Cachea la lista para evitar llamadas repetidas a find_plugin_file()
      */
-    public function disable_custom_update_checks() {
-        if (empty($this->config['enabled_plugins'])) {
-            return;
+    private function get_managed_plugin_files() {
+        // Si ya lo calculamos en esta request, retornar
+        if ($this->managed_plugin_files !== null) {
+            return $this->managed_plugin_files;
         }
 
-        // Obtener los archivos de plugins gestionados
+        if (empty($this->config['enabled_plugins'])) {
+            $this->managed_plugin_files = array();
+            return $this->managed_plugin_files;
+        }
+
+        // Intentar cargar del caché transient
+        $cache_key = 'imagina_updater_managed_files_' . md5(serialize($this->config['enabled_plugins']));
+        $cached = get_transient($cache_key);
+
+        if ($cached !== false && is_array($cached)) {
+            $this->managed_plugin_files = $cached;
+            return $this->managed_plugin_files;
+        }
+
+        // Si no hay caché, calcular
         $managed_files = array();
         foreach ($this->config['enabled_plugins'] as $slug) {
             $file = $this->find_plugin_file($slug);
@@ -693,7 +719,27 @@ class Imagina_Updater_Client_Updater {
             }
         }
 
+        // Cachear por 12 horas
+        set_transient($cache_key, $managed_files, 12 * HOUR_IN_SECONDS);
+
+        $this->managed_plugin_files = $managed_files;
+        return $this->managed_plugin_files;
+    }
+
+    /**
+     * Deshabilitar verificaciones de actualización personalizadas
+     * OPTIMIZACIÓN: Solo se ejecuta una vez por request
+     */
+    public function disable_custom_update_checks() {
+        // Early return si ya se ejecutó
+        if ($this->custom_updates_disabled) {
+            return;
+        }
+
+        $managed_files = $this->get_managed_plugin_files();
+
         if (empty($managed_files)) {
+            $this->custom_updates_disabled = true;
             return;
         }
 
@@ -701,6 +747,9 @@ class Imagina_Updater_Client_Updater {
         $this->disable_woocommerce_updates($managed_files);
         $this->disable_freemius_updates($managed_files);
         $this->disable_edd_updates($managed_files);
+
+        // Marcar como ejecutado
+        $this->custom_updates_disabled = true;
     }
 
     /**

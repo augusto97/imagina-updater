@@ -147,11 +147,25 @@ class Imagina_Updater_Client_Updater {
             return $transient;
         }
 
-        // PASO 3: Consultar servidor
-        $updates = $this->api_client->check_updates($plugins_to_check);
+        // OPTIMIZACIÓN: Caché de 12 horas para evitar peticiones HTTP constantes
+        $cache_key = 'imagina_updater_check_' . md5(serialize($plugins_to_check) . $this->config['server_url']);
+        $cached_updates = get_transient($cache_key);
 
-        if (is_wp_error($updates)) {
-            return $transient;
+        // Si hay caché válido, usar esos datos
+        if ($cached_updates !== false) {
+            $updates = $cached_updates;
+        } else {
+            // PASO 3: Consultar servidor solo si no hay caché
+            $updates = $this->api_client->check_updates($plugins_to_check);
+
+            if (is_wp_error($updates)) {
+                // En caso de error, cachear respuesta vacía por 5 minutos
+                set_transient($cache_key, array(), 5 * MINUTE_IN_SECONDS);
+                return $transient;
+            }
+
+            // Cachear resultado exitoso por 12 horas
+            set_transient($cache_key, $updates, 12 * HOUR_IN_SECONDS);
         }
 
         // PASO 4: Forzar actualizaciones desde nuestro servidor
@@ -638,7 +652,11 @@ class Imagina_Updater_Client_Updater {
             return;
         }
 
-        // Limpiar cache de actualizaciones
+        // Limpiar cache de actualizaciones (incluyendo el nuevo caché con wildcard)
+        global $wpdb;
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_imagina_updater_check_%'");
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_imagina_updater_check_%'");
+
         delete_transient('imagina_updater_cached_updates');
         delete_site_transient('update_plugins');
     }

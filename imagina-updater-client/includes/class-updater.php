@@ -182,6 +182,8 @@ class Imagina_Updater_Client_Updater {
         }
 
         // PASO 4: Forzar actualizaciones desde nuestro servidor
+        $updates_to_cache = array(); // Para cachear y usar en inject_updates_on_read()
+
         foreach ($updates as $plugin_slug => $update_data) {
             $plugin_file = $this->find_plugin_file($plugin_slug);
 
@@ -216,6 +218,9 @@ class Imagina_Updater_Client_Updater {
                     // Forzar la actualización en response
                     $transient->response[$plugin_file] = $update_object;
 
+                    // Guardar para caché compartido
+                    $updates_to_cache[$plugin_file] = $update_object;
+
                     // Remover de no_update si existe
                     if (isset($transient->no_update[$plugin_file])) {
                         unset($transient->no_update[$plugin_file]);
@@ -224,12 +229,22 @@ class Imagina_Updater_Client_Updater {
             }
         }
 
+        // CRÍTICO: Cachear updates procesados para inject_updates_on_read()
+        // Esto evita que inject_updates_on_read() tenga que hacer llamadas HTTP
+        if (!empty($updates_to_cache)) {
+            set_transient('imagina_updater_cached_updates', $updates_to_cache, 12 * HOUR_IN_SECONDS);
+        } else {
+            // Si no hay updates, cachear array vacío para evitar rechecks constantes
+            set_transient('imagina_updater_cached_updates', array(), 12 * HOUR_IN_SECONDS);
+        }
+
         return $transient;
     }
 
     /**
      * Inyectar actualizaciones cuando se lee el transient (para evitar problemas con cache)
-     * OPTIMIZACIÓN: Retorna temprano si ya tenemos updates, usa caché agresivo
+     * CRÍTICO: NUNCA hace llamadas HTTP (se ejecuta múltiples veces por página)
+     * Solo inyecta actualizaciones que ya están cacheadas
      */
     public function inject_updates_on_read($transient) {
         if (empty($transient) || !is_object($transient)) {
@@ -257,7 +272,8 @@ class Imagina_Updater_Client_Updater {
             return $transient;
         }
 
-        // Verificar cache de actualizaciones (válido por 1 hora)
+        // SOLO usar cache - NUNCA hacer llamadas HTTP aquí
+        // Este método se ejecuta MÚLTIPLES veces por página
         $cache_key = 'imagina_updater_cached_updates';
         $cached_updates = get_transient($cache_key);
 
@@ -271,85 +287,16 @@ class Imagina_Updater_Client_Updater {
                     unset($transient->no_update[$plugin_file]);
                 }
             }
-
-            return $transient;
         }
 
-        // OPTIMIZACIÓN: Si no hay caché pero el transient tiene checked, usar eso en lugar de get_plugin_data
-        // get_plugin_data es MUY costoso porque abre y parsea archivos
-        $plugins_to_check = array();
-
-        if (!empty($transient->checked)) {
-            foreach ($enabled_plugins as $plugin_slug) {
-                $plugin_file = $this->find_plugin_file($plugin_slug);
-
-                if ($plugin_file && isset($transient->checked[$plugin_file])) {
-                    $plugins_to_check[$plugin_slug] = $transient->checked[$plugin_file];
-                }
-            }
-        }
-
-        // Si no podemos usar checked, retornar temprano (no hacer consultas costosas)
-        if (empty($plugins_to_check)) {
-            return $transient;
-        }
-
-        // Consultar servidor
-        $updates = $this->api_client->check_updates($plugins_to_check);
-
-        if (is_wp_error($updates)) {
-            return $transient;
-        }
-
-        // Preparar actualizaciones y cachearlas
-        $updates_to_cache = array();
-
-        foreach ($updates as $plugin_slug => $update_data) {
-            $plugin_file = $this->find_plugin_file($plugin_slug);
-
-            if ($plugin_file && isset($plugins_to_check[$plugin_slug])) {
-                $installed_version = $plugins_to_check[$plugin_slug];
-
-                // Solo agregar si hay una nueva versión disponible
-                if (version_compare($update_data['new_version'], $installed_version, '>')) {
-                    $update_object = (object) array(
-                        'id' => 'imagina-updater/' . $plugin_slug,
-                        'slug' => $plugin_slug,
-                        'plugin' => $plugin_file,
-                        'new_version' => $update_data['new_version'],
-                        'url' => $update_data['homepage'],
-                        'package' => $this->api_client->get_download_url($plugin_slug),
-                        'tested' => $update_data['tested'],
-                        'requires_php' => $update_data['requires_php'],
-                        'compatibility' => new stdClass(),
-                        'icons' => array(),
-                        'banners' => array(),
-                        'banners_rtl' => array(),
-                        'requires' => '5.8',
-                        '_imagina_updater' => true
-                    );
-
-                    $transient->response[$plugin_file] = $update_object;
-                    $updates_to_cache[$plugin_file] = $update_object;
-
-                    // Remover de no_update si existe
-                    if (isset($transient->no_update[$plugin_file])) {
-                        unset($transient->no_update[$plugin_file]);
-                    }
-                }
-            }
-        }
-
-        // Cachear actualizaciones por 1 hora
-        if (!empty($updates_to_cache)) {
-            set_transient($cache_key, $updates_to_cache, HOUR_IN_SECONDS);
-        }
-
+        // Si no hay cache, NO HACER NADA
+        // check_for_updates() es responsable de crear el cache inicial
         return $transient;
     }
 
     /**
      * Proporcionar información del plugin para el modal de detalles
+     * OPTIMIZACIÓN: Cachea respuesta por 6 horas para evitar llamadas HTTP repetidas
      */
     public function plugin_info($result, $action, $args) {
         if ($action !== 'plugin_information') {
@@ -359,6 +306,14 @@ class Imagina_Updater_Client_Updater {
         // Verificar si es uno de nuestros plugins
         if (!in_array($args->slug, $this->config['enabled_plugins'])) {
             return $result;
+        }
+
+        // Intentar obtener del caché primero
+        $cache_key = 'imagina_updater_plugin_info_' . $args->slug;
+        $cached_info = get_transient($cache_key);
+
+        if ($cached_info !== false) {
+            return $cached_info;
         }
 
         // Obtener información del servidor
@@ -384,6 +339,9 @@ class Imagina_Updater_Client_Updater {
             ),
             'download_link' => $this->api_client->get_download_url($plugin_info['slug'])
         );
+
+        // Cachear por 6 horas
+        set_transient($cache_key, $result, 6 * HOUR_IN_SECONDS);
 
         return $result;
     }
@@ -654,15 +612,11 @@ class Imagina_Updater_Client_Updater {
             return;
         }
 
-        // Limpiar cache de actualizaciones (incluyendo el nuevo caché con wildcard)
+        // Limpiar TODOS los cachés del plugin
         global $wpdb;
-        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_imagina_updater_check_%'");
-        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_imagina_updater_check_%'");
-        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_imagina_updater_managed_files_%'");
-        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_imagina_updater_managed_files_%'");
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_imagina_updater_%'");
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_imagina_updater_%'");
 
-        delete_transient('imagina_updater_cached_updates');
-        delete_transient('imagina_updater_plugin_index');
         delete_site_transient('update_plugins');
 
         // Limpiar caché en memoria
@@ -677,7 +631,9 @@ class Imagina_Updater_Client_Updater {
     public function clear_plugin_index_cache() {
         global $wpdb;
 
-        delete_transient('imagina_updater_plugin_index');
+        // Limpiar cachés relevantes
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_imagina_updater_plugin_index%'");
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_imagina_updater_plugin_index%'");
         $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_imagina_updater_managed_files_%'");
         $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_imagina_updater_managed_files_%'");
 

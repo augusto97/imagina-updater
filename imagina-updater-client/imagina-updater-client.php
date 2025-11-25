@@ -164,22 +164,10 @@ class Imagina_Updater_Client {
         global $wpdb;
 
         delete_site_transient('update_plugins');
-        delete_transient('imagina_updater_cached_updates');
 
-        // Limpiar cache de plugins del servidor si existe configuración
-        $server_url = $this->get_config('server_url');
-        if (!empty($server_url)) {
-            delete_transient('imagina_updater_server_plugins_' . md5($server_url));
-        }
-
-        // Limpiar nuevo caché de verificación de actualizaciones (optimización de rendimiento)
-        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_imagina_updater_check_%'");
-        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_imagina_updater_check_%'");
-        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_imagina_updater_managed_files_%'");
-        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_imagina_updater_managed_files_%'");
-
-        // Limpiar caché del índice de plugins
-        delete_transient('imagina_updater_plugin_index');
+        // Limpiar TODOS los cachés del plugin de una vez
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_imagina_updater_%'");
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_imagina_updater_%'");
     }
 
     /**

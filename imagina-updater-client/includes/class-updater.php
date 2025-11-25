@@ -101,6 +101,10 @@ class Imagina_Updater_Client_Updater {
 
         // Limpiar cache después de actualizar un plugin
         add_action('upgrader_process_complete', array($this, 'clear_cache_after_update'), 10, 2);
+
+        // Limpiar índice de plugins cuando se activan/desactivan
+        add_action('activated_plugin', array($this, 'clear_plugin_index_cache'));
+        add_action('deactivated_plugin', array($this, 'clear_plugin_index_cache'));
     }
 
     /**
@@ -658,7 +662,18 @@ class Imagina_Updater_Client_Updater {
         $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_imagina_updater_check_%'");
 
         delete_transient('imagina_updater_cached_updates');
+        delete_transient('imagina_updater_plugin_index'); // Limpiar índice de plugins
         delete_site_transient('update_plugins');
+    }
+
+    /**
+     * Limpiar caché del índice de plugins
+     * Se ejecuta cuando se activan/desactivan plugins
+     */
+    public function clear_plugin_index_cache() {
+        delete_transient('imagina_updater_plugin_index');
+        // Limpiar también la caché en memoria para esta request
+        $this->plugin_index = null;
     }
 
     /**
@@ -765,9 +780,17 @@ class Imagina_Updater_Client_Updater {
      */
     private function build_plugin_index() {
         if ($this->plugin_index !== null) {
-            return; // Ya construido
+            return; // Ya construido en memoria
         }
 
+        // OPTIMIZACIÓN: Intentar cargar desde caché persistente (transient)
+        $cached_index = get_transient('imagina_updater_plugin_index');
+        if ($cached_index !== false && is_array($cached_index)) {
+            $this->plugin_index = $cached_index;
+            return;
+        }
+
+        // Si no hay caché, construir el índice (operación costosa)
         if (!function_exists('get_plugins')) {
             require_once ABSPATH . 'wp-admin/includes/plugin.php';
         }
@@ -801,6 +824,9 @@ class Imagina_Updater_Client_Updater {
                 $this->plugin_index[$plugin_name_slug] = $plugin_file;
             }
         }
+
+        // Cachear el índice por 12 horas (evita llamadas costosas a get_plugins())
+        set_transient('imagina_updater_plugin_index', $this->plugin_index, 12 * HOUR_IN_SECONDS);
     }
 
     /**

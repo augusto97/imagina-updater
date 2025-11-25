@@ -161,6 +161,8 @@ class Imagina_Updater_Client {
      * Método centralizado para evitar duplicación de código
      */
     public function clear_update_caches() {
+        global $wpdb;
+
         delete_site_transient('update_plugins');
         delete_transient('imagina_updater_cached_updates');
 
@@ -169,6 +171,10 @@ class Imagina_Updater_Client {
         if (!empty($server_url)) {
             delete_transient('imagina_updater_server_plugins_' . md5($server_url));
         }
+
+        // Limpiar nuevo caché de verificación de actualizaciones (optimización de rendimiento)
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_imagina_updater_check_%'");
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_imagina_updater_check_%'");
     }
 
     /**

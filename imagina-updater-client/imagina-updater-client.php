@@ -78,6 +78,10 @@ class Imagina_Updater_Client {
         require_once IMAGINA_UPDATER_CLIENT_PLUGIN_DIR . 'includes/class-api-client.php';
         require_once IMAGINA_UPDATER_CLIENT_PLUGIN_DIR . 'includes/class-updater.php';
         require_once IMAGINA_UPDATER_CLIENT_PLUGIN_DIR . 'admin/class-admin.php';
+
+        // Cargar extensión de licencias
+        require_once IMAGINA_UPDATER_CLIENT_PLUGIN_DIR . 'includes/class-license-crypto-client.php';
+        require_once IMAGINA_UPDATER_CLIENT_PLUGIN_DIR . 'includes/class-license-manager.php';
     }
 
     /**
@@ -202,3 +206,12 @@ function imagina_updater_client() {
 
 // Iniciar el plugin (sin log aquí porque la clase Logger aún no está cargada)
 imagina_updater_client();
+
+/**
+ * ==================================================
+ * EXTENSIÓN DE LICENCIAS PARA PLUGINS PREMIUM
+ * ==================================================
+ */
+
+// Inicializar gestor de licencias (prioridad 5 para que esté disponible temprano)
+add_action('plugins_loaded', array('Imagina_Updater_License_Manager', 'init'), 5);

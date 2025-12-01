@@ -1,0 +1,260 @@
+╔══════════════════════════════════════════════════════════════════════════╗
+║                                                                          ║
+║                  LEE ESTO PRIMERO - INSTALACIÓN SIMPLE                   ║
+║                                                                          ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+
+═══════════════════════════════════════════════════════════════════════════
+  ¿QUÉ ES ESTO?
+═══════════════════════════════════════════════════════════════════════════
+
+Este es un sistema de LICENCIAS para proteger tus plugins premium.
+
+Funciona así:
+
+  [SERVIDOR] ←──── Controla las licencias
+       ↓
+  [CLIENTE] ←──── Verifica las licencias
+       ↓
+  [PLUGIN PREMIUM] ←──── Solo funciona si hay licencia válida
+
+
+═══════════════════════════════════════════════════════════════════════════
+  ¿QUÉ HAY EN ESTA CARPETA?
+═══════════════════════════════════════════════════════════════════════════
+
+imagina-license-sdk/
+│
+├── 📄 instalar-facil.sh ←──────── ¡EJECUTA ESTO! (Instalación automática)
+│
+├── 📁 server-extension/ ────────> Se copia a imagina-updater-server/
+│   └── 2 archivos PHP
+│
+├── 📁 client-extension/ ────────> Se copia a imagina-updater-client/
+│   └── 2 archivos PHP
+│
+├── 📁 sdk/ ─────────────────────> Se copia a tus plugins premium
+│   └── 4 archivos PHP
+│
+├── 📁 example-premium-plugin/ ──> EJEMPLO para que copies
+│   └── Plugin completo de ejemplo
+│
+├── 📁 docs/ ────────────────────> Documentación (para leer después)
+│   ├── INTEGRATION.md
+│   ├── SECURITY.md
+│   └── API.md
+│
+└── 📄 QUICK_START.md ───────────> Guía paso a paso
+
+
+═══════════════════════════════════════════════════════════════════════════
+  OPCIÓN 1: INSTALACIÓN AUTOMÁTICA (RECOMENDADA)
+═══════════════════════════════════════════════════════════════════════════
+
+Solo ejecuta este comando:
+
+    cd imagina-license-sdk
+    ./instalar-facil.sh
+
+El script hará TODO automáticamente:
+  ✅ Copiar archivos al servidor
+  ✅ Copiar archivos al cliente
+  ✅ Mostrarte qué código añadir
+
+¡Listo en 2 minutos!
+
+
+═══════════════════════════════════════════════════════════════════════════
+  OPCIÓN 2: INSTALACIÓN MANUAL
+═══════════════════════════════════════════════════════════════════════════
+
+PASO 1: Copiar archivos al SERVIDOR
+────────────────────────────────────
+
+Copiar estos 2 archivos:
+
+  server-extension/class-license-api.php
+    ──> imagina-updater-server/api/
+
+  server-extension/class-license-crypto-server.php
+    ──> imagina-updater-server/includes/
+
+
+PASO 2: Editar archivo principal del SERVIDOR
+──────────────────────────────────────────────
+
+Editar: imagina-updater-server/imagina-updater-server.php
+
+Añadir al final (antes del último ?> si existe):
+
+┌──────────────────────────────────────────────────────────────┐
+│ require_once plugin_dir_path( __FILE__ ) .                   │
+│     'includes/class-license-crypto-server.php';              │
+│ require_once plugin_dir_path( __FILE__ ) .                   │
+│     'api/class-license-api.php';                             │
+│ add_action( 'rest_api_init',                                 │
+│     array( 'Imagina_Updater_License_API', 'register_routes' ) │
+│ );                                                            │
+└──────────────────────────────────────────────────────────────┘
+
+
+PASO 3: Copiar archivos al CLIENTE
+───────────────────────────────────
+
+Copiar estos 2 archivos:
+
+  client-extension/class-license-manager.php
+    ──> imagina-updater-client/includes/
+
+  client-extension/class-license-crypto-client.php
+    ──> imagina-updater-client/includes/
+
+
+PASO 4: Editar archivo principal del CLIENTE
+─────────────────────────────────────────────
+
+Editar: imagina-updater-client/imagina-updater-client.php
+
+Añadir después de cargar otras clases:
+
+┌──────────────────────────────────────────────────────────────┐
+│ require_once plugin_dir_path( __FILE__ ) .                   │
+│     'includes/class-license-crypto-client.php';              │
+│ require_once plugin_dir_path( __FILE__ ) .                   │
+│     'includes/class-license-manager.php';                    │
+│ add_action( 'plugins_loaded',                                │
+│     array( 'Imagina_Updater_License_Manager', 'init' ), 5 ); │
+└──────────────────────────────────────────────────────────────┘
+
+
+PASO 5: Reactivar plugins en WordPress
+───────────────────────────────────────
+
+En el panel de WordPress:
+
+  1. Desactivar imagina-updater-server
+  2. Reactivar imagina-updater-server
+  3. Desactivar imagina-updater-client
+  4. Reactivar imagina-updater-client
+
+Si no hay errores, ¡está listo! ✅
+
+
+═══════════════════════════════════════════════════════════════════════════
+  ¿CÓMO CREAR UN PLUGIN PREMIUM?
+═══════════════════════════════════════════════════════════════════════════
+
+Usa el plugin de ejemplo como base:
+
+PASO 1: Copiar el ejemplo
+──────────────────────────
+
+  cp -r example-premium-plugin/ mi-plugin-premium/
+
+
+PASO 2: Copiar el SDK al plugin
+────────────────────────────────
+
+  mkdir -p mi-plugin-premium/vendor
+  cp -r sdk/ mi-plugin-premium/vendor/imagina-license-sdk/
+
+
+PASO 3: Buscar y reemplazar
+────────────────────────────
+
+En todos los archivos del plugin, reemplaza:
+
+  example-premium       →  mi-plugin-premium
+  Example_Premium       →  Mi_Plugin_Premium
+  EXAMPLE_PREMIUM       →  MI_PLUGIN_PREMIUM
+  Example Premium       →  Mi Plugin Premium
+
+
+PASO 4: Crear ZIP
+──────────────────
+
+  zip -r mi-plugin-premium.zip mi-plugin-premium/
+
+
+PASO 5: Subir al servidor
+──────────────────────────
+
+  1. En el panel del servidor: Plugins > Añadir Plugin
+  2. Subir el ZIP
+  3. API Keys > Configurar permisos para el plugin
+
+
+PASO 6: Instalar en sitio cliente
+──────────────────────────────────
+
+  1. Configurar imagina-updater-client en el sitio cliente
+  2. Instalar el plugin desde Actualizaciones
+  3. ¡Ya está protegido con licencias!
+
+
+═══════════════════════════════════════════════════════════════════════════
+  ¿CÓMO FUNCIONA?
+═══════════════════════════════════════════════════════════════════════════
+
+1. Creas un plugin premium y le pones el SDK
+
+2. Subes el plugin al servidor de actualizaciones
+
+3. Configuras en "API Keys" qué clientes pueden usarlo
+
+4. El cliente activa su sitio con una API Key
+
+5. El plugin premium verifica la licencia:
+   ✅ Si es válida → Funciona
+   ❌ Si no es válida → Se desactiva
+
+6. Si desactivas la licencia en el servidor:
+   → El plugin se desactiva en el cliente (en máximo 12 horas)
+
+
+═══════════════════════════════════════════════════════════════════════════
+  SEGURIDAD
+═══════════════════════════════════════════════════════════════════════════
+
+El sistema tiene 7 CAPAS de protección:
+
+  1. Validación remota (el servidor decide)
+  2. Verificación cada 12 horas automática
+  3. Firmas criptográficas (HMAC-SHA256)
+  4. Tokens que expiran cada 24h
+  5. Detección de código modificado
+  6. Código ofuscado
+  7. Múltiples puntos de verificación
+
+➜ Es MUY DIFÍCIL de hackear
+➜ Tienes CONTROL TOTAL desde el servidor
+➜ Puedes DESACTIVAR licencias remotamente
+
+
+═══════════════════════════════════════════════════════════════════════════
+  ¿NECESITAS AYUDA?
+═══════════════════════════════════════════════════════════════════════════
+
+Lee la documentación:
+
+  📄 QUICK_START.md ─────────> Inicio rápido (5 pasos)
+  📄 docs/INTEGRATION.md ────> Guía completa
+  📄 docs/SECURITY.md ───────> Explicación de seguridad
+  📄 docs/API.md ────────────> Referencia de la API
+
+
+═══════════════════════════════════════════════════════════════════════════
+  RESUMEN RÁPIDO
+═══════════════════════════════════════════════════════════════════════════
+
+1. Ejecutar: ./instalar-facil.sh
+2. Añadir 3 líneas al servidor
+3. Añadir 3 líneas al cliente
+4. Reactivar ambos plugins
+5. ¡Listo para crear plugins premium!
+
+
+═══════════════════════════════════════════════════════════════════════════
+                         ¡Éxito con tus plugins! 🚀
+═══════════════════════════════════════════════════════════════════════════

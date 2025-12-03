@@ -156,6 +156,10 @@ location ~ ^/wp-content/uploads/imagina-updater-plugins/.*\\.zip$ {
             return new WP_Error('upload_failed', __('Error al mover el archivo', 'imagina-updater-server') . ': ' . ($error_msg['message'] ?? 'Desconocido'));
         }
 
+        // Hook para que extensiones puedan procesar el archivo antes de guardar en BD
+        // Ej: inyectar SDK de licencias
+        do_action('imagina_updater_after_move_plugin_file', $file_path, $plugin_data);
+
         // Calcular checksum
         $checksum = hash_file('sha256', $file_path);
         $file_size = filesize($file_path);
@@ -280,12 +284,17 @@ location ~ ^/wp-content/uploads/imagina-updater-plugins/.*\\.zip$ {
             // Commit de la transacción
             $wpdb->query('COMMIT');
 
-            return array(
+            $result_data = array(
                 'id' => $plugin_id,
                 'slug' => $plugin_data['slug'],
                 'name' => $plugin_data['name'],
                 'version' => $plugin_data['version']
             );
+
+            // Hook para que extensiones puedan ejecutar acciones después de subir el plugin
+            do_action('imagina_updater_after_upload_plugin', $result_data, $file_path);
+
+            return $result_data;
 
         } catch (Exception $e) {
             // Rollback en caso de error

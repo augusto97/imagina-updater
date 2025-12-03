@@ -77,6 +77,7 @@ if (!defined('ABSPATH')) {
                         <?php endif; ?>
                     </td>
                 </tr>
+                <?php do_action('imagina_updater_after_upload_form'); ?>
             </table>
 
             <p class="submit">
@@ -108,6 +109,7 @@ if (!defined('ABSPATH')) {
                     <th><?php _e('Autor', 'imagina-updater-server'); ?></th>
                     <th><?php _e('Última Actualización', 'imagina-updater-server'); ?></th>
                     <th><?php _e('Tamaño', 'imagina-updater-server'); ?></th>
+                    <?php do_action('imagina_updater_plugins_table_header'); ?>
                     <th><?php _e('Acciones', 'imagina-updater-server'); ?></th>
                 </tr>
             </thead>
@@ -170,6 +172,7 @@ if (!defined('ABSPATH')) {
                         <td><?php echo esc_html($plugin->author); ?></td>
                         <td><?php echo esc_html(mysql2date(get_option('date_format') . ' ' . get_option('time_format'), $plugin->uploaded_at)); ?></td>
                         <td><?php echo size_format($plugin->file_size); ?></td>
+                        <?php do_action('imagina_updater_plugins_table_row', $plugin); ?>
                         <td>
                             <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-plugins&action=download_plugin&slug=' . urlencode($effective_slug)), 'download_plugin_' . $effective_slug)); ?>" class="button button-small">
                                 <span class="dashicons dashicons-download"></span>

@@ -200,14 +200,53 @@ class Imagina_License_SDK_Injector {
             );
         }
 
-        // Código a inyectar
-        $init_code = <<<'PHP'
+        // Extraer metadatos del plugin
+        $plugin_data = self::extract_plugin_metadata($main_file);
+
+        if (!$plugin_data) {
+            return array(
+                'success' => false,
+                'message' => 'No se pudieron extraer los metadatos del plugin'
+            );
+        }
+
+        // Código a inyectar con validación y bloqueo
+        $plugin_name = addslashes($plugin_data['name']);
+        $plugin_slug = addslashes($plugin_data['slug']);
+
+        $init_code = <<<PHP
 
 // ===== IMAGINA LICENSE SDK - AUTO-INJECTED =====
 // Este código fue inyectado automáticamente por Imagina Updater License Extension
 // Para gestionar licencias premium de este plugin
 if (file_exists(plugin_dir_path(__FILE__) . 'imagina-license-sdk/loader.php')) {
     require_once plugin_dir_path(__FILE__) . 'imagina-license-sdk/loader.php';
+
+    // Inicializar validador de licencias
+    add_action('plugins_loaded', function() {
+        if (class_exists('Imagina_License_SDK')) {
+            \$validator = Imagina_License_SDK::init(array(
+                'plugin_slug' => '{$plugin_slug}',
+                'plugin_name' => '{$plugin_name}',
+                'plugin_file' => __FILE__
+            ));
+
+            // Verificar licencia y bloquear si es inválida
+            if (!\$validator->is_valid()) {
+                // Desactivar funcionalidad del plugin
+                add_action('admin_notices', function() {
+                    echo '<div class="notice notice-error"><p><strong>{$plugin_name}</strong>: Este plugin requiere una licencia válida para funcionar. Por favor, activa tu licencia desde <a href="' . admin_url('options-general.php?page=imagina-updater') . '">Imagina Updater</a>.</p></div>';
+                });
+
+                // Prevenir que el plugin se ejecute
+                add_action('admin_init', function() {
+                    deactivate_plugins(plugin_basename(__FILE__));
+                }, 1);
+
+                return; // Detener ejecución
+            }
+        }
+    }, 1);
 }
 // ===== FIN IMAGINA LICENSE SDK =====
 
@@ -246,6 +285,36 @@ PHP;
         return array(
             'success' => true,
             'message' => 'Código de inicialización inyectado'
+        );
+    }
+
+    /**
+     * Extraer metadatos del plugin
+     *
+     * @param string $plugin_file Archivo principal del plugin
+     * @return array|false Array con 'name' y 'slug' o false en error
+     */
+    private static function extract_plugin_metadata($plugin_file) {
+        $content = file_get_contents($plugin_file);
+
+        if (!$content) {
+            return false;
+        }
+
+        // Extraer el Plugin Name
+        if (!preg_match('/Plugin Name:\s*(.+)$/mi', $content, $matches)) {
+            return false;
+        }
+
+        $plugin_name = trim($matches[1]);
+
+        // Generar slug del nombre del archivo
+        $basename = basename($plugin_file, '.php');
+        $plugin_slug = sanitize_title($basename);
+
+        return array(
+            'name' => $plugin_name,
+            'slug' => $plugin_slug
         );
     }
 

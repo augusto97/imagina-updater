@@ -172,18 +172,3 @@ function imagina_updater_server() {
 
 // Iniciar el plugin
 imagina_updater_server();
-
-/**
- * ==================================================
- * EXTENSIÓN DE LICENCIAS PARA PLUGINS PREMIUM
- * ==================================================
- */
-
-// Cargar clase de criptografía para licencias
-require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'includes/class-license-crypto-server.php';
-
-// Cargar API de licencias
-require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'api/class-license-api.php';
-
-// Registrar rutas de la API de licencias
-add_action('rest_api_init', array('Imagina_Updater_License_API', 'register_routes'));

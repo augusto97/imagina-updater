@@ -8,7 +8,7 @@
  * 1. Copiar este archivo a: imagina-updater-server/api/
  * 2. En imagina-updater-server.php añadir:
  *    require_once plugin_dir_path( __FILE__ ) . 'api/class-license-api.php';
- *    add_action( 'rest_api_init', array( 'Imagina_Updater_License_API', 'register_routes' ) );
+ *    add_action( 'rest_api_init', array( 'Imagina_License_API', 'register_routes' ) );
  *
  * @package Imagina_License_SDK
  * @version 1.0.0
@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Clase de API REST para licencias
  */
-class Imagina_Updater_License_API {
+class Imagina_License_API {
 
 	/**
 	 * Namespace de la API

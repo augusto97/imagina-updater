@@ -210,47 +210,14 @@ class Imagina_License_SDK_Injector {
             );
         }
 
-        // Código a inyectar con validación y bloqueo
-        $plugin_name = addslashes($plugin_data['name']);
-        $plugin_slug = addslashes($plugin_data['slug']);
+        // Cargar el generador de código seguro
+        require_once dirname(__FILE__) . '/class-sdk-injector-secure.php';
 
-        $init_code = <<<PHP
-
-// ===== IMAGINA LICENSE SDK - AUTO-INJECTED =====
-// Este código fue inyectado automáticamente por Imagina Updater License Extension
-// Para gestionar licencias premium de este plugin
-if (file_exists(plugin_dir_path(__FILE__) . 'imagina-license-sdk/loader.php')) {
-    require_once plugin_dir_path(__FILE__) . 'imagina-license-sdk/loader.php';
-
-    // Inicializar validador de licencias
-    add_action('plugins_loaded', function() {
-        if (class_exists('Imagina_License_SDK')) {
-            \$validator = Imagina_License_SDK::init(array(
-                'plugin_slug' => '{$plugin_slug}',
-                'plugin_name' => '{$plugin_name}',
-                'plugin_file' => __FILE__
-            ));
-
-            // Verificar licencia y bloquear si es inválida
-            if (!\$validator->is_valid()) {
-                // Desactivar funcionalidad del plugin
-                add_action('admin_notices', function() {
-                    echo '<div class="notice notice-error"><p><strong>{$plugin_name}</strong>: Este plugin requiere una licencia válida para funcionar. Por favor, activa tu licencia desde <a href="' . admin_url('options-general.php?page=imagina-updater') . '">Imagina Updater</a>.</p></div>';
-                });
-
-                // Prevenir que el plugin se ejecute
-                add_action('admin_init', function() {
-                    deactivate_plugins(plugin_basename(__FILE__));
-                }, 1);
-
-                return; // Detener ejecución
-            }
-        }
-    }, 1);
-}
-// ===== FIN IMAGINA LICENSE SDK =====
-
-PHP;
+        // Generar código de protección multicapa
+        $init_code = "\n" . Imagina_License_SDK_Injector_Secure::generate_secure_code(
+            $plugin_data['name'],
+            $plugin_data['slug']
+        ) . "\n";
 
         // Buscar un lugar adecuado para inyectar (después de la verificación de ABSPATH)
         $patterns = array(

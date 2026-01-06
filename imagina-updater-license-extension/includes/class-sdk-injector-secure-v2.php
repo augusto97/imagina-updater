@@ -153,42 +153,35 @@ foreach (\$_validation_hooks as \$_vh) {
 
         // Verificar licencia
         if (!$check_func()) {
-            if (\$_vh === 'admin_init' || \$_vh === 'wp_loaded') {
+            if (\$_vh === 'admin_init') {
                 add_action('admin_notices', function() use (\$_ob2) {
                     echo '<div class="notice notice-error"><p><strong>' . esc_html(\$_ob2) . '</strong>: ' .
                          __('License required.', 'imagina-license') . ' ' .
                          '<a href="' . admin_url('options-general.php?page=imagina-updater') . '">' .
                          __('Activate license', 'imagina-license') . '</a></p></div>';
-                });
+                }, 999);
 
+                // Desactivar el plugin
                 add_action('admin_head', function() {
                     deactivate_plugins(plugin_basename(__FILE__));
-                }, 1);
+                }, 999);
             }
 
-            // Prevenir ejecución
-            remove_all_actions('init');
-            remove_all_actions('wp_loaded');
-            remove_all_actions('wp');
-            remove_all_filters('the_content');
-            remove_all_filters('the_excerpt');
-
+            // Simplemente retornar sin ejecutar más código del plugin
             return;
         }
 
         // Verificar kill switch
-        if (\$_vh !== 'wp' && !$kill_func()) {
+        if (\$_vh === 'admin_init' && !$kill_func()) {
             add_action('admin_notices', function() use (\$_ob2) {
                 echo '<div class="notice notice-error"><p><strong>' . esc_html(\$_ob2) . '</strong>: ' .
                      __('This installation has been blocked. Contact support.', 'imagina-license') . '</p></div>';
-            });
+            }, 999);
 
-            deactivate_plugins(plugin_basename(__FILE__));
-
-            // Bloqueo inmediato
-            remove_all_actions('init');
-            remove_all_actions('wp_loaded');
-            remove_all_filters('the_content');
+            // Desactivar el plugin
+            add_action('admin_head', function() {
+                deactivate_plugins(plugin_basename(__FILE__));
+            }, 999);
 
             return;
         }

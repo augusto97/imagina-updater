@@ -65,6 +65,28 @@ class Imagina_License_API {
 				'permission_callback' => array( __CLASS__, 'check_activation_token' ),
 			)
 		);
+
+		// Endpoint: Kill Switch - Verificar si una instalación está bloqueada
+		register_rest_route(
+			'imagina-license/v1',
+			'/killswitch',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( __CLASS__, 'check_killswitch' ),
+				'permission_callback' => '__return_true', // Público pero requiere activation_token
+			)
+		);
+
+		// Endpoint: Telemetry - Recibir datos de telemetría de instalaciones
+		register_rest_route(
+			'imagina-license/v1',
+			'/telemetry',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( __CLASS__, 'receive_telemetry' ),
+				'permission_callback' => '__return_true', // Público pero requiere activation_token
+			)
+		);
 	}
 
 	/**
@@ -497,5 +519,221 @@ class Imagina_License_API {
 
 		$data_string = wp_json_encode( $data );
 		return Imagina_License_Crypto::generate_signature( $data_string, $secret );
+	}
+
+	/**
+	 * Kill Switch - Verificar si una instalación específica está bloqueada
+	 *
+	 * Este endpoint permite al servidor bloquear remotamente instalaciones específicas
+	 * de plugins premium si se detecta uso no autorizado o piratería.
+	 *
+	 * @param WP_REST_Request $request Request
+	 * @return WP_REST_Response
+	 */
+	public static function check_killswitch( $request ) {
+		$plugin_slug = sanitize_key( $request->get_param( 'plugin_slug' ) );
+		$activation_token = sanitize_text_field( $request->get_param( 'activation_token' ) );
+		$site_url = esc_url_raw( $request->get_param( 'site_url' ) );
+
+		// Validar parámetros
+		if ( empty( $plugin_slug ) || empty( $activation_token ) || empty( $site_url ) ) {
+			return new WP_REST_Response(
+				array(
+					'blocked' => false,
+					'message' => 'Invalid parameters'
+				),
+				200
+			);
+		}
+
+		global $wpdb;
+
+		// Verificar que el activation_token es válido
+		$table_activations = $wpdb->prefix . 'imagina_updater_activations';
+		$activation = $wpdb->get_row( $wpdb->prepare(
+			"SELECT * FROM $table_activations WHERE activation_token = %s AND is_active = 1",
+			$activation_token
+		) );
+
+		if ( ! $activation ) {
+			// Activation token inválido o desactivado
+			return new WP_REST_Response(
+				array(
+					'blocked' => true,
+					'message' => 'Invalid or inactive activation token'
+				),
+				200
+			);
+		}
+
+		// Verificar si el plugin existe y es premium
+		$table_plugins = $wpdb->prefix . 'imagina_updater_plugins';
+		$plugin = $wpdb->get_row( $wpdb->prepare(
+			"SELECT * FROM $table_plugins WHERE slug = %s AND is_premium = 1",
+			$plugin_slug
+		) );
+
+		if ( ! $plugin ) {
+			// Plugin no existe o no es premium
+			return new WP_REST_Response(
+				array(
+					'blocked' => false,
+					'message' => 'Plugin not found or not premium'
+				),
+				200
+			);
+		}
+
+		// Verificar si hay una blacklist de sitios para este plugin
+		// Por ahora, usar una opción de WordPress para almacenar blacklist
+		$blacklist_key = 'imagina_license_blacklist_' . $plugin_slug;
+		$blacklist = get_option( $blacklist_key, array() );
+
+		// Normalizar URL del sitio para comparación
+		$normalized_url = trailingslashit( strtolower( parse_url( $site_url, PHP_URL_HOST ) ) );
+
+		// Verificar si el sitio está en la blacklist
+		$is_blocked = false;
+		foreach ( $blacklist as $blocked_site ) {
+			$blocked_normalized = trailingslashit( strtolower( $blocked_site ) );
+			if ( strpos( $normalized_url, $blocked_normalized ) !== false ) {
+				$is_blocked = true;
+				break;
+			}
+		}
+
+		// También verificar si la activación está marcada como bloqueada
+		if ( isset( $activation->is_blocked ) && $activation->is_blocked == 1 ) {
+			$is_blocked = true;
+		}
+
+		// Log de la verificación
+		imagina_license_log(
+			sprintf(
+				'Kill switch check: %s from %s - %s',
+				$plugin_slug,
+				$site_url,
+				$is_blocked ? 'BLOCKED' : 'Allowed'
+			),
+			$is_blocked ? 'warning' : 'info'
+		);
+
+		return new WP_REST_Response(
+			array(
+				'blocked' => $is_blocked,
+				'message' => $is_blocked ? 'This installation has been blocked' : 'Active'
+			),
+			200
+		);
+	}
+
+	/**
+	 * Recibir datos de telemetría de una instalación
+	 *
+	 * @param WP_REST_Request $request Request
+	 * @return WP_REST_Response
+	 */
+	public static function receive_telemetry( $request ) {
+		$plugin_slug       = sanitize_key( $request->get_param( 'plugin_slug' ) );
+		$activation_token  = sanitize_text_field( $request->get_param( 'activation_token' ) );
+		$site_url          = esc_url_raw( $request->get_param( 'site_url' ) );
+		$site_name         = sanitize_text_field( $request->get_param( 'site_name' ) );
+		$wp_version        = sanitize_text_field( $request->get_param( 'wp_version' ) );
+		$php_version       = sanitize_text_field( $request->get_param( 'php_version' ) );
+		$is_multisite      = (bool) $request->get_param( 'is_multisite' );
+		$locale            = sanitize_text_field( $request->get_param( 'locale' ) );
+		$timestamp         = sanitize_text_field( $request->get_param( 'timestamp' ) );
+
+		// Validar datos requeridos
+		if ( empty( $plugin_slug ) || empty( $activation_token ) || empty( $site_url ) ) {
+			return new WP_REST_Response(
+				array(
+					'success' => false,
+					'message' => 'Missing required parameters'
+				),
+				400
+			);
+		}
+
+		// Verificar que el activation_token sea válido
+		global $wpdb;
+		$table = $wpdb->prefix . 'imagina_updater_activations';
+
+		$activation = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE activation_token = %s AND site_url = %s",
+				$activation_token,
+				$site_url
+			)
+		);
+
+		if ( ! $activation ) {
+			imagina_license_log(
+				sprintf(
+					'Telemetry rejected: Invalid activation token for %s from %s',
+					$plugin_slug,
+					$site_url
+				),
+				'warning'
+			);
+
+			return new WP_REST_Response(
+				array(
+					'success' => false,
+					'message' => 'Invalid activation token'
+				),
+				403
+			);
+		}
+
+		// Guardar telemetría en wp_options con clave única por instalación
+		$telemetry_key = 'imagina_telemetry_' . md5( $plugin_slug . $site_url );
+
+		$telemetry_data = array(
+			'plugin_slug'      => $plugin_slug,
+			'activation_token' => $activation_token,
+			'activation_id'    => $activation->id,
+			'site_url'         => $site_url,
+			'site_name'        => $site_name,
+			'wp_version'       => $wp_version,
+			'php_version'      => $php_version,
+			'is_multisite'     => $is_multisite,
+			'locale'           => $locale,
+			'last_seen'        => current_time( 'mysql' ),
+			'client_timestamp' => $timestamp,
+			'reports_count'    => 1
+		);
+
+		// Si ya existe telemetría previa, actualizar el contador
+		$existing = get_option( $telemetry_key );
+		if ( $existing && is_array( $existing ) ) {
+			$telemetry_data['reports_count'] = isset( $existing['reports_count'] ) ? $existing['reports_count'] + 1 : 1;
+			$telemetry_data['first_seen'] = $existing['first_seen'] ?? $telemetry_data['last_seen'];
+		} else {
+			$telemetry_data['first_seen'] = $telemetry_data['last_seen'];
+		}
+
+		update_option( $telemetry_key, $telemetry_data, false );
+
+		// Log de telemetría recibida
+		imagina_license_log(
+			sprintf(
+				'Telemetry received: %s from %s (WP %s, PHP %s) - Report #%d',
+				$plugin_slug,
+				$site_name ? $site_name : $site_url,
+				$wp_version,
+				$php_version,
+				$telemetry_data['reports_count']
+			),
+			'info'
+		);
+
+		return new WP_REST_Response(
+			array(
+				'success' => true,
+				'message' => 'Telemetry received'
+			),
+			200
+		);
 	}
 }

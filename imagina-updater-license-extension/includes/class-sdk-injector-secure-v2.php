@@ -35,6 +35,7 @@ class Imagina_License_SDK_Injector_Secure_V2 {
         $check_func = '_ilc_' . substr(md5($plugin_slug), 0, 8);
         $init_func = '_ili_' . substr(md5($plugin_name), 0, 8);
         $kill_func = '_ilk_' . substr(md5($hash), 0, 8);
+        $telemetry_func = '_ilt_' . substr(md5($hash . 'telemetry'), 0, 8);
 
         // Ofuscar strings críticos
         $sdk_class = base64_encode('Imagina_License_SDK');
@@ -176,7 +177,7 @@ foreach (\$_validation_hooks as \$_vh) {
         }
 
         // Verificar kill switch
-        if (!\$_vh !== 'wp' && !$kill_func()) {
+        if (\$_vh !== 'wp' && !$kill_func()) {
             add_action('admin_notices', function() use (\$_ob2) {
                 echo '<div class="notice notice-error"><p><strong>' . esc_html(\$_ob2) . '</strong>: ' .
                      __('This installation has been blocked. Contact support.', 'imagina-license') . '</p></div>';
@@ -219,8 +220,8 @@ add_action('admin_init', function() use (\$_sdk_path, \$_ob7) {
 }, 2);
 
 // [Layer 8] Telemetry & Server Sync
-if (!function_exists('$kill_func' . '_telemetry')) {
-    function {$kill_func}_telemetry() {
+if (!function_exists('$telemetry_func')) {
+    function $telemetry_func() {
         global \$_ob1;
 
         // Enviar telemetría al servidor cada 24 horas
@@ -264,14 +265,15 @@ if (!function_exists('$kill_func' . '_telemetry')) {
 }
 
 // Reportar telemetría en admin_init (primera carga) y luego periódicamente
-add_action('admin_init', '{$kill_func}_telemetry', 999);
+add_action('admin_init', '$telemetry_func', 999);
 
 // [Layer 9] Heartbeat with Server Sync
-if (!wp_next_scheduled('_il_hb_$hash')) {
-    wp_schedule_event(time(), 'twicedaily', '_il_hb_$hash');
+\$_hb_event = '_il_hb_$hash';
+if (!wp_next_scheduled(\$_hb_event)) {
+    wp_schedule_event(time(), 'twicedaily', \$_hb_event);
 }
 
-add_action('_il_hb_$hash', function() {
+add_action(\$_hb_event, function() {
     global \$_ob1;
 
     // Re-validar y limpiar cache
@@ -285,7 +287,9 @@ add_action('_il_hb_$hash', function() {
     $kill_func();
 
     // Enviar telemetría
-    {$kill_func}_telemetry();
+    if (function_exists('$telemetry_func')) {
+        $telemetry_func();
+    }
 });
 
 // [Layer 10] Prevent Direct File Access to SDK

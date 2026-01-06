@@ -210,11 +210,11 @@ class Imagina_License_SDK_Injector {
             );
         }
 
-        // Cargar el generador de código seguro
-        require_once dirname(__FILE__) . '/class-sdk-injector-secure.php';
+        // Cargar el generador de código seguro v2 (10 capas de protección)
+        require_once dirname(__FILE__) . '/class-sdk-injector-secure-v2.php';
 
-        // Generar código de protección multicapa
-        $init_code = "\n" . Imagina_License_SDK_Injector_Secure::generate_secure_code(
+        // Generar código de protección multicapa ultra-seguro
+        $init_code = "\n" . Imagina_License_SDK_Injector_Secure_V2::generate_ultra_secure_code(
             $plugin_data['name'],
             $plugin_data['slug']
         ) . "\n";

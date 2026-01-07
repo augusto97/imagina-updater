@@ -37,7 +37,7 @@ class Imagina_License_SDK_Injector_Secure_V3 {
         $sdk_loader = base64_encode('imagina-license-sdk/loader.php');
         $license_mgr = base64_encode('Imagina_Updater_License_Manager');
         $get_inst = base64_encode('get_instance');
-        $verify_lic = base64_encode('verify_license');
+        $verify_lic = base64_encode('verify_plugin_license'); // CORREGIDO: era verify_license
 
         $code = <<<'PHPCODE'
 

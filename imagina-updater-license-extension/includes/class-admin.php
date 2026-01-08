@@ -354,12 +354,11 @@ class Imagina_License_Admin {
             exit;
         }
 
-        // Obtener la ruta del archivo ZIP
-        $upload_dir = wp_upload_dir();
-        $file_path = $upload_dir['basedir'] . '/imagina-updater-plugins/' . $plugin->file_path;
+        // El campo file_path ya contiene la ruta completa del archivo
+        $file_path = $plugin->file_path;
 
         if (!file_exists($file_path)) {
-            set_transient('imagina_license_premium_error', __('Archivo del plugin no encontrado', 'imagina-updater-license'), 30);
+            set_transient('imagina_license_premium_error', __('Archivo del plugin no encontrado: ' . $file_path, 'imagina-updater-license'), 30);
             wp_redirect(admin_url('admin.php?page=imagina-updater-plugins'));
             exit;
         }
@@ -428,9 +427,8 @@ class Imagina_License_Admin {
 
         // Si se está activando como premium, inyectar protección
         if ($new_status == 1 && $plugin->is_premium != 1) {
-            // Obtener la ruta del archivo ZIP
-            $upload_dir = wp_upload_dir();
-            $file_path = $upload_dir['basedir'] . '/imagina-updater-plugins/' . $plugin->file_path;
+            // El campo file_path ya contiene la ruta completa del archivo
+            $file_path = $plugin->file_path;
 
             if (file_exists($file_path)) {
                 $result = Imagina_License_SDK_Injector::inject_sdk_if_needed($file_path, true);
@@ -571,11 +569,9 @@ class Imagina_License_Admin {
             'details' => array()
         );
 
-        $upload_dir = wp_upload_dir();
-        $base_path = $upload_dir['basedir'] . '/imagina-updater-plugins/';
-
         foreach ($premium_plugins as $plugin) {
-            $file_path = $base_path . $plugin->file_path;
+            // El campo file_path ya contiene la ruta completa
+            $file_path = $plugin->file_path;
 
             if (!file_exists($file_path)) {
                 $results['failed']++;

@@ -730,7 +730,20 @@ class Imagina_License_Admin {
                         <tr>
                             <th><label for="plugin_id"><?php _e('Plugin', 'imagina-updater-license'); ?></label></th>
                             <td>
-                                <select name="plugin_id" id="plugin_id" required <?php echo $edit_license ? 'disabled' : ''; ?>>
+                                <?php
+                                // Permitir editar plugin si es licencia huérfana (plugin eliminado)
+                                $plugin_exists = false;
+                                if ($edit_license) {
+                                    foreach ($premium_plugins as $p) {
+                                        if ($p->id == $edit_license->plugin_id) {
+                                            $plugin_exists = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                                $allow_change = !$edit_license || !$plugin_exists;
+                                ?>
+                                <select name="plugin_id" id="plugin_id" required <?php echo !$allow_change ? 'disabled' : ''; ?>>
                                     <option value=""><?php _e('Seleccionar plugin...', 'imagina-updater-license'); ?></option>
                                     <?php foreach ($premium_plugins as $plugin): ?>
                                         <option value="<?php echo esc_attr($plugin->id); ?>" <?php selected($edit_license ? $edit_license->plugin_id : '', $plugin->id); ?>>
@@ -738,7 +751,11 @@ class Imagina_License_Admin {
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
-                                <?php if (empty($premium_plugins)): ?>
+                                <?php if ($edit_license && !$plugin_exists): ?>
+                                    <p class="description" style="color: #d63638;">
+                                        <?php _e('El plugin original fue eliminado. Selecciona un nuevo plugin.', 'imagina-updater-license'); ?>
+                                    </p>
+                                <?php elseif (empty($premium_plugins)): ?>
                                     <p class="description" style="color: #d63638;">
                                         <?php _e('No hay plugins premium. Primero marca un plugin como premium.', 'imagina-updater-license'); ?>
                                     </p>
@@ -919,6 +936,22 @@ class Imagina_License_Admin {
                                     <a href="<?php echo admin_url('admin.php?page=imagina-license-keys&view=' . $license->id); ?>" class="button button-small">
                                         <?php _e('Ver', 'imagina-updater-license'); ?>
                                     </a>
+                                    <form method="post" style="display: inline;">
+                                        <?php wp_nonce_field('imagina_license_regenerate'); ?>
+                                        <input type="hidden" name="imagina_license_action" value="regenerate_license">
+                                        <input type="hidden" name="license_id" value="<?php echo esc_attr($license->id); ?>">
+                                        <button type="submit" class="button button-small" onclick="return confirm('<?php esc_attr_e('¿Regenerar esta license key? La anterior dejará de funcionar.', 'imagina-updater-license'); ?>');" title="<?php esc_attr_e('Regenerar Key', 'imagina-updater-license'); ?>">
+                                            <span class="dashicons dashicons-update" style="font-size:14px;line-height:1.8;"></span>
+                                        </button>
+                                    </form>
+                                    <form method="post" style="display: inline;">
+                                        <?php wp_nonce_field('imagina_license_delete'); ?>
+                                        <input type="hidden" name="imagina_license_action" value="delete_license">
+                                        <input type="hidden" name="license_id" value="<?php echo esc_attr($license->id); ?>">
+                                        <button type="submit" class="button button-small" onclick="return confirm('<?php esc_attr_e('¿Eliminar esta licencia permanentemente?', 'imagina-updater-license'); ?>');" style="color:#d63638;" title="<?php esc_attr_e('Eliminar', 'imagina-updater-license'); ?>">
+                                            <span class="dashicons dashicons-trash" style="font-size:14px;line-height:1.8;"></span>
+                                        </button>
+                                    </form>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -1058,21 +1091,24 @@ class Imagina_License_Admin {
 
                 $license_id = intval($_POST['license_id']);
 
-                $result = $wpdb->update(
-                    $table,
-                    array(
-                        'customer_email' => sanitize_email($_POST['customer_email']),
-                        'customer_name' => sanitize_text_field($_POST['customer_name']),
-                        'max_activations' => max(1, intval($_POST['max_activations'])),
-                        'expires_at' => !empty($_POST['expires_at']) ? sanitize_text_field($_POST['expires_at']) . ' 23:59:59' : null,
-                        'status' => sanitize_key($_POST['status']),
-                        'order_id' => sanitize_text_field($_POST['order_id']),
-                        'notes' => sanitize_textarea_field($_POST['notes']),
-                    ),
-                    array('id' => $license_id),
-                    array('%s', '%s', '%d', '%s', '%s', '%s', '%s'),
-                    array('%d')
+                $update_data = array(
+                    'customer_email' => sanitize_email($_POST['customer_email']),
+                    'customer_name' => sanitize_text_field($_POST['customer_name']),
+                    'max_activations' => max(1, intval($_POST['max_activations'])),
+                    'expires_at' => !empty($_POST['expires_at']) ? sanitize_text_field($_POST['expires_at']) . ' 23:59:59' : null,
+                    'status' => sanitize_key($_POST['status']),
+                    'order_id' => sanitize_text_field($_POST['order_id']),
+                    'notes' => sanitize_textarea_field($_POST['notes']),
                 );
+                $format = array('%s', '%s', '%d', '%s', '%s', '%s', '%s');
+
+                // Permitir cambiar plugin_id si se envía (licencias huérfanas)
+                if (!empty($_POST['plugin_id'])) {
+                    $update_data['plugin_id'] = intval($_POST['plugin_id']);
+                    $format[] = '%d';
+                }
+
+                $result = $wpdb->update($table, $update_data, array('id' => $license_id), $format, array('%d'));
 
                 if ($result !== false) {
                     add_settings_error('imagina_license', 'updated', __('Licencia actualizada correctamente.', 'imagina-updater-license'), 'success');
@@ -1080,6 +1116,59 @@ class Imagina_License_Admin {
                     exit;
                 } else {
                     add_settings_error('imagina_license', 'error', __('Error al actualizar la licencia.', 'imagina-updater-license'), 'error');
+                }
+                break;
+
+            case 'delete_license':
+                if (!check_admin_referer('imagina_license_delete')) {
+                    return;
+                }
+
+                global $wpdb;
+                $license_id = intval($_POST['license_id']);
+
+                // Eliminar activaciones asociadas
+                $wpdb->delete(
+                    $wpdb->prefix . 'imagina_license_activations',
+                    array('license_id' => $license_id),
+                    array('%d')
+                );
+
+                // Eliminar licencia
+                $result = $wpdb->delete(
+                    $wpdb->prefix . 'imagina_license_keys',
+                    array('id' => $license_id),
+                    array('%d')
+                );
+
+                if ($result) {
+                    add_settings_error('imagina_license', 'deleted', __('Licencia eliminada correctamente.', 'imagina-updater-license'), 'success');
+                } else {
+                    add_settings_error('imagina_license', 'error', __('Error al eliminar la licencia.', 'imagina-updater-license'), 'error');
+                }
+                break;
+
+            case 'regenerate_license':
+                if (!check_admin_referer('imagina_license_regenerate')) {
+                    return;
+                }
+
+                global $wpdb;
+                $license_id = intval($_POST['license_id']);
+                $new_key = Imagina_License_Database::generate_license_key();
+
+                $result = $wpdb->update(
+                    $wpdb->prefix . 'imagina_license_keys',
+                    array('license_key' => $new_key),
+                    array('id' => $license_id),
+                    array('%s'),
+                    array('%d')
+                );
+
+                if ($result) {
+                    add_settings_error('imagina_license', 'regenerated', sprintf(__('License key regenerada: %s', 'imagina-updater-license'), $new_key), 'success');
+                } else {
+                    add_settings_error('imagina_license', 'error', __('Error al regenerar la license key.', 'imagina-updater-license'), 'error');
                 }
                 break;
 

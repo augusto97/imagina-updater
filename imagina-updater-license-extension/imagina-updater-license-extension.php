@@ -3,7 +3,7 @@
  * Plugin Name: Imagina Updater License Extension
  * Plugin URI: https://github.com/augusto97/imagina-updater
  * Description: Extensión para el plugin Imagina Updater Server que agrega sistema de gestión de licencias para plugins premium con protección híbrida multicapa.
- * Version: 4.0.0
+ * Version: 5.0.0
  * Author: Imagina
  * Author URI: https://imagina.com
  * License: GPL v2 or later
@@ -15,14 +15,15 @@
  *
  * Requires Plugins: imagina-updater-server
  *
- * Sistema de Licencias v4.0 - Protección Híbrida
- * ==============================================
- * - Verificación dual: vía cliente + directa al servidor
- * - Múltiples puntos de verificación (plugins_loaded, admin_init, REST, AJAX)
- * - Heartbeat periódico cada 12 horas
- * - Grace period de 7 días sin conexión
- * - Binding al dominio
- * - Telemetría opcional
+ * Sistema de Licencias v5.0 - License Keys
+ * =========================================
+ * - Sistema completo de License Keys por plugin
+ * - Activación/desactivación de licencias por sitio
+ * - Panel de administración para gestión de licencias
+ * - API REST para activar, desactivar y verificar licencias
+ * - Límite de activaciones por licencia
+ * - Expiración de licencias
+ * - Tracking de sitios activados
  */
 
 if (!defined('ABSPATH')) {
@@ -30,7 +31,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Constantes del plugin
-define('IMAGINA_LICENSE_VERSION', '4.0.0');
+define('IMAGINA_LICENSE_VERSION', '5.0.0');
 define('IMAGINA_LICENSE_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('IMAGINA_LICENSE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('IMAGINA_LICENSE_PLUGIN_FILE', __FILE__);

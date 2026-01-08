@@ -128,6 +128,9 @@ class Imagina_License_SDK_Injector {
         // Registrar el checksum del código de protección
         self::register_protection_checksum($plugin_data['slug']);
 
+        // Actualizar slug_override en la base de datos para que coincida
+        self::update_plugin_slug_override($plugin_data['name'], $plugin_data['slug']);
+
         return array(
             'success' => true,
             'message' => 'Protección de licencias inyectada correctamente',
@@ -439,6 +442,63 @@ class Imagina_License_SDK_Injector {
                 $plugin_slug,
                 Imagina_License_Protection_Generator::PROTECTION_VERSION
             ), 'info');
+        }
+    }
+
+    /**
+     * Actualizar slug_override en la base de datos del plugin
+     *
+     * Esto asegura que el slug usado por la protección coincida con lo que
+     * el servidor espera al validar licencias.
+     *
+     * @param string $plugin_name Nombre del plugin
+     * @param string $generated_slug Slug generado por el injector
+     */
+    private static function update_plugin_slug_override($plugin_name, $generated_slug) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'imagina_updater_plugins';
+
+        // Buscar el plugin por nombre exacto
+        $plugin = $wpdb->get_row($wpdb->prepare(
+            "SELECT id, slug, slug_override FROM $table WHERE name = %s",
+            $plugin_name
+        ));
+
+        if (!$plugin) {
+            // Intentar búsqueda más flexible (LIKE con escape)
+            $plugin = $wpdb->get_row($wpdb->prepare(
+                "SELECT id, slug, slug_override FROM $table WHERE name LIKE %s",
+                '%' . $wpdb->esc_like($plugin_name) . '%'
+            ));
+        }
+
+        if ($plugin) {
+            // Solo actualizar si el slug_override es diferente o está vacío
+            if (empty($plugin->slug_override) || $plugin->slug_override !== $generated_slug) {
+                $wpdb->update(
+                    $table,
+                    array('slug_override' => $generated_slug),
+                    array('id' => $plugin->id),
+                    array('%s'),
+                    array('%d')
+                );
+
+                if (function_exists('imagina_license_log')) {
+                    imagina_license_log(sprintf(
+                        'Actualizado slug_override para plugin %s: %s → %s',
+                        $plugin_name,
+                        $plugin->slug_override ?: '(vacío)',
+                        $generated_slug
+                    ), 'info');
+                }
+            }
+        } else {
+            if (function_exists('imagina_license_log')) {
+                imagina_license_log(sprintf(
+                    'No se encontró plugin "%s" en la base de datos para actualizar slug_override',
+                    $plugin_name
+                ), 'warning');
+            }
         }
     }
 

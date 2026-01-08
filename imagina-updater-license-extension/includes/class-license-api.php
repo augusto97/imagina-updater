@@ -821,22 +821,70 @@ class Imagina_License_API {
 		if ( ! empty( $plugin_slug ) ) {
 			global $wpdb;
 			$table_plugins = $wpdb->prefix . 'imagina_updater_plugins';
+
+			// Primero intentar match directo
 			$plugin = $wpdb->get_row( $wpdb->prepare(
-				"SELECT id FROM $table_plugins WHERE (slug = %s OR slug_override = %s) AND id = %d",
+				"SELECT id, name, slug, slug_override FROM $table_plugins WHERE (slug = %s OR slug_override = %s) AND id = %d",
 				$plugin_slug,
 				$plugin_slug,
 				$license->plugin_id
 			) );
 
 			if ( ! $plugin ) {
-				return new WP_REST_Response(
-					array(
-						'success' => false,
-						'error'   => 'wrong_plugin',
-						'message' => __( 'Esta licencia no es válida para este plugin.', 'imagina-updater-license' )
-					),
-					403
-				);
+				// Obtener información del plugin de la licencia para el mensaje de error
+				$license_plugin = $wpdb->get_row( $wpdb->prepare(
+					"SELECT id, name, slug, slug_override FROM $table_plugins WHERE id = %d",
+					$license->plugin_id
+				) );
+
+				// Si el plugin de la licencia existe pero el slug no coincide
+				if ( $license_plugin ) {
+					// Intentar auto-corregir: actualizar slug_override si está vacío
+					if ( empty( $license_plugin->slug_override ) ) {
+						$wpdb->update(
+							$table_plugins,
+							array( 'slug_override' => $plugin_slug ),
+							array( 'id' => $license_plugin->id ),
+							array( '%s' ),
+							array( '%d' )
+						);
+						imagina_license_log( sprintf(
+							'Auto-corregido slug_override para "%s": %s',
+							$license_plugin->name,
+							$plugin_slug
+						), 'info' );
+
+						// Continuar con la activación ya que hemos corregido el slug
+						$plugin = $license_plugin;
+					} else {
+						// El slug_override ya tiene un valor diferente - error real
+						$expected_slug = $license_plugin->slug_override ?: $license_plugin->slug;
+						return new WP_REST_Response(
+							array(
+								'success'       => false,
+								'error'         => 'wrong_plugin',
+								'message'       => sprintf(
+									__( 'Esta license key es para otro plugin, no para "%s". Verifica que estés usando la licencia correcta.', 'imagina-updater-license' ),
+									$license_plugin->name
+								),
+								'expected_slug' => $expected_slug,
+								'received_slug' => $plugin_slug,
+								'license_plugin' => $license_plugin->name
+							),
+							403
+						);
+					}
+				} else {
+					// El plugin de la licencia no existe
+					return new WP_REST_Response(
+						array(
+							'success' => false,
+							'error'   => 'plugin_not_found',
+							'message' => __( 'El plugin asociado a esta licencia no existe en el servidor.', 'imagina-updater-license' )
+						),
+						404
+					);
+				}
 			}
 		}
 

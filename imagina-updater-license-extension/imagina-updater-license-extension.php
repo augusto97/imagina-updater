@@ -2,8 +2,8 @@
 /**
  * Plugin Name: Imagina Updater License Extension
  * Plugin URI: https://github.com/augusto97/imagina-updater
- * Description: Extensión para el plugin Imagina Updater Server que agrega sistema de gestión de licencias para plugins premium
- * Version: 1.0.0
+ * Description: Extensión para el plugin Imagina Updater Server que agrega sistema de gestión de licencias para plugins premium con protección híbrida multicapa.
+ * Version: 4.0.0
  * Author: Imagina
  * Author URI: https://imagina.com
  * License: GPL v2 or later
@@ -14,6 +14,15 @@
  * Requires PHP: 7.4
  *
  * Requires Plugins: imagina-updater-server
+ *
+ * Sistema de Licencias v4.0 - Protección Híbrida
+ * ==============================================
+ * - Verificación dual: vía cliente + directa al servidor
+ * - Múltiples puntos de verificación (plugins_loaded, admin_init, REST, AJAX)
+ * - Heartbeat periódico cada 12 horas
+ * - Grace period de 7 días sin conexión
+ * - Binding al dominio
+ * - Telemetría opcional
  */
 
 if (!defined('ABSPATH')) {
@@ -21,9 +30,10 @@ if (!defined('ABSPATH')) {
 }
 
 // Constantes del plugin
-define('IMAGINA_LICENSE_VERSION', '1.0.0');
+define('IMAGINA_LICENSE_VERSION', '4.0.0');
 define('IMAGINA_LICENSE_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('IMAGINA_LICENSE_PLUGIN_URL', plugin_dir_url(__FILE__));
+define('IMAGINA_LICENSE_PLUGIN_FILE', __FILE__);
 
 /**
  * Verificar que el plugin base esté activo
@@ -85,8 +95,22 @@ function imagina_license_activate() {
     // Crear/actualizar tablas
     require_once IMAGINA_LICENSE_PLUGIN_DIR . 'includes/class-database.php';
     Imagina_License_Database::create_tables();
+
+    // Guardar URL del servidor para uso en protección directa
+    update_option('imagina_updater_server_url', home_url());
 }
 register_activation_hook(__FILE__, 'imagina_license_activate');
+
+/**
+ * Desactivación del plugin
+ */
+function imagina_license_deactivate() {
+    // Limpiar transients
+    global $wpdb;
+    $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_imagina_license_%'");
+    $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_imagina_license_%'");
+}
+register_deactivation_hook(__FILE__, 'imagina_license_deactivate');
 
 /**
  * Inicialización del plugin
@@ -99,6 +123,7 @@ function imagina_license_init() {
 
     // Cargar archivos necesarios
     require_once IMAGINA_LICENSE_PLUGIN_DIR . 'includes/class-database.php';
+    require_once IMAGINA_LICENSE_PLUGIN_DIR . 'includes/class-protection-generator.php';
     require_once IMAGINA_LICENSE_PLUGIN_DIR . 'includes/class-sdk-injector.php';
     require_once IMAGINA_LICENSE_PLUGIN_DIR . 'includes/class-license-crypto-server.php';
     require_once IMAGINA_LICENSE_PLUGIN_DIR . 'includes/class-license-api.php';
@@ -119,15 +144,56 @@ function imagina_license_init() {
         update_option('imagina_license_db_version', IMAGINA_LICENSE_VERSION);
     }
 }
-add_action('plugins_loaded', 'imagina_license_init', 20); // Prioridad 20 para cargar después del plugin base
+add_action('plugins_loaded', 'imagina_license_init', 20);
 
 /**
  * Función de log helper
+ *
+ * @param string $message Mensaje a registrar
+ * @param string $level Nivel de log (info, warning, error, debug)
+ * @param array $context Contexto adicional
  */
 function imagina_license_log($message, $level = 'info', $context = array()) {
     if (function_exists('imagina_updater_server_log')) {
         imagina_updater_server_log('[LICENSE] ' . $message, $level, $context);
     } else {
-        error_log('[IMAGINA LICENSE ' . strtoupper($level) . '] ' . $message);
+        $context_str = !empty($context) ? ' | ' . wp_json_encode($context) : '';
+        error_log('[IMAGINA LICENSE ' . strtoupper($level) . '] ' . $message . $context_str);
     }
+}
+
+/**
+ * Obtener versión del sistema de protección
+ *
+ * @return string
+ */
+function imagina_license_get_protection_version() {
+    if (class_exists('Imagina_License_Protection_Generator')) {
+        return Imagina_License_Protection_Generator::PROTECTION_VERSION;
+    }
+    return IMAGINA_LICENSE_VERSION;
+}
+
+/**
+ * CLI: Inyectar protección en todos los plugins premium
+ * Uso: wp eval "imagina_license_inject_all_protection();"
+ */
+function imagina_license_inject_all_protection() {
+    if (!class_exists('Imagina_License_Admin')) {
+        require_once IMAGINA_LICENSE_PLUGIN_DIR . 'includes/class-admin.php';
+    }
+
+    $results = Imagina_License_Admin::inject_protection_in_all_premium_plugins();
+
+    if (defined('WP_CLI') && WP_CLI) {
+        WP_CLI::log("Protección inyectada en {$results['success']} plugins.");
+        WP_CLI::log("Saltados: {$results['skipped']}");
+        WP_CLI::log("Errores: {$results['failed']}");
+
+        foreach ($results['details'] as $detail) {
+            WP_CLI::log("  - {$detail['plugin']}: {$detail['status']} - {$detail['message']}");
+        }
+    }
+
+    return $results;
 }

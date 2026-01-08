@@ -1,236 +1,192 @@
-# 🔐 Imagina License SDK
+# Imagina License SDK v4.0
 
-Sistema de licenciamiento seguro y robusto para plugins premium de WordPress.
+Sistema de licenciamiento con **protección automática** para plugins premium de WordPress.
 
-## 📋 Descripción
+## Descripcion General
 
-Este SDK proporciona un sistema de validación de licencias de **múltiples capas de seguridad** que protege tus plugins premium contra:
+**Ya no necesitas integrar el SDK manualmente.** A partir de la version 4.0, el sistema de proteccion se inyecta automaticamente cuando subes un plugin al servidor y lo marcas como "Premium".
 
-- ✅ Uso no autorizado
-- ✅ Modificación del código de validación
-- ✅ Bypass por comentar código
-- ✅ Clonación a otros sitios
-- ✅ Uso después de cancelar la licencia
+## Como Funciona (v4.0)
 
-## 🛡️ Capas de Seguridad
+### Para el Desarrollador del Plugin Premium:
 
-### 1. **Validación Remota Obligatoria**
-- El servidor es la única fuente de verdad
-- Sin conexión al servidor = sin funcionalidad (después del grace period)
+1. **Desarrolla tu plugin normalmente** - Sin codigo de proteccion
+2. **Sube el plugin al servidor** Imagina Updater
+3. **Marca el plugin como "Premium"** en la interfaz de administracion
+4. **El sistema inyecta la proteccion automaticamente**
 
-### 2. **Heartbeat Constante**
-- Verificación automática cada 12-24 horas
-- Detección de licencias desactivadas en tiempo real
-- Grace period configurable para problemas temporales de conectividad
+### Para el Usuario Final (Cliente):
 
-### 3. **Firma Digital Criptográfica**
-- Todas las respuestas del servidor están firmadas con HMAC-SHA256
-- Imposible falsificar respuestas del servidor
-- Cada sitio tiene una clave secreta única
+1. Instala `Imagina Updater Client` y configura la conexion al servidor
+2. Los plugins premium se actualizan normalmente
+3. Si no tiene licencia valida, el plugin muestra un aviso y se desactiva
 
-### 4. **License Tokens de Corta Duración**
-- Tokens JWT que expiran cada 24-48 horas
-- Deben renovarse constantemente
-- Almacenados encriptados en la base de datos
+## Caracteristicas de la Proteccion v4.0
 
-### 5. **Verificación de Integridad del SDK**
-- El SDK verifica su propio checksum
-- Detecta modificaciones en el código de validación
-- Auto-desactivación si detecta manipulación
+### Arquitectura Hibrida
+- **Verificacion via License Manager** del cliente (si esta disponible)
+- **Verificacion directa al servidor** (fallback)
+- **Multiples capas de seguridad**
 
-### 6. **Ofuscación de Código Crítico**
-- Variables y funciones con nombres aleatorios
-- Código crítico ofuscado
-- Dificulta la lectura y modificación
+### Puntos de Verificacion
+- `plugins_loaded` - Al cargar WordPress
+- `admin_init` - Al cargar el admin
+- REST API - Antes de procesar requests
+- AJAX - Antes de procesar requests
 
-### 7. **Múltiples Puntos de Verificación**
-- Validación al activar el plugin
-- Validación en admin_init
-- Validación antes de ejecutar funcionalidades críticas
-- Validación en AJAX/REST API endpoints
+### Grace Period
+- 7 dias sin conexion al servidor
+- Permite funcionamiento temporal si hay problemas de red
+- Solo aplica si ya tenia una licencia valida previamente
 
-## 📦 Componentes
+### Heartbeat
+- Verificacion automatica cada 12 horas
+- Detecta licencias revocadas
+- Envia telemetria opcional (version WP, PHP, etc.)
 
-### SDK (`/sdk/`)
-- **class-license-validator.php**: Validador principal (código ofuscado)
-- **class-heartbeat.php**: Sistema de verificación periódica
-- **class-crypto.php**: Criptografía y firma digital
-- **loader.php**: Cargador del SDK
+## Estructura del Codigo Inyectado
 
-### Extensión del Servidor (`/server-extension/`)
-- Nuevos endpoints REST API para validación de licencias
-- Generación de tokens firmados
-- Control de licencias por plugin
-
-### Extensión del Cliente (`/client-extension/`)
-- Gestor de licencias local
-- Caché de validaciones
-- Heartbeat client-side
-
-### Plugin de Ejemplo (`/example-premium-plugin/`)
-- Plugin premium completo con integración del SDK
-- Ejemplos de uso en diferentes contextos
-- UI de gestión de licencia
-
-## 🚀 Instalación
-
-### Paso 1: Instalar Extensiones
-
-```bash
-# Copiar extensión del servidor
-cp server-extension/class-license-api.php imagina-updater-server/api/
-cp server-extension/class-license-validator.php imagina-updater-server/includes/
-
-# Copiar extensión del cliente
-cp client-extension/class-license-manager.php imagina-updater-client/includes/
-```
-
-### Paso 2: Integrar en el Servidor
-
-Editar `imagina-updater-server/imagina-updater-server.php`:
+El codigo de proteccion se inyecta automaticamente en el archivo principal del plugin:
 
 ```php
-// Cargar la extensión de licencias
-require_once plugin_dir_path( __FILE__ ) . 'includes/class-license-validator.php';
-require_once plugin_dir_path( __FILE__ ) . 'api/class-license-api.php';
-
-// Registrar la API de licencias
-add_action( 'rest_api_init', array( 'Imagina_Updater_License_API', 'register_routes' ) );
-```
-
-### Paso 3: Integrar en el Cliente
-
-Editar `imagina-updater-client/imagina-updater-client.php`:
-
-```php
-// Cargar el gestor de licencias
-require_once plugin_dir_path( __FILE__ ) . 'includes/class-license-manager.php';
-
-// Inicializar el gestor
-add_action( 'plugins_loaded', array( 'Imagina_Updater_License_Manager', 'init' ) );
-```
-
-### Paso 4: Integrar en tu Plugin Premium
-
-```bash
-# Copiar el SDK a tu plugin
-cp -r sdk/ tu-plugin-premium/vendor/imagina-license-sdk/
-```
-
-En tu plugin principal:
-
-```php
+<?php
 /**
  * Plugin Name: Tu Plugin Premium
- * Requires Plugins: imagina-updater-client
+ * ...
  */
 
-// Cargar el SDK
-require_once plugin_dir_path( __FILE__ ) . 'vendor/imagina-license-sdk/loader.php';
-
-// Inicializar validación
-$license = Imagina_License_SDK::init( array(
-    'plugin_slug' => 'tu-plugin-premium',
-    'plugin_name' => 'Tu Plugin Premium',
-    'plugin_file' => __FILE__,
-    'grace_period' => 3 * DAY_IN_SECONDS, // 3 días
-) );
-
-// Verificar licencia antes de cargar funcionalidades
-if ( ! $license->is_valid() ) {
-    // Mostrar aviso de licencia
-    add_action( 'admin_notices', array( $license, 'show_notice' ) );
-    return; // No cargar funcionalidades
+// Prevenir acceso directo
+if (!defined('ABSPATH')) {
+    exit;
 }
 
-// Cargar plugin normalmente
-require_once 'includes/class-main.php';
+// ============================================================================
+// IMAGINA LICENSE PROTECTION v4.0.0
+// Plugin: Tu Plugin Premium
+// Generated: 2025-01-08 12:00:00
+// DO NOT MODIFY THIS CODE - Integrity verification is active
+// ============================================================================
+
+// ... codigo de proteccion inyectado automaticamente ...
+
+// ============================================================================
+// END IMAGINA LICENSE PROTECTION
+// ============================================================================
+
+// Tu codigo del plugin continua aqui normalmente
 ```
 
-## 📖 Documentación
+## API del Sistema de Proteccion
 
-- **[INTEGRATION.md](docs/INTEGRATION.md)** - Guía de integración completa
-- **[SECURITY.md](docs/SECURITY.md)** - Explicación detallada de seguridad
-- **[API.md](docs/API.md)** - Referencia de la API del SDK
+Si necesitas interactuar con el sistema de proteccion desde tu plugin:
 
-## 🔒 Cómo Funciona
+```php
+// Obtener el nombre de la clase de proteccion
+$class_name = 'ILP_' . substr(md5('tu-plugin-slug' . 'imagina_license'), 0, 8);
 
-### Flujo de Validación
+// Verificar si esta licenciado
+if (class_exists($class_name)) {
+    $is_licensed = call_user_func(array($class_name, 'is_licensed'));
+
+    if ($is_licensed) {
+        // Plugin licenciado, ejecutar funcionalidades
+    } else {
+        // Plugin no licenciado, mostrar aviso
+    }
+}
+```
+
+### Metodos Disponibles
+
+| Metodo | Descripcion |
+|--------|-------------|
+| `is_licensed()` | Retorna `true` si la licencia es valida |
+| `get_license_data()` | Retorna array con datos de la licencia |
+| `recheck()` | Fuerza una verificacion remota inmediata |
+| `deactivate()` | Limpia los datos de licencia locales |
+
+## Flujo de Verificacion
 
 ```
 PLUGIN PREMIUM                    CLIENTE                     SERVIDOR
      |                               |                            |
-     | 1. Verificar licencia         |                            |
+     | 1. plugins_loaded             |                            |
      |------------------------------>|                            |
      |                               |                            |
-     |                               | 2. ¿Tiene license_token    |
-     |                               |    válido en caché?        |
+     | 2. Verificar licencia         |                            |
+     |   (via License Manager)       |                            |
+     |------------------------------>|                            |
      |                               |                            |
-     |                               | NO → Solicitar validación  |
+     |                               | 3. Cache valido?           |
+     |                               |    SI -> Retornar cache    |
+     |                               |    NO -> Verificar servidor|
      |                               |--------------------------->|
      |                               |                            |
-     |                               |         3. Verificar:      |
+     |                               |         4. Verificar:      |
      |                               |         - activation_token |
      |                               |         - plugin_slug      |
      |                               |         - dominio          |
      |                               |         - permisos         |
      |                               |                            |
-     |                               |   4. Generar license_token |
-     |                               |      firmado (24h)         |
-     |                               |   + firma HMAC             |
+     |                               |   5. Respuesta + firma     |
      |                               |<---------------------------|
      |                               |                            |
-     |                               | 5. Verificar firma         |
-     |                               | 6. Guardar en caché        |
+     |                               | 6. Guardar en cache        |
+     |                               |    (6 horas)               |
      |                               |                            |
-     | 7. Licencia válida ✓          |                            |
+     | 7. Resultado                  |                            |
      |<------------------------------|                            |
      |                               |                            |
-     | 8. Ejecutar funcionalidades   |                            |
+     | 8. SI valido: cargar plugin   |                            |
+     |    NO valido: mostrar aviso   |                            |
      |                               |                            |
 ```
 
-### Heartbeat (Verificación Periódica)
+## Componentes del Sistema
 
-```
-HEARTBEAT (WP-Cron)               CLIENTE                     SERVIDOR
-     |                               |                            |
-     | Cada 12 horas                 |                            |
-     |------------------------------>|                            |
-     |                               |                            |
-     |                               | Verificar todas las        |
-     |                               | licencias activas          |
-     |                               |--------------------------->|
-     |                               |                            |
-     |                               |    Validar cada una        |
-     |                               |<---------------------------|
-     |                               |                            |
-     |                               | Actualizar caché           |
-     |                               | Si inválida: marcar        |
-     |                               |                            |
-```
+### En el Servidor
+- `imagina-updater-server` - Plugin base
+- `imagina-updater-license-extension` - Extension de licencias
+  - `class-protection-generator.php` - Genera el codigo de proteccion
+  - `class-sdk-injector.php` - Inyecta el codigo en los plugins
+  - `class-license-api.php` - Endpoints REST para verificacion
+  - `class-admin.php` - Interfaz de administracion
 
-## ⚠️ Limitaciones Conocidas
+### En el Cliente
+- `imagina-updater-client` - Plugin cliente
+  - `class-license-manager.php` - Gestor de licencias
+  - Verificacion y cache de licencias
 
-**PHP no puede ser 100% seguro contra reverse engineering**, pero este SDK implementa:
+## Ejemplo de Plugin Premium
 
-- ✅ Múltiples capas que dificultan el bypass
-- ✅ Validación constante con el servidor (no solo una vez)
-- ✅ Detección de modificaciones del código
-- ✅ Control total desde el servidor para desactivar licencias
+Ver `/example-premium-plugin/` para un ejemplo completo de como desarrollar un plugin premium compatible con este sistema.
 
-**Un usuario muy técnico podría**:
-- Modificar el código del plugin para eliminar las verificaciones
-- Pero tendría que hacerlo en CADA actualización
-- Y tendría que modificar múltiples archivos
-- Y perder soporte oficial
+**Nota:** El plugin de ejemplo NO tiene codigo de proteccion incluido. Este se inyecta automaticamente cuando se sube al servidor y se marca como premium.
 
-**Este SDK hace que sea más fácil pagar la licencia que hackearla.**
+## Seguridad
 
-## 📝 Licencia
+### Que protege:
+- Uso sin licencia
+- Uso en dominios no autorizados
+- Uso despues de cancelar la licencia
 
-Este SDK es de código cerrado y solo puede ser usado en plugins autorizados por Imagina.
+### Limitaciones (PHP es interpretado):
+- Un usuario tecnico podria modificar el codigo
+- Pero tendria que hacerlo en CADA actualizacion
+- Y perderia soporte oficial
+- Y seria detectable por telemetria
 
-## 🤝 Soporte
+**El objetivo es hacer que sea mas facil pagar que hackear.**
 
-Para soporte técnico, contacta al equipo de desarrollo.
+## Migracion desde v3.x
+
+Si tienes plugins con el sistema anterior (SDK embebido manual):
+
+1. Actualiza `imagina-updater-license-extension` a v4.0
+2. Vuelve a subir el plugin premium al servidor
+3. El sistema inyectara la nueva proteccion automaticamente
+4. Los usuarios recibirán la actualizacion normalmente
+
+## Soporte
+
+Para soporte tecnico, contacta al equipo de desarrollo de Imagina.

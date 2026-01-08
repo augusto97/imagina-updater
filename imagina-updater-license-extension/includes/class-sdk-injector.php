@@ -1,6 +1,12 @@
 <?php
 /**
- * Inyector automático de SDK de licencias en plugins premium
+ * Inyector de Protección de Licencias v4.0
+ *
+ * Inyecta automáticamente el código de protección en plugins premium.
+ * Ya no requiere SDK externo - el código de protección es autónomo.
+ *
+ * @package Imagina_License_Extension
+ * @version 4.0.0
  */
 
 if (!defined('ABSPATH')) {
@@ -10,10 +16,15 @@ if (!defined('ABSPATH')) {
 class Imagina_License_SDK_Injector {
 
     /**
-     * Inyectar SDK en un plugin si es premium y no lo tiene
+     * Marcador de protección para detectar si ya está inyectado
+     */
+    const PROTECTION_MARKER = 'IMAGINA LICENSE PROTECTION';
+
+    /**
+     * Inyectar protección en un plugin si es premium y no la tiene
      *
      * @param string $plugin_zip_path Ruta al archivo ZIP del plugin
-     * @param bool $is_premium Si el plugin es premium
+     * @param bool   $is_premium      Si el plugin es premium
      * @return array Array con 'success' y 'message'
      */
     public static function inject_sdk_if_needed($plugin_zip_path, $is_premium) {
@@ -21,7 +32,7 @@ class Imagina_License_SDK_Injector {
         if (!$is_premium) {
             return array(
                 'success' => true,
-                'message' => 'Plugin no es premium, no se requiere SDK'
+                'message' => 'Plugin no es premium, no se requiere protección'
             );
         }
 
@@ -30,6 +41,14 @@ class Imagina_License_SDK_Injector {
             return array(
                 'success' => false,
                 'message' => 'Archivo ZIP no encontrado: ' . $plugin_zip_path
+            );
+        }
+
+        // Verificar que ZipArchive está disponible
+        if (!class_exists('ZipArchive')) {
+            return array(
+                'success' => false,
+                'message' => 'Extensión ZipArchive no disponible'
             );
         }
 
@@ -59,17 +78,40 @@ class Imagina_License_SDK_Injector {
             );
         }
 
-        // Verificar si ya tiene el SDK
-        if (self::plugin_has_sdk($plugin_dir)) {
+        // Buscar archivo principal del plugin
+        $main_file = self::find_main_plugin_file($plugin_dir);
+        if (!$main_file) {
             self::cleanup_directory($extract_dir);
             return array(
-                'success' => true,
-                'message' => 'SDK ya existe en el plugin'
+                'success' => false,
+                'message' => 'No se encontró el archivo principal del plugin'
             );
         }
 
-        // Inyectar SDK
-        $inject_result = self::inject_sdk_to_plugin($plugin_dir);
+        // Verificar si ya tiene protección
+        if (self::has_protection($main_file)) {
+            self::cleanup_directory($extract_dir);
+            return array(
+                'success' => true,
+                'message' => 'El plugin ya tiene protección de licencias'
+            );
+        }
+
+        // Extraer metadatos del plugin
+        $plugin_data = self::extract_plugin_metadata($main_file);
+        if (!$plugin_data) {
+            self::cleanup_directory($extract_dir);
+            return array(
+                'success' => false,
+                'message' => 'No se pudieron extraer los metadatos del plugin'
+            );
+        }
+
+        // Obtener URL del servidor
+        $server_url = self::get_server_url();
+
+        // Inyectar código de protección
+        $inject_result = self::inject_protection_code($main_file, $plugin_data, $server_url);
         if (!$inject_result['success']) {
             self::cleanup_directory($extract_dir);
             return $inject_result;
@@ -83,84 +125,164 @@ class Imagina_License_SDK_Injector {
             return $rezip_result;
         }
 
+        // Registrar el checksum del código de protección
+        self::register_protection_checksum($plugin_data['slug']);
+
         return array(
             'success' => true,
-            'message' => 'SDK inyectado correctamente'
+            'message' => 'Protección de licencias inyectada correctamente',
+            'plugin_slug' => $plugin_data['slug']
         );
     }
 
     /**
-     * Verificar si el plugin ya tiene el SDK
+     * Verificar si el archivo ya tiene protección
      *
-     * @param string $plugin_dir Directorio del plugin
+     * @param string $file_path
      * @return bool
      */
-    private static function plugin_has_sdk($plugin_dir) {
-        $sdk_loader = $plugin_dir . '/imagina-license-sdk/loader.php';
-        return file_exists($sdk_loader);
+    private static function has_protection($file_path) {
+        $content = file_get_contents($file_path);
+        return strpos($content, self::PROTECTION_MARKER) !== false;
     }
 
     /**
-     * Inyectar SDK en el plugin
+     * Inyectar el código de protección en el archivo principal
      *
-     * @param string $plugin_dir Directorio del plugin
+     * @param string $main_file   Ruta del archivo principal
+     * @param array  $plugin_data Datos del plugin
+     * @param string $server_url  URL del servidor
      * @return array
      */
-    private static function inject_sdk_to_plugin($plugin_dir) {
-        // Crear directorio del SDK
-        $sdk_dir = $plugin_dir . '/imagina-license-sdk';
-        if (!wp_mkdir_p($sdk_dir)) {
-            return array(
-                'success' => false,
-                'message' => 'No se pudo crear el directorio del SDK'
-            );
-        }
+    private static function inject_protection_code($main_file, $plugin_data, $server_url) {
+        // Cargar el generador de protección
+        require_once dirname(__FILE__) . '/class-protection-generator.php';
 
-        // Copiar archivos del SDK
-        $source_sdk_dir = IMAGINA_LICENSE_PLUGIN_DIR . 'includes/license-sdk';
-        $files_to_copy = array(
-            'loader.php',
-            'class-crypto.php',
-            'class-license-validator.php',
-            'class-heartbeat.php'
+        // Generar el código de protección
+        $protection_code = Imagina_License_Protection_Generator::generate(
+            $plugin_data['name'],
+            $plugin_data['slug'],
+            $server_url
         );
 
-        foreach ($files_to_copy as $file) {
-            $source = $source_sdk_dir . '/' . $file;
-            $dest = $sdk_dir . '/' . $file;
+        // Leer el contenido actual
+        $content = file_get_contents($main_file);
 
-            if (!file_exists($source)) {
-                return array(
-                    'success' => false,
-                    'message' => 'Archivo SDK no encontrado: ' . $file
-                );
-            }
-
-            if (!copy($source, $dest)) {
-                return array(
-                    'success' => false,
-                    'message' => 'No se pudo copiar el archivo: ' . $file
-                );
-            }
-        }
-
-        // Agregar código de inicialización al archivo principal del plugin
-        $main_file = self::find_main_plugin_file($plugin_dir);
-        if (!$main_file) {
+        if ($content === false) {
             return array(
                 'success' => false,
-                'message' => 'No se encontró el archivo principal del plugin'
+                'message' => 'No se pudo leer el archivo principal del plugin'
             );
         }
 
-        $inject_code_result = self::inject_initialization_code($main_file);
-        if (!$inject_code_result['success']) {
-            return $inject_code_result;
+        // Buscar el lugar adecuado para inyectar (después de la verificación de ABSPATH)
+        $injection_point = self::find_injection_point($content);
+
+        if ($injection_point === false) {
+            return array(
+                'success' => false,
+                'message' => 'No se encontró un punto de inyección adecuado'
+            );
+        }
+
+        // Inyectar el código
+        $new_content = substr($content, 0, $injection_point) .
+                       "\n" . $protection_code . "\n" .
+                       substr($content, $injection_point);
+
+        // Guardar el archivo modificado
+        if (file_put_contents($main_file, $new_content) === false) {
+            return array(
+                'success' => false,
+                'message' => 'No se pudo escribir el archivo principal del plugin'
+            );
         }
 
         return array(
             'success' => true,
-            'message' => 'SDK inyectado correctamente'
+            'message' => 'Código de protección inyectado'
+        );
+    }
+
+    /**
+     * Encontrar el punto de inyección en el código
+     *
+     * @param string $content
+     * @return int|false
+     */
+    private static function find_injection_point($content) {
+        // Patrones ordenados por preferencia
+        $patterns = array(
+            // Después de verificación ABSPATH con die
+            '/if\s*\(\s*!\s*defined\s*\(\s*[\'"]ABSPATH[\'"]\s*\)\s*\)\s*\{\s*(die|exit)[^}]*\}\s*\n/i',
+            // Después de verificación ABSPATH con exit simple
+            '/if\s*\(\s*!\s*defined\s*\(\s*[\'"]ABSPATH[\'"]\s*\)\s*\)\s*(die|exit)\s*;?\s*\n/i',
+            // Después de verificación WPINC
+            '/if\s*\(\s*!\s*defined\s*\(\s*[\'"]WPINC[\'"]\s*\)\s*\)\s*\{\s*(die|exit)[^}]*\}\s*\n/i',
+            // Después del bloque de comentarios del plugin header
+            '/\*\/\s*\n/',
+        );
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $content, $matches, PREG_OFFSET_CAPTURE)) {
+                // Retornar la posición después del match
+                return $matches[0][1] + strlen($matches[0][0]);
+            }
+        }
+
+        // Fallback: después del tag <?php
+        $php_tag_pos = strpos($content, '<?php');
+        if ($php_tag_pos !== false) {
+            // Encontrar el final de la primera línea o bloque de comentarios
+            $next_newline = strpos($content, "\n", $php_tag_pos);
+            if ($next_newline !== false) {
+                return $next_newline + 1;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Extraer metadatos del plugin
+     *
+     * @param string $plugin_file Archivo principal del plugin
+     * @return array|false
+     */
+    private static function extract_plugin_metadata($plugin_file) {
+        $content = file_get_contents($plugin_file);
+
+        if (!$content) {
+            return false;
+        }
+
+        // Extraer el Plugin Name
+        if (!preg_match('/Plugin Name:\s*(.+)$/mi', $content, $matches)) {
+            return false;
+        }
+
+        $plugin_name = trim($matches[1]);
+
+        // Generar slug del nombre del directorio
+        $dir_name = basename(dirname($plugin_file));
+        $plugin_slug = sanitize_title($dir_name);
+
+        // Si el directorio es temporal, usar el nombre del archivo
+        if (strpos($dir_name, 'plugin_') === 0) {
+            $plugin_slug = sanitize_title(basename($plugin_file, '.php'));
+        }
+
+        // Intentar extraer Text Domain como slug alternativo
+        if (preg_match('/Text Domain:\s*(.+)$/mi', $content, $td_matches)) {
+            $text_domain = trim($td_matches[1]);
+            if (!empty($text_domain)) {
+                $plugin_slug = sanitize_key($text_domain);
+            }
+        }
+
+        return array(
+            'name' => $plugin_name,
+            'slug' => $plugin_slug
         );
     }
 
@@ -184,122 +306,66 @@ class Imagina_License_SDK_Injector {
     }
 
     /**
-     * Inyectar código de inicialización en el archivo principal
+     * Buscar el directorio del plugin en el directorio de extracción
      *
-     * @param string $main_file Ruta del archivo principal
-     * @return array
+     * @param string $extract_dir Directorio de extracción
+     * @return string|false Ruta del directorio del plugin o false
      */
-    private static function inject_initialization_code($main_file) {
-        $content = file_get_contents($main_file);
+    private static function find_plugin_directory($extract_dir) {
+        $items = scandir($extract_dir);
 
-        // Verificar si ya tiene el código de inicialización
-        if (strpos($content, 'imagina-license-sdk/loader.php') !== false) {
-            return array(
-                'success' => true,
-                'message' => 'Código de inicialización ya existe'
-            );
-        }
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
 
-        // Extraer metadatos del plugin
-        $plugin_data = self::extract_plugin_metadata($main_file);
+            $full_path = $extract_dir . '/' . $item;
 
-        if (!$plugin_data) {
-            return array(
-                'success' => false,
-                'message' => 'No se pudieron extraer los metadatos del plugin'
-            );
-        }
-
-        // Cargar el generador de código seguro v3 (rediseñado sin wp_die ni deactivate_plugins)
-        require_once dirname(__FILE__) . '/class-sdk-injector-secure-v3.php';
-
-        // Generar código de protección seguro
-        $init_code = "\n" . Imagina_License_SDK_Injector_Secure_V3::generate_secure_code(
-            $plugin_data['name'],
-            $plugin_data['slug']
-        ) . "\n";
-
-        // Buscar un lugar adecuado para inyectar (después de la verificación de ABSPATH)
-        $patterns = array(
-            "/if\s*\(\s*!\s*defined\s*\(\s*['\"]ABSPATH['\"]\s*\)\s*\)\s*\{[^}]*\}\s*\n/",
-            "/if\s*\(\s*!\s*defined\s*\(\s*['\"]WPINC['\"]\s*\)\s*\)\s*\{[^}]*\}\s*\n/",
-            "/<\?php\s*\n/"
-        );
-
-        $injected = false;
-        foreach ($patterns as $pattern) {
-            if (preg_match($pattern, $content, $matches, PREG_OFFSET_CAPTURE)) {
-                $insert_position = $matches[0][1] + strlen($matches[0][0]);
-                $content = substr_replace($content, $init_code, $insert_position, 0);
-                $injected = true;
-                break;
+            if (is_dir($full_path)) {
+                // Verificar si contiene un archivo PHP con Plugin Name:
+                $php_files = glob($full_path . '/*.php');
+                foreach ($php_files as $php_file) {
+                    $content = file_get_contents($php_file);
+                    if (strpos($content, 'Plugin Name:') !== false) {
+                        return $full_path;
+                    }
+                }
             }
         }
 
-        // Si no encontramos ningún patrón, inyectar después de <?php
-        if (!$injected) {
-            $content = preg_replace('/<\?php/', "<?php\n" . $init_code, $content, 1);
+        // Si no hay directorio, verificar si los archivos están en la raíz
+        $php_files = glob($extract_dir . '/*.php');
+        foreach ($php_files as $php_file) {
+            $content = file_get_contents($php_file);
+            if (strpos($content, 'Plugin Name:') !== false) {
+                return $extract_dir;
+            }
         }
 
-        // Guardar el archivo modificado
-        if (!file_put_contents($main_file, $content)) {
-            return array(
-                'success' => false,
-                'message' => 'No se pudo escribir el archivo principal del plugin'
-            );
-        }
-
-        return array(
-            'success' => true,
-            'message' => 'Código de inicialización inyectado'
-        );
-    }
-
-    /**
-     * Extraer metadatos del plugin
-     *
-     * @param string $plugin_file Archivo principal del plugin
-     * @return array|false Array con 'name' y 'slug' o false en error
-     */
-    private static function extract_plugin_metadata($plugin_file) {
-        $content = file_get_contents($plugin_file);
-
-        if (!$content) {
-            return false;
-        }
-
-        // Extraer el Plugin Name
-        if (!preg_match('/Plugin Name:\s*(.+)$/mi', $content, $matches)) {
-            return false;
-        }
-
-        $plugin_name = trim($matches[1]);
-
-        // Generar slug del nombre del archivo
-        $basename = basename($plugin_file, '.php');
-        $plugin_slug = sanitize_title($basename);
-
-        return array(
-            'name' => $plugin_name,
-            'slug' => $plugin_slug
-        );
+        return false;
     }
 
     /**
      * Re-empaquetar el plugin en ZIP
      *
      * @param string $extract_dir Directorio raíz de extracción
-     * @param string $output_zip Ruta del ZIP de salida
+     * @param string $output_zip  Ruta del ZIP de salida
      * @return array
      */
     private static function rezip_plugin($extract_dir, $output_zip) {
-        // Eliminar el ZIP anterior
+        // Crear backup del ZIP original
+        $backup_path = $output_zip . '.backup';
         if (file_exists($output_zip)) {
+            copy($output_zip, $backup_path);
             unlink($output_zip);
         }
 
         $zip = new ZipArchive();
         if ($zip->open($output_zip, ZipArchive::CREATE) !== true) {
+            // Restaurar backup
+            if (file_exists($backup_path)) {
+                rename($backup_path, $output_zip);
+            }
             return array(
                 'success' => false,
                 'message' => 'No se pudo crear el archivo ZIP'
@@ -322,6 +388,11 @@ class Imagina_License_SDK_Injector {
 
         $zip->close();
 
+        // Eliminar backup
+        if (file_exists($backup_path)) {
+            unlink($backup_path);
+        }
+
         return array(
             'success' => true,
             'message' => 'Plugin re-empaquetado correctamente'
@@ -329,33 +400,46 @@ class Imagina_License_SDK_Injector {
     }
 
     /**
-     * Buscar el directorio del plugin en el directorio de extracción
+     * Obtener URL del servidor desde la configuración
      *
-     * @param string $extract_dir Directorio de extracción
-     * @return string|false Ruta del directorio del plugin o false
+     * @return string
      */
-    private static function find_plugin_directory($extract_dir) {
-        $items = scandir($extract_dir);
+    private static function get_server_url() {
+        // Intentar obtener de la configuración del servidor
+        $server_url = get_option('imagina_updater_server_url', '');
 
-        foreach ($items as $item) {
-            if ($item === '.' || $item === '..') {
-                continue;
-            }
-
-            $full_path = $extract_dir . '/' . $item;
-            if (is_dir($full_path)) {
-                // Verificar si contiene un archivo PHP con Plugin Name:
-                $php_files = glob($full_path . '/*.php');
-                foreach ($php_files as $php_file) {
-                    $content = file_get_contents($php_file);
-                    if (strpos($content, 'Plugin Name:') !== false) {
-                        return $full_path;
-                    }
-                }
-            }
+        if (empty($server_url)) {
+            // Usar la URL del sitio actual como fallback
+            $server_url = home_url();
         }
 
-        return false;
+        return $server_url;
+    }
+
+    /**
+     * Registrar el checksum del código de protección
+     *
+     * @param string $plugin_slug
+     */
+    private static function register_protection_checksum($plugin_slug) {
+        require_once dirname(__FILE__) . '/class-protection-generator.php';
+
+        $checksums = get_option('imagina_license_protection_checksums', array());
+        $checksums[$plugin_slug] = array(
+            'version' => Imagina_License_Protection_Generator::PROTECTION_VERSION,
+            'updated_at' => current_time('mysql'),
+        );
+
+        update_option('imagina_license_protection_checksums', $checksums);
+
+        // Log
+        if (function_exists('imagina_license_log')) {
+            imagina_license_log(sprintf(
+                'Protección inyectada en plugin: %s (versión %s)',
+                $plugin_slug,
+                Imagina_License_Protection_Generator::PROTECTION_VERSION
+            ), 'info');
+        }
     }
 
     /**
@@ -369,6 +453,9 @@ class Imagina_License_SDK_Injector {
 
         if (!file_exists($temp_dir)) {
             wp_mkdir_p($temp_dir);
+
+            // Crear .htaccess para protección
+            file_put_contents($temp_dir . '/.htaccess', 'Deny from all');
         }
 
         return $temp_dir;
@@ -398,5 +485,113 @@ class Imagina_License_SDK_Injector {
         }
 
         rmdir($dir);
+    }
+
+    /**
+     * Remover protección de un plugin (para testing/desarrollo)
+     *
+     * @param string $plugin_zip_path
+     * @return array
+     */
+    public static function remove_protection($plugin_zip_path) {
+        if (!file_exists($plugin_zip_path)) {
+            return array(
+                'success' => false,
+                'message' => 'Archivo ZIP no encontrado'
+            );
+        }
+
+        $temp_dir = self::get_temp_dir();
+        $extract_dir = $temp_dir . '/' . uniqid('plugin_');
+
+        $zip = new ZipArchive();
+        if ($zip->open($plugin_zip_path) !== true) {
+            return array(
+                'success' => false,
+                'message' => 'No se pudo abrir el archivo ZIP'
+            );
+        }
+
+        $zip->extractTo($extract_dir);
+        $zip->close();
+
+        $plugin_dir = self::find_plugin_directory($extract_dir);
+        if (!$plugin_dir) {
+            self::cleanup_directory($extract_dir);
+            return array(
+                'success' => false,
+                'message' => 'No se encontró el directorio del plugin'
+            );
+        }
+
+        $main_file = self::find_main_plugin_file($plugin_dir);
+        if (!$main_file) {
+            self::cleanup_directory($extract_dir);
+            return array(
+                'success' => false,
+                'message' => 'No se encontró el archivo principal'
+            );
+        }
+
+        $content = file_get_contents($main_file);
+
+        // Remover el bloque de protección
+        $pattern = '/\n?\/\/ ={10,}\n\/\/ IMAGINA LICENSE PROTECTION.*?\/\/ END IMAGINA LICENSE PROTECTION\n\/\/ ={10,}\n?/s';
+        $new_content = preg_replace($pattern, '', $content);
+
+        if ($new_content !== $content) {
+            file_put_contents($main_file, $new_content);
+
+            $rezip_result = self::rezip_plugin($extract_dir, $plugin_zip_path);
+            self::cleanup_directory($extract_dir);
+
+            if (!$rezip_result['success']) {
+                return $rezip_result;
+            }
+
+            return array(
+                'success' => true,
+                'message' => 'Protección removida correctamente'
+            );
+        }
+
+        self::cleanup_directory($extract_dir);
+        return array(
+            'success' => true,
+            'message' => 'El plugin no tenía protección'
+        );
+    }
+
+    /**
+     * Verificar si un plugin tiene protección actualizada
+     *
+     * @param string $plugin_slug
+     * @return array
+     */
+    public static function check_protection_status($plugin_slug) {
+        require_once dirname(__FILE__) . '/class-protection-generator.php';
+
+        $checksums = get_option('imagina_license_protection_checksums', array());
+
+        if (!isset($checksums[$plugin_slug])) {
+            return array(
+                'has_protection' => false,
+                'needs_update' => true,
+                'message' => 'Plugin no tiene protección registrada'
+            );
+        }
+
+        $current_version = Imagina_License_Protection_Generator::PROTECTION_VERSION;
+        $installed_version = $checksums[$plugin_slug]['version'];
+
+        $needs_update = version_compare($installed_version, $current_version, '<');
+
+        return array(
+            'has_protection' => true,
+            'needs_update' => $needs_update,
+            'installed_version' => $installed_version,
+            'current_version' => $current_version,
+            'updated_at' => $checksums[$plugin_slug]['updated_at']
+        );
     }
 }

@@ -45,9 +45,9 @@ class Imagina_License_Admin {
      * Agregar menú de administración de licencias
      */
     public static function add_admin_menu() {
-        // Submenú bajo Imagina Updater
+        // Submenú bajo Imagina Updater Server
         add_submenu_page(
-            'imagina-updater',
+            'imagina-updater-server',
             __('License Keys', 'imagina-updater-license'),
             __('License Keys', 'imagina-updater-license'),
             'manage_options',

@@ -87,6 +87,43 @@ class Imagina_License_API {
 				'permission_callback' => '__return_true', // Público pero requiere activation_token
 			)
 		);
+
+		// ===============================================
+		// NUEVOS ENDPOINTS - Sistema de License Keys v5.0
+		// ===============================================
+
+		// Endpoint: Activar licencia con License Key
+		register_rest_route(
+			'imagina-license/v1',
+			'/activate',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( __CLASS__, 'activate_license_key' ),
+				'permission_callback' => '__return_true',
+			)
+		);
+
+		// Endpoint: Desactivar licencia
+		register_rest_route(
+			'imagina-license/v1',
+			'/deactivate',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( __CLASS__, 'deactivate_license_key' ),
+				'permission_callback' => '__return_true',
+			)
+		);
+
+		// Endpoint: Verificar licencia con License Key
+		register_rest_route(
+			'imagina-license/v1',
+			'/check',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( __CLASS__, 'check_license_key' ),
+				'permission_callback' => '__return_true',
+			)
+		);
 	}
 
 	/**
@@ -732,6 +769,274 @@ class Imagina_License_API {
 			array(
 				'success' => true,
 				'message' => 'Telemetry received'
+			),
+			200
+		);
+	}
+
+	// ===============================================
+	// NUEVOS MÉTODOS - Sistema de License Keys v5.0
+	// ===============================================
+
+	/**
+	 * Activar licencia usando License Key
+	 *
+	 * @param WP_REST_Request $request Request
+	 * @return WP_REST_Response
+	 */
+	public static function activate_license_key( $request ) {
+		$license_key = sanitize_text_field( $request->get_param( 'license_key' ) );
+		$site_url    = esc_url_raw( $request->get_param( 'site_url' ) );
+		$site_name   = sanitize_text_field( $request->get_param( 'site_name' ) );
+		$plugin_slug = sanitize_key( $request->get_param( 'plugin_slug' ) );
+
+		// Validar parámetros requeridos
+		if ( empty( $license_key ) || empty( $site_url ) ) {
+			return new WP_REST_Response(
+				array(
+					'success' => false,
+					'error'   => 'missing_parameters',
+					'message' => __( 'License key y site URL son requeridos.', 'imagina-updater-license' )
+				),
+				400
+			);
+		}
+
+		// Obtener licencia
+		$license = Imagina_License_Database::get_license_by_key( $license_key );
+
+		if ( ! $license ) {
+			imagina_license_log( 'Intento de activación con licencia inválida: ' . $license_key, 'warning' );
+			return new WP_REST_Response(
+				array(
+					'success' => false,
+					'error'   => 'invalid_license_key',
+					'message' => __( 'La license key no es válida.', 'imagina-updater-license' )
+				),
+				404
+			);
+		}
+
+		// Si se especificó plugin_slug, verificar que coincida
+		if ( ! empty( $plugin_slug ) ) {
+			global $wpdb;
+			$table_plugins = $wpdb->prefix . 'imagina_updater_plugins';
+			$plugin = $wpdb->get_row( $wpdb->prepare(
+				"SELECT id FROM $table_plugins WHERE (slug = %s OR slug_override = %s) AND id = %d",
+				$plugin_slug,
+				$plugin_slug,
+				$license->plugin_id
+			) );
+
+			if ( ! $plugin ) {
+				return new WP_REST_Response(
+					array(
+						'success' => false,
+						'error'   => 'wrong_plugin',
+						'message' => __( 'Esta licencia no es válida para este plugin.', 'imagina-updater-license' )
+					),
+					403
+				);
+			}
+		}
+
+		// Intentar activar
+		$result = Imagina_License_Database::activate_license( $license->id, $site_url, $site_name );
+
+		if ( ! $result['success'] ) {
+			$error_messages = array(
+				'license_not_found'      => __( 'Licencia no encontrada.', 'imagina-updater-license' ),
+				'license_not_active'     => __( 'Esta licencia no está activa.', 'imagina-updater-license' ),
+				'license_expired'        => __( 'Esta licencia ha expirado.', 'imagina-updater-license' ),
+				'max_activations_reached' => __( 'Has alcanzado el límite máximo de activaciones para esta licencia.', 'imagina-updater-license' ),
+				'database_error'         => __( 'Error de base de datos.', 'imagina-updater-license' ),
+			);
+
+			$message = isset( $error_messages[ $result['error'] ] ) ? $error_messages[ $result['error'] ] : $result['error'];
+
+			imagina_license_log( 'Error en activación: ' . $result['error'] . ' para ' . $site_url, 'warning' );
+
+			return new WP_REST_Response(
+				array(
+					'success' => false,
+					'error'   => $result['error'],
+					'message' => $message
+				),
+				403
+			);
+		}
+
+		// Obtener información del plugin para la respuesta
+		global $wpdb;
+		$table_plugins = $wpdb->prefix . 'imagina_updater_plugins';
+		$plugin = $wpdb->get_row( $wpdb->prepare(
+			"SELECT name, slug, slug_override FROM $table_plugins WHERE id = %d",
+			$license->plugin_id
+		) );
+
+		imagina_license_log( sprintf(
+			'Licencia activada: %s en %s (%s)',
+			$license_key,
+			$site_url,
+			$result['message']
+		), 'info' );
+
+		return new WP_REST_Response(
+			array(
+				'success'        => true,
+				'message'        => $result['message'] === 'already_active'
+					? __( 'La licencia ya estaba activa en este sitio.', 'imagina-updater-license' )
+					: __( 'Licencia activada correctamente.', 'imagina-updater-license' ),
+				'license_key'    => $license_key,
+				'site_url'       => $site_url,
+				'plugin_name'    => $plugin ? $plugin->name : '',
+				'plugin_slug'    => $plugin ? ( $plugin->slug_override ?: $plugin->slug ) : '',
+				'expires_at'     => $license->expires_at,
+				'activations'    => array(
+					'current' => $license->activations_count + ( $result['message'] === 'activated' ? 1 : 0 ),
+					'max'     => $license->max_activations
+				),
+				'site_local_key' => isset( $result['site_local_key'] ) ? $result['site_local_key'] : null
+			),
+			200
+		);
+	}
+
+	/**
+	 * Desactivar licencia
+	 *
+	 * @param WP_REST_Request $request Request
+	 * @return WP_REST_Response
+	 */
+	public static function deactivate_license_key( $request ) {
+		$license_key = sanitize_text_field( $request->get_param( 'license_key' ) );
+		$site_url    = esc_url_raw( $request->get_param( 'site_url' ) );
+
+		// Validar parámetros
+		if ( empty( $license_key ) || empty( $site_url ) ) {
+			return new WP_REST_Response(
+				array(
+					'success' => false,
+					'error'   => 'missing_parameters',
+					'message' => __( 'License key y site URL son requeridos.', 'imagina-updater-license' )
+				),
+				400
+			);
+		}
+
+		// Obtener licencia
+		$license = Imagina_License_Database::get_license_by_key( $license_key );
+
+		if ( ! $license ) {
+			return new WP_REST_Response(
+				array(
+					'success' => false,
+					'error'   => 'invalid_license_key',
+					'message' => __( 'La license key no es válida.', 'imagina-updater-license' )
+				),
+				404
+			);
+		}
+
+		// Desactivar
+		$result = Imagina_License_Database::deactivate_license( $license->id, $site_url );
+
+		if ( ! $result['success'] ) {
+			return new WP_REST_Response(
+				array(
+					'success' => false,
+					'error'   => $result['error'],
+					'message' => __( 'No se encontró una activación activa en este sitio.', 'imagina-updater-license' )
+				),
+				404
+			);
+		}
+
+		imagina_license_log( sprintf( 'Licencia desactivada: %s de %s', $license_key, $site_url ), 'info' );
+
+		return new WP_REST_Response(
+			array(
+				'success' => true,
+				'message' => __( 'Licencia desactivada correctamente.', 'imagina-updater-license' )
+			),
+			200
+		);
+	}
+
+	/**
+	 * Verificar estado de licencia
+	 *
+	 * @param WP_REST_Request $request Request
+	 * @return WP_REST_Response
+	 */
+	public static function check_license_key( $request ) {
+		$license_key = sanitize_text_field( $request->get_param( 'license_key' ) );
+		$site_url    = esc_url_raw( $request->get_param( 'site_url' ) );
+		$plugin_slug = sanitize_key( $request->get_param( 'plugin_slug' ) );
+
+		// Validar parámetros
+		if ( empty( $license_key ) || empty( $site_url ) ) {
+			return new WP_REST_Response(
+				array(
+					'valid'   => false,
+					'error'   => 'missing_parameters',
+					'message' => __( 'License key y site URL son requeridos.', 'imagina-updater-license' )
+				),
+				400
+			);
+		}
+
+		// Obtener plugin_id si se especificó slug
+		$plugin_id = null;
+		if ( ! empty( $plugin_slug ) ) {
+			global $wpdb;
+			$table_plugins = $wpdb->prefix . 'imagina_updater_plugins';
+			$plugin = $wpdb->get_row( $wpdb->prepare(
+				"SELECT id FROM $table_plugins WHERE slug = %s OR slug_override = %s",
+				$plugin_slug,
+				$plugin_slug
+			) );
+			$plugin_id = $plugin ? $plugin->id : null;
+		}
+
+		// Verificar licencia
+		$result = Imagina_License_Database::verify_license( $license_key, $site_url, $plugin_id );
+
+		if ( ! $result['valid'] ) {
+			$error_messages = array(
+				'invalid_license_key'    => __( 'La license key no es válida.', 'imagina-updater-license' ),
+				'wrong_plugin'           => __( 'Esta licencia no es válida para este plugin.', 'imagina-updater-license' ),
+				'license_inactive'       => __( 'Esta licencia está inactiva.', 'imagina-updater-license' ),
+				'license_expired'        => __( 'Esta licencia ha expirado.', 'imagina-updater-license' ),
+				'license_revoked'        => __( 'Esta licencia ha sido revocada.', 'imagina-updater-license' ),
+				'not_activated_on_site'  => __( 'Esta licencia no está activada en este sitio.', 'imagina-updater-license' ),
+			);
+
+			$message = isset( $error_messages[ $result['error'] ] ) ? $error_messages[ $result['error'] ] : $result['error'];
+
+			return new WP_REST_Response(
+				array(
+					'valid'   => false,
+					'error'   => $result['error'],
+					'message' => $message
+				),
+				200 // Retornamos 200 porque la verificación fue exitosa, solo la licencia no es válida
+			);
+		}
+
+		// Obtener información adicional de la licencia
+		$license = Imagina_License_Database::get_license_by_key( $license_key );
+
+		return new WP_REST_Response(
+			array(
+				'valid'         => true,
+				'license_id'    => $result['license_id'],
+				'expires_at'    => $result['expires_at'],
+				'customer_email' => $result['customer_email'],
+				'activations'   => array(
+					'current' => $license->activations_count,
+					'max'     => $license->max_activations
+				)
 			),
 			200
 		);

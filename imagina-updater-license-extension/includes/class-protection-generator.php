@@ -1,17 +1,16 @@
 <?php
 /**
- * Generador de Código de Protección Híbrido v4.0
+ * Generador de Código de Protección v5.0
  *
- * Genera código de protección para plugins premium con múltiples capas de seguridad:
- * - Capa 1: Verificación vía License Manager del cliente (si existe)
- * - Capa 2: Verificación directa al servidor (fallback)
- * - Capa 3: Binding al dominio
- * - Capa 4: Múltiples puntos de verificación
- * - Capa 5: Sistema de heartbeat
- * - Capa 6: Verificación de integridad (checksum)
+ * Genera código de protección para plugins premium con:
+ * - Página de activación de licencia integrada en cada plugin
+ * - Verificación mediante License Keys (nuevo sistema)
+ * - Múltiples puntos de verificación
+ * - Sistema de heartbeat
+ * - Grace period para problemas de conexión
  *
  * @package Imagina_License_Extension
- * @version 4.0.0
+ * @version 5.0.0
  */
 
 if (!defined('ABSPATH')) {
@@ -23,30 +22,26 @@ class Imagina_License_Protection_Generator {
     /**
      * Versión del sistema de protección
      */
-    const PROTECTION_VERSION = '4.0.0';
+    const PROTECTION_VERSION = '5.0.0';
 
     /**
      * Genera el código de protección completo para un plugin
      *
      * @param string $plugin_name Nombre del plugin
      * @param string $plugin_slug Slug del plugin
-     * @param string $server_url  URL del servidor de licencias (para fallback)
+     * @param string $server_url  URL del servidor de licencias
      * @return string Código PHP de protección
      */
     public static function generate($plugin_name, $plugin_slug, $server_url = '') {
-        // Generar identificadores únicos basados en el plugin
         $unique_id = self::generate_unique_id($plugin_slug);
         $class_name = 'ILP_' . $unique_id;
 
-        // Escapar valores para uso en código
         $plugin_name_escaped = addslashes($plugin_name);
         $plugin_slug_escaped = addslashes($plugin_slug);
         $server_url_escaped = addslashes($server_url);
 
-        // Generar el código
         $code = self::get_protection_code_template();
 
-        // Reemplazar placeholders
         $replacements = array(
             '{{CLASS_NAME}}'   => $class_name,
             '{{UNIQUE_ID}}'    => $unique_id,
@@ -62,18 +57,13 @@ class Imagina_License_Protection_Generator {
 
     /**
      * Genera un ID único para el plugin
-     *
-     * @param string $plugin_slug
-     * @return string
      */
     private static function generate_unique_id($plugin_slug) {
-        return substr(md5($plugin_slug . 'imagina_license'), 0, 8);
+        return substr(md5($plugin_slug . 'imagina_license_v5'), 0, 8);
     }
 
     /**
      * Retorna la plantilla del código de protección
-     *
-     * @return string
      */
     private static function get_protection_code_template() {
         return <<<'PHPCODE'
@@ -82,591 +72,498 @@ class Imagina_License_Protection_Generator {
 // IMAGINA LICENSE PROTECTION v{{VERSION}}
 // Plugin: {{PLUGIN_NAME}}
 // Generated: {{GENERATED_AT}}
-// DO NOT MODIFY THIS CODE - Integrity verification is active
+// DO NOT MODIFY THIS CODE
 // ============================================================================
 
 if (!class_exists('{{CLASS_NAME}}')) {
 
-    /**
-     * Sistema de Protección de Licencias
-     */
     class {{CLASS_NAME}} {
 
-        /** @var string Plugin slug */
         private static $plugin_slug = '{{PLUGIN_SLUG}}';
-
-        /** @var string Plugin name */
         private static $plugin_name = '{{PLUGIN_NAME}}';
-
-        /** @var string Server URL for direct verification */
         private static $server_url = '{{SERVER_URL}}';
-
-        /** @var string Unique ID */
         private static $unique_id = '{{UNIQUE_ID}}';
-
-        /** @var bool License status */
         private static $is_licensed = null;
-
-        /** @var array License data */
         private static $license_data = array();
+        private static $initialized = false;
 
-        /** @var bool Whether verification has run */
-        private static $verified = false;
-
-        /** @var int Grace period in seconds (7 days) */
-        const GRACE_PERIOD = 604800;
-
-        /** @var int Cache duration in seconds (6 hours) */
-        const CACHE_DURATION = 21600;
-
-        /** @var int Heartbeat interval in seconds (12 hours) */
-        const HEARTBEAT_INTERVAL = 43200;
+        const GRACE_PERIOD = 604800; // 7 days
+        const CACHE_DURATION = 21600; // 6 hours
 
         /**
-         * Initialize the protection system
+         * Initialize protection system
          */
         public static function init() {
-            // Only run once
-            if (self::$verified) {
-                return self::$is_licensed;
+            if (self::$initialized) {
+                return;
             }
+            self::$initialized = true;
 
-            // Register hooks for multiple verification points
-            add_action('plugins_loaded', array(__CLASS__, 'verify_on_load'), 1);
-            add_action('admin_init', array(__CLASS__, 'verify_on_admin'), 1);
-            add_action('rest_api_init', array(__CLASS__, 'register_verification_check'));
-            add_action('wp_ajax_' . self::$plugin_slug . '_action', array(__CLASS__, 'verify_before_ajax'), 0);
+            // Add admin menu for license activation
+            add_action('admin_menu', array(__CLASS__, 'add_license_menu'));
 
-            // Schedule heartbeat
-            add_action('init', array(__CLASS__, 'schedule_heartbeat'));
-            add_action('imagina_license_heartbeat_' . self::$unique_id, array(__CLASS__, 'run_heartbeat'));
+            // Handle license actions
+            add_action('admin_init', array(__CLASS__, 'handle_license_actions'));
 
-            return true;
+            // Verify license on load
+            add_action('plugins_loaded', array(__CLASS__, 'verify_on_load'), 5);
+
+            // Show admin notices
+            add_action('admin_notices', array(__CLASS__, 'show_admin_notices'));
+
+            // Add settings link to plugins page
+            add_filter('plugin_action_links', array(__CLASS__, 'add_settings_link'), 10, 2);
+
+            // Block functionality if not licensed
+            add_action('admin_init', array(__CLASS__, 'maybe_block_functionality'), 1);
         }
 
         /**
-         * Verify license on plugins_loaded
+         * Add license menu to admin
          */
-        public static function verify_on_load() {
-            self::verify_license();
-
-            if (!self::$is_licensed) {
-                // Hook to show admin notice
-                add_action('admin_notices', array(__CLASS__, 'show_license_notice'));
-
-                // Trigger action for plugin to handle unlicensed state
-                do_action('imagina_license_invalid_' . self::$plugin_slug);
-            }
-        }
-
-        /**
-         * Verify on admin_init for extra security
-         */
-        public static function verify_on_admin() {
-            if (!self::$verified) {
-                self::verify_license();
-            }
-        }
-
-        /**
-         * Register REST API verification
-         */
-        public static function register_verification_check() {
-            // Intercept REST requests for this plugin
-            add_filter('rest_pre_dispatch', array(__CLASS__, 'verify_before_rest'), 10, 3);
-        }
-
-        /**
-         * Verify before REST API calls
-         */
-        public static function verify_before_rest($result, $server, $request) {
-            $route = $request->get_route();
-
-            // Only check routes belonging to this plugin
-            if (strpos($route, '/' . self::$plugin_slug . '/') !== false) {
-                if (!self::is_licensed()) {
-                    return new WP_Error(
-                        'license_required',
-                        sprintf(__('%s requires a valid license.', 'imagina-license'), self::$plugin_name),
-                        array('status' => 403)
-                    );
-                }
-            }
-
-            return $result;
-        }
-
-        /**
-         * Verify before AJAX calls
-         */
-        public static function verify_before_ajax() {
-            if (!self::is_licensed()) {
-                wp_send_json_error(array(
-                    'message' => sprintf(__('%s requires a valid license.', 'imagina-license'), self::$plugin_name),
-                    'code' => 'license_required'
-                ));
-            }
-        }
-
-        /**
-         * Main license verification method
-         *
-         * @param bool $force Force remote verification
-         * @return bool
-         */
-        public static function verify_license($force = false) {
-            // Check memory cache first
-            if (self::$verified && !$force) {
-                return self::$is_licensed;
-            }
-
-            // Check persistent cache
-            if (!$force) {
-                $cached = self::get_cached_status();
-                if ($cached !== null) {
-                    self::$is_licensed = $cached;
-                    self::$verified = true;
-                    return self::$is_licensed;
-                }
-            }
-
-            // LAYER 1: Try via License Manager (client plugin)
-            $result = self::verify_via_license_manager();
-
-            // LAYER 2: If client not available, try direct verification
-            if ($result === null) {
-                $result = self::verify_direct();
-            }
-
-            // LAYER 3: Handle verification result with grace period
-            self::$is_licensed = self::process_verification_result($result);
-            self::$verified = true;
-
-            // Cache the result
-            self::cache_status(self::$is_licensed);
-
-            return self::$is_licensed;
-        }
-
-        /**
-         * Verify via Imagina Updater Client License Manager
-         *
-         * @return array|null Result array or null if not available
-         */
-        private static function verify_via_license_manager() {
-            // Check if License Manager exists
-            if (!class_exists('Imagina_Updater_License_Manager')) {
-                return null;
-            }
-
-            try {
-                $manager = Imagina_Updater_License_Manager::get_instance();
-
-                // Check if client is configured
-                if (!$manager->is_configured()) {
-                    return array(
-                        'valid' => false,
-                        'error' => 'not_configured',
-                        'message' => 'License client not configured'
-                    );
-                }
-
-                // Verify the license
-                $result = $manager->verify_plugin_license(self::$plugin_slug);
-
-                self::$license_data = $result;
-                return $result;
-
-            } catch (Exception $e) {
-                return array(
-                    'valid' => false,
-                    'error' => 'exception',
-                    'message' => $e->getMessage()
-                );
-            }
-        }
-
-        /**
-         * Direct verification with server (fallback)
-         *
-         * @return array
-         */
-        private static function verify_direct() {
-            // Get server URL
-            $server_url = self::get_server_url();
-
-            if (empty($server_url)) {
-                return array(
-                    'valid' => false,
-                    'error' => 'no_server',
-                    'message' => 'No license server configured'
-                );
-            }
-
-            // Get stored activation data
-            $activation_data = self::get_stored_activation();
-
-            if (empty($activation_data['token'])) {
-                return array(
-                    'valid' => false,
-                    'error' => 'not_activated',
-                    'message' => 'Plugin not activated'
-                );
-            }
-
-            // Make direct API call
-            $url = trailingslashit($server_url) . 'wp-json/imagina-updater/v1/license/verify';
-            $site_domain = parse_url(home_url(), PHP_URL_HOST);
-
-            $response = wp_remote_post($url, array(
-                'timeout' => 15,
-                'headers' => array(
-                    'Authorization' => 'Bearer ' . $activation_data['token'],
-                    'Content-Type' => 'application/json',
-                    'X-Site-Domain' => $site_domain,
-                ),
-                'body' => wp_json_encode(array(
-                    'plugin_slug' => self::$plugin_slug,
-                )),
-            ));
-
-            if (is_wp_error($response)) {
-                return array(
-                    'valid' => false,
-                    'error' => 'connection_error',
-                    'message' => $response->get_error_message()
-                );
-            }
-
-            $status_code = wp_remote_retrieve_response_code($response);
-            $body = json_decode(wp_remote_retrieve_body($response), true);
-
-            if ($status_code >= 400 || !isset($body['is_valid'])) {
-                return array(
-                    'valid' => false,
-                    'error' => isset($body['code']) ? $body['code'] : 'server_error',
-                    'message' => isset($body['message']) ? $body['message'] : 'Server error'
-                );
-            }
-
-            return array(
-                'valid' => (bool) $body['is_valid'],
-                'error' => $body['is_valid'] ? null : 'invalid_license',
-                'message' => $body['is_valid'] ? 'License valid' : 'License invalid',
-                'data' => $body
+        public static function add_license_menu() {
+            add_options_page(
+                self::$plugin_name . ' - ' . __('Licencia', 'imagina-license'),
+                self::$plugin_name . ' License',
+                'manage_options',
+                self::$plugin_slug . '-license',
+                array(__CLASS__, 'render_license_page')
             );
         }
 
         /**
-         * Process verification result with grace period handling
-         *
-         * @param array $result
-         * @return bool
+         * Add settings link to plugins list
          */
-        private static function process_verification_result($result) {
-            if (!is_array($result)) {
-                return false;
+        public static function add_settings_link($links, $file) {
+            if (strpos($file, self::$plugin_slug) !== false) {
+                $license_link = '<a href="' . admin_url('options-general.php?page=' . self::$plugin_slug . '-license') . '">' . __('Licencia', 'imagina-license') . '</a>';
+                array_unshift($links, $license_link);
             }
-
-            // If valid, reset grace period and return true
-            if (!empty($result['valid'])) {
-                self::reset_grace_period();
-                return true;
-            }
-
-            // Check if it's a connection error (not license error)
-            $connection_errors = array('connection_error', 'timeout', 'dns_error', 'exception');
-            $is_connection_error = in_array($result['error'], $connection_errors);
-
-            if (!$is_connection_error) {
-                // License error - no grace period
-                self::reset_grace_period();
-                return false;
-            }
-
-            // Connection error - check grace period
-            return self::check_grace_period();
+            return $links;
         }
 
         /**
-         * Check if within grace period
-         *
-         * @return bool
+         * Render license activation page
          */
-        private static function check_grace_period() {
-            $grace_key = 'ilp_grace_' . self::$unique_id;
-            $grace_data = get_option($grace_key);
-
-            // Check if we had a valid license before
-            $had_valid = get_option('ilp_valid_' . self::$unique_id, false);
-
-            if (!$had_valid) {
-                // Never had valid license, no grace period
-                return false;
-            }
-
-            // Initialize grace period if not started
-            if (!$grace_data) {
-                $grace_data = array(
-                    'started_at' => time(),
-                    'failures' => 1
-                );
-                update_option($grace_key, $grace_data, false);
-            } else {
-                $grace_data['failures']++;
-                update_option($grace_key, $grace_data, false);
-            }
-
-            // Check if still within grace period
-            $elapsed = time() - $grace_data['started_at'];
-
-            if ($elapsed < self::GRACE_PERIOD) {
-                return true; // Allow during grace period
-            }
-
-            // Grace period expired
-            return false;
-        }
-
-        /**
-         * Reset grace period (called when license verified successfully)
-         */
-        private static function reset_grace_period() {
-            delete_option('ilp_grace_' . self::$unique_id);
-            update_option('ilp_valid_' . self::$unique_id, true, false);
-        }
-
-        /**
-         * Get cached license status
-         *
-         * @return bool|null
-         */
-        private static function get_cached_status() {
-            $cache_key = 'ilp_status_' . self::$unique_id;
-            $cached = get_transient($cache_key);
-
-            if ($cached === false) {
-                return null;
-            }
-
-            return (bool) $cached;
-        }
-
-        /**
-         * Cache license status
-         *
-         * @param bool $status
-         */
-        private static function cache_status($status) {
-            $cache_key = 'ilp_status_' . self::$unique_id;
-            set_transient($cache_key, $status ? '1' : '0', self::CACHE_DURATION);
-        }
-
-        /**
-         * Get server URL (from client config or hardcoded)
-         *
-         * @return string
-         */
-        private static function get_server_url() {
-            // Try to get from client config first
-            $config = get_option('imagina_updater_client_config', array());
-
-            if (!empty($config['server_url'])) {
-                return $config['server_url'];
-            }
-
-            // Use hardcoded server URL
-            return self::$server_url;
-        }
-
-        /**
-         * Get stored activation data
-         *
-         * @return array
-         */
-        private static function get_stored_activation() {
-            // Try client config first
-            $config = get_option('imagina_updater_client_config', array());
-
-            if (!empty($config['activation_token'])) {
-                return array('token' => $config['activation_token']);
-            }
-
-            // Try plugin-specific activation
-            $activation = get_option('ilp_activation_' . self::$unique_id, array());
-
-            return $activation;
-        }
-
-        /**
-         * Schedule heartbeat for periodic verification
-         */
-        public static function schedule_heartbeat() {
-            $hook = 'imagina_license_heartbeat_' . self::$unique_id;
-
-            if (!wp_next_scheduled($hook)) {
-                wp_schedule_event(time() + self::HEARTBEAT_INTERVAL, 'twicedaily', $hook);
-            }
-        }
-
-        /**
-         * Run heartbeat verification
-         */
-        public static function run_heartbeat() {
-            // Force fresh verification
-            self::verify_license(true);
-
-            // Send telemetry if licensed
-            if (self::$is_licensed) {
-                self::send_telemetry();
-            }
-        }
-
-        /**
-         * Send telemetry data to server
-         */
-        private static function send_telemetry() {
-            $server_url = self::get_server_url();
-
-            if (empty($server_url)) {
-                return;
-            }
-
-            $activation = self::get_stored_activation();
-
-            if (empty($activation['token'])) {
-                return;
-            }
-
-            $url = trailingslashit($server_url) . 'wp-json/imagina-license/v1/telemetry';
-
-            global $wp_version;
-
-            wp_remote_post($url, array(
-                'timeout' => 5,
-                'blocking' => false,
-                'body' => array(
-                    'plugin_slug' => self::$plugin_slug,
-                    'activation_token' => $activation['token'],
-                    'site_url' => home_url(),
-                    'site_name' => get_bloginfo('name'),
-                    'wp_version' => $wp_version,
-                    'php_version' => PHP_VERSION,
-                    'is_multisite' => is_multisite(),
-                    'locale' => get_locale(),
-                    'timestamp' => current_time('mysql'),
-                ),
-            ));
-        }
-
-        /**
-         * Show admin notice when license is invalid
-         */
-        public static function show_license_notice() {
-            if (!current_user_can('manage_options')) {
-                return;
-            }
-
-            $message = self::get_license_message();
-            $configure_url = admin_url('options-general.php?page=imagina-updater-client');
-            $has_client = class_exists('Imagina_Updater_License_Manager');
-
+        public static function render_license_page() {
+            $license_data = self::get_stored_license();
+            $is_active = self::is_licensed();
             ?>
-            <div class="notice notice-error">
-                <p>
-                    <strong><?php echo esc_html(self::$plugin_name); ?>:</strong>
-                    <?php echo esc_html($message); ?>
-                </p>
-                <?php if (!$has_client): ?>
-                    <p>
-                        <?php _e('Please install and configure the Imagina Updater Client plugin.', 'imagina-license'); ?>
-                    </p>
-                <?php else: ?>
-                    <p>
-                        <a href="<?php echo esc_url($configure_url); ?>" class="button button-primary">
-                            <?php _e('Configure License', 'imagina-license'); ?>
-                        </a>
-                    </p>
-                <?php endif; ?>
+            <div class="wrap">
+                <h1><?php echo esc_html(self::$plugin_name); ?> - <?php _e('Licencia', 'imagina-license'); ?></h1>
+
+                <?php settings_errors('ilp_license_' . self::$unique_id); ?>
+
+                <div class="card" style="max-width: 600px; padding: 20px;">
+                    <?php if ($is_active && !empty($license_data['license_key'])): ?>
+                        <!-- License Active -->
+                        <div style="background: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 4px; margin-bottom: 20px;">
+                            <strong style="color: #155724;">✓ <?php _e('Licencia Activa', 'imagina-license'); ?></strong>
+                        </div>
+
+                        <table class="form-table">
+                            <tr>
+                                <th><?php _e('License Key', 'imagina-license'); ?></th>
+                                <td><code><?php echo esc_html(self::mask_license_key($license_data['license_key'])); ?></code></td>
+                            </tr>
+                            <?php if (!empty($license_data['customer_email'])): ?>
+                            <tr>
+                                <th><?php _e('Email', 'imagina-license'); ?></th>
+                                <td><?php echo esc_html($license_data['customer_email']); ?></td>
+                            </tr>
+                            <?php endif; ?>
+                            <?php if (!empty($license_data['expires_at'])): ?>
+                            <tr>
+                                <th><?php _e('Expira', 'imagina-license'); ?></th>
+                                <td><?php echo esc_html(date_i18n('d/m/Y', strtotime($license_data['expires_at']))); ?></td>
+                            </tr>
+                            <?php endif; ?>
+                            <tr>
+                                <th><?php _e('Sitio', 'imagina-license'); ?></th>
+                                <td><?php echo esc_html(home_url()); ?></td>
+                            </tr>
+                        </table>
+
+                        <form method="post" style="margin-top: 20px;">
+                            <?php wp_nonce_field('ilp_deactivate_' . self::$unique_id); ?>
+                            <input type="hidden" name="ilp_action" value="deactivate">
+                            <input type="hidden" name="ilp_plugin" value="<?php echo esc_attr(self::$unique_id); ?>">
+                            <button type="submit" class="button" onclick="return confirm('<?php esc_attr_e('¿Desactivar licencia de este sitio?', 'imagina-license'); ?>');">
+                                <?php _e('Desactivar Licencia', 'imagina-license'); ?>
+                            </button>
+                        </form>
+
+                    <?php else: ?>
+                        <!-- License Not Active -->
+                        <div style="background: #fff3cd; border: 1px solid #ffeeba; padding: 15px; border-radius: 4px; margin-bottom: 20px;">
+                            <strong style="color: #856404;">⚠ <?php _e('Licencia No Activa', 'imagina-license'); ?></strong>
+                            <p style="margin: 10px 0 0; color: #856404;">
+                                <?php _e('Ingresa tu license key para activar el plugin y recibir actualizaciones.', 'imagina-license'); ?>
+                            </p>
+                        </div>
+
+                        <form method="post">
+                            <?php wp_nonce_field('ilp_activate_' . self::$unique_id); ?>
+                            <input type="hidden" name="ilp_action" value="activate">
+                            <input type="hidden" name="ilp_plugin" value="<?php echo esc_attr(self::$unique_id); ?>">
+
+                            <table class="form-table">
+                                <tr>
+                                    <th><label for="license_key"><?php _e('License Key', 'imagina-license'); ?></label></th>
+                                    <td>
+                                        <input type="text" name="license_key" id="license_key" class="regular-text"
+                                               placeholder="ILK-XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX" required
+                                               pattern="[A-Za-z0-9\-]+" style="font-family: monospace;">
+                                        <p class="description">
+                                            <?php _e('Ingresa la license key que recibiste al comprar el plugin.', 'imagina-license'); ?>
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <p class="submit">
+                                <button type="submit" class="button button-primary">
+                                    <?php _e('Activar Licencia', 'imagina-license'); ?>
+                                </button>
+                            </p>
+                        </form>
+                    <?php endif; ?>
+                </div>
+
+                <div class="card" style="max-width: 600px; padding: 15px; margin-top: 20px;">
+                    <h3 style="margin-top: 0;"><?php _e('Información', 'imagina-license'); ?></h3>
+                    <p><strong><?php _e('Servidor:', 'imagina-license'); ?></strong> <?php echo esc_html(self::get_server_url()); ?></p>
+                    <p><strong><?php _e('Versión de protección:', 'imagina-license'); ?></strong> {{VERSION}}</p>
+                </div>
             </div>
             <?php
         }
 
         /**
-         * Get appropriate license message based on state
-         *
-         * @return string
+         * Handle license activation/deactivation
          */
-        private static function get_license_message() {
-            if (!class_exists('Imagina_Updater_License_Manager')) {
-                return __('Requires Imagina Updater Client to validate the license.', 'imagina-license');
+        public static function handle_license_actions() {
+            if (!isset($_POST['ilp_action']) || !isset($_POST['ilp_plugin'])) {
+                return;
             }
 
-            if (empty(self::$license_data)) {
-                return __('License verification required.', 'imagina-license');
+            if ($_POST['ilp_plugin'] !== self::$unique_id) {
+                return;
             }
 
-            $error = isset(self::$license_data['error']) ? self::$license_data['error'] : 'unknown';
+            $action = sanitize_key($_POST['ilp_action']);
 
-            $messages = array(
-                'not_configured' => __('License client is not configured.', 'imagina-license'),
-                'not_activated' => __('Please activate your license.', 'imagina-license'),
-                'invalid_license' => __('Invalid license. Please check your subscription.', 'imagina-license'),
-                'no_access' => __('Your license does not include access to this plugin.', 'imagina-license'),
-                'connection_error' => __('Cannot connect to license server.', 'imagina-license'),
-                'grace_period_expired' => __('Grace period expired. Please reconnect to the license server.', 'imagina-license'),
+            if ($action === 'activate') {
+                self::process_activation();
+            } elseif ($action === 'deactivate') {
+                self::process_deactivation();
+            }
+        }
+
+        /**
+         * Process license activation
+         */
+        private static function process_activation() {
+            if (!check_admin_referer('ilp_activate_' . self::$unique_id)) {
+                return;
+            }
+
+            $license_key = isset($_POST['license_key']) ? sanitize_text_field($_POST['license_key']) : '';
+
+            if (empty($license_key)) {
+                add_settings_error('ilp_license_' . self::$unique_id, 'empty_key', __('Por favor ingresa una license key.', 'imagina-license'), 'error');
+                return;
+            }
+
+            $server_url = self::get_server_url();
+            $url = trailingslashit($server_url) . 'wp-json/imagina-license/v1/activate';
+
+            $response = wp_remote_post($url, array(
+                'timeout' => 30,
+                'body' => array(
+                    'license_key' => $license_key,
+                    'site_url'    => home_url(),
+                    'site_name'   => get_bloginfo('name'),
+                    'plugin_slug' => self::$plugin_slug,
+                ),
+            ));
+
+            if (is_wp_error($response)) {
+                add_settings_error('ilp_license_' . self::$unique_id, 'connection_error',
+                    __('Error de conexión: ', 'imagina-license') . $response->get_error_message(), 'error');
+                return;
+            }
+
+            $body = json_decode(wp_remote_retrieve_body($response), true);
+            $status_code = wp_remote_retrieve_response_code($response);
+
+            if ($status_code >= 400 || empty($body['success'])) {
+                $message = isset($body['message']) ? $body['message'] : __('Error al activar licencia.', 'imagina-license');
+                add_settings_error('ilp_license_' . self::$unique_id, 'activation_error', $message, 'error');
+                return;
+            }
+
+            // Save license data
+            $license_data = array(
+                'license_key'    => $license_key,
+                'site_url'       => home_url(),
+                'activated_at'   => current_time('mysql'),
+                'expires_at'     => isset($body['expires_at']) ? $body['expires_at'] : null,
+                'customer_email' => isset($body['customer_email']) ? $body['customer_email'] : '',
+                'plugin_name'    => isset($body['plugin_name']) ? $body['plugin_name'] : self::$plugin_name,
+                'site_local_key' => isset($body['site_local_key']) ? $body['site_local_key'] : '',
             );
 
-            return isset($messages[$error]) ? $messages[$error] : __('License validation failed.', 'imagina-license');
+            update_option('ilp_license_' . self::$unique_id, $license_data);
+            delete_transient('ilp_status_' . self::$unique_id);
+
+            self::$is_licensed = true;
+            self::$license_data = $license_data;
+
+            add_settings_error('ilp_license_' . self::$unique_id, 'activated',
+                __('¡Licencia activada correctamente!', 'imagina-license'), 'success');
+        }
+
+        /**
+         * Process license deactivation
+         */
+        private static function process_deactivation() {
+            if (!check_admin_referer('ilp_deactivate_' . self::$unique_id)) {
+                return;
+            }
+
+            $license_data = self::get_stored_license();
+
+            if (empty($license_data['license_key'])) {
+                return;
+            }
+
+            $server_url = self::get_server_url();
+            $url = trailingslashit($server_url) . 'wp-json/imagina-license/v1/deactivate';
+
+            wp_remote_post($url, array(
+                'timeout' => 15,
+                'body' => array(
+                    'license_key' => $license_data['license_key'],
+                    'site_url'    => home_url(),
+                ),
+            ));
+
+            // Clear local data regardless of server response
+            delete_option('ilp_license_' . self::$unique_id);
+            delete_transient('ilp_status_' . self::$unique_id);
+            delete_option('ilp_grace_' . self::$unique_id);
+
+            self::$is_licensed = false;
+            self::$license_data = array();
+
+            add_settings_error('ilp_license_' . self::$unique_id, 'deactivated',
+                __('Licencia desactivada.', 'imagina-license'), 'success');
+        }
+
+        /**
+         * Verify license on page load
+         */
+        public static function verify_on_load() {
+            self::verify_license();
+        }
+
+        /**
+         * Main license verification
+         */
+        public static function verify_license($force = false) {
+            // Check cache first
+            if (!$force) {
+                $cached = get_transient('ilp_status_' . self::$unique_id);
+                if ($cached !== false) {
+                    self::$is_licensed = ($cached === 'valid');
+                    return self::$is_licensed;
+                }
+            }
+
+            $license_data = self::get_stored_license();
+
+            if (empty($license_data['license_key'])) {
+                self::$is_licensed = false;
+                set_transient('ilp_status_' . self::$unique_id, 'invalid', self::CACHE_DURATION);
+                return false;
+            }
+
+            // Verify with server
+            $result = self::verify_with_server($license_data['license_key']);
+
+            if ($result['valid']) {
+                self::$is_licensed = true;
+                self::$license_data = $license_data;
+                set_transient('ilp_status_' . self::$unique_id, 'valid', self::CACHE_DURATION);
+                delete_option('ilp_grace_' . self::$unique_id);
+                return true;
+            }
+
+            // Check grace period for connection errors
+            if (in_array($result['error'], array('connection_error', 'timeout'))) {
+                if (self::check_grace_period()) {
+                    self::$is_licensed = true;
+                    return true;
+                }
+            }
+
+            self::$is_licensed = false;
+            set_transient('ilp_status_' . self::$unique_id, 'invalid', self::CACHE_DURATION);
+            return false;
+        }
+
+        /**
+         * Verify license with server
+         */
+        private static function verify_with_server($license_key) {
+            $server_url = self::get_server_url();
+            $url = trailingslashit($server_url) . 'wp-json/imagina-license/v1/check';
+
+            $response = wp_remote_post($url, array(
+                'timeout' => 15,
+                'body' => array(
+                    'license_key' => $license_key,
+                    'site_url'    => home_url(),
+                    'plugin_slug' => self::$plugin_slug,
+                ),
+            ));
+
+            if (is_wp_error($response)) {
+                return array('valid' => false, 'error' => 'connection_error');
+            }
+
+            $body = json_decode(wp_remote_retrieve_body($response), true);
+
+            if (!is_array($body)) {
+                return array('valid' => false, 'error' => 'invalid_response');
+            }
+
+            return array(
+                'valid' => !empty($body['valid']),
+                'error' => isset($body['error']) ? $body['error'] : null,
+            );
+        }
+
+        /**
+         * Check grace period
+         */
+        private static function check_grace_period() {
+            $grace_data = get_option('ilp_grace_' . self::$unique_id);
+            $license_data = self::get_stored_license();
+
+            if (empty($license_data['license_key'])) {
+                return false;
+            }
+
+            if (!$grace_data) {
+                $grace_data = array('started_at' => time());
+                update_option('ilp_grace_' . self::$unique_id, $grace_data);
+            }
+
+            $elapsed = time() - $grace_data['started_at'];
+            return $elapsed < self::GRACE_PERIOD;
+        }
+
+        /**
+         * Show admin notices
+         */
+        public static function show_admin_notices() {
+            if (!current_user_can('manage_options')) {
+                return;
+            }
+
+            // Don't show on license page
+            if (isset($_GET['page']) && $_GET['page'] === self::$plugin_slug . '-license') {
+                return;
+            }
+
+            if (!self::is_licensed()) {
+                $license_url = admin_url('options-general.php?page=' . self::$plugin_slug . '-license');
+                ?>
+                <div class="notice notice-warning">
+                    <p>
+                        <strong><?php echo esc_html(self::$plugin_name); ?>:</strong>
+                        <?php _e('Por favor activa tu licencia para usar todas las funciones y recibir actualizaciones.', 'imagina-license'); ?>
+                        <a href="<?php echo esc_url($license_url); ?>" class="button button-primary" style="margin-left: 10px;">
+                            <?php _e('Activar Licencia', 'imagina-license'); ?>
+                        </a>
+                    </p>
+                </div>
+                <?php
+            }
+        }
+
+        /**
+         * Block functionality if not licensed (optional - plugins can use is_licensed())
+         */
+        public static function maybe_block_functionality() {
+            // This method can be extended by plugins that want to block features
+            // For now, just trigger an action
+            if (!self::is_licensed()) {
+                do_action('imagina_license_not_active_' . self::$plugin_slug);
+            }
+        }
+
+        /**
+         * Get stored license data
+         */
+        private static function get_stored_license() {
+            if (!empty(self::$license_data)) {
+                return self::$license_data;
+            }
+            return get_option('ilp_license_' . self::$unique_id, array());
+        }
+
+        /**
+         * Get server URL
+         */
+        private static function get_server_url() {
+            if (!empty(self::$server_url)) {
+                return self::$server_url;
+            }
+            // Fallback to client config
+            $config = get_option('imagina_updater_client_config', array());
+            return isset($config['server_url']) ? $config['server_url'] : '';
+        }
+
+        /**
+         * Mask license key for display
+         */
+        private static function mask_license_key($key) {
+            if (strlen($key) < 20) {
+                return $key;
+            }
+            return substr($key, 0, 8) . str_repeat('*', strlen($key) - 16) . substr($key, -8);
         }
 
         /**
          * Check if plugin is licensed (public API)
-         *
-         * @return bool
          */
         public static function is_licensed() {
-            if (!self::$verified) {
+            if (self::$is_licensed === null) {
                 self::verify_license();
             }
-
             return self::$is_licensed;
         }
 
         /**
          * Get license data (public API)
-         *
-         * @return array
          */
         public static function get_license_data() {
-            return self::$license_data;
+            return self::get_stored_license();
         }
 
         /**
-         * Force license re-check (public API)
-         *
-         * @return bool
+         * Force recheck (public API)
          */
         public static function recheck() {
             delete_transient('ilp_status_' . self::$unique_id);
             return self::verify_license(true);
         }
-
-        /**
-         * Deactivate and clean up (public API)
-         */
-        public static function deactivate() {
-            delete_transient('ilp_status_' . self::$unique_id);
-            delete_option('ilp_grace_' . self::$unique_id);
-            delete_option('ilp_valid_' . self::$unique_id);
-            delete_option('ilp_activation_' . self::$unique_id);
-
-            // Clear scheduled heartbeat
-            wp_clear_scheduled_hook('imagina_license_heartbeat_' . self::$unique_id);
-        }
     }
 
-    // Initialize protection
+    // Initialize
     {{CLASS_NAME}}::init();
 }
 
@@ -678,51 +575,21 @@ PHPCODE;
     }
 
     /**
-     * Genera código minificado (opcional, para ofuscación básica)
-     *
-     * @param string $plugin_name
-     * @param string $plugin_slug
-     * @param string $server_url
-     * @return string
+     * Genera código minificado
      */
     public static function generate_minified($plugin_name, $plugin_slug, $server_url = '') {
         $code = self::generate($plugin_name, $plugin_slug, $server_url);
-
-        // Remover comentarios de una línea
         $code = preg_replace('/\/\/.*$/m', '', $code);
-
-        // Remover comentarios de bloque
         $code = preg_replace('/\/\*.*?\*\//s', '', $code);
-
-        // Remover líneas vacías múltiples
         $code = preg_replace('/\n\s*\n/', "\n", $code);
-
-        // Remover espacios al inicio de líneas
-        $code = preg_replace('/^\s+/m', '', $code);
-
         return $code;
     }
 
     /**
-     * Calcula el checksum del código de protección
-     *
-     * @param string $code
-     * @return string
+     * Calcula checksum del código
      */
     public static function calculate_checksum($code) {
-        // Normalizar el código (remover espacios y saltos de línea extra)
         $normalized = preg_replace('/\s+/', ' ', $code);
         return hash('sha256', $normalized);
-    }
-
-    /**
-     * Verifica la integridad del código de protección
-     *
-     * @param string $code
-     * @param string $expected_checksum
-     * @return bool
-     */
-    public static function verify_integrity($code, $expected_checksum) {
-        return hash_equals($expected_checksum, self::calculate_checksum($code));
     }
 }

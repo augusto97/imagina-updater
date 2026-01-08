@@ -110,6 +110,9 @@ class Imagina_License_Admin {
             $plugin_slug = !empty($plugin->slug_override) ? $plugin->slug_override : $plugin->slug;
             $protection_status = Imagina_License_SDK_Injector::check_protection_status($plugin_slug);
         }
+
+        $needs_injection = $is_premium && $protection_status && !$protection_status['has_protection'];
+        $needs_update = $is_premium && $protection_status && $protection_status['has_protection'] && $protection_status['needs_update'];
         ?>
         <td style="text-align: center;">
             <form method="post" style="display:inline;">
@@ -130,28 +133,40 @@ class Imagina_License_Admin {
                         </span>
                     <?php endif; ?>
                 </label>
-                <?php if ($is_premium && $protection_status): ?>
-                    <div class="imagina-protection-status <?php
-                        if (!$protection_status['has_protection']) {
-                            echo 'no-protection';
-                        } elseif ($protection_status['needs_update']) {
-                            echo 'needs-update';
-                        } else {
-                            echo 'has-protection';
-                        }
-                    ?>">
-                        <?php
-                        if (!$protection_status['has_protection']) {
-                            _e('Sin protección', 'imagina-updater-license');
-                        } elseif ($protection_status['needs_update']) {
-                            printf(__('v%s (actualizar)', 'imagina-updater-license'), $protection_status['installed_version']);
-                        } else {
-                            printf(__('v%s', 'imagina-updater-license'), $protection_status['installed_version']);
-                        }
-                        ?>
-                    </div>
-                <?php endif; ?>
             </form>
+
+            <?php if ($is_premium && $protection_status): ?>
+                <div class="imagina-protection-status <?php
+                    if (!$protection_status['has_protection']) {
+                        echo 'no-protection';
+                    } elseif ($protection_status['needs_update']) {
+                        echo 'needs-update';
+                    } else {
+                        echo 'has-protection';
+                    }
+                ?>">
+                    <?php
+                    if (!$protection_status['has_protection']) {
+                        _e('Sin protección', 'imagina-updater-license');
+                    } elseif ($protection_status['needs_update']) {
+                        printf(__('v%s (actualizar)', 'imagina-updater-license'), $protection_status['installed_version']);
+                    } else {
+                        printf(__('v%s', 'imagina-updater-license'), $protection_status['installed_version']);
+                    }
+                    ?>
+                </div>
+
+                <?php if ($needs_injection || $needs_update): ?>
+                    <form method="post" style="margin-top: 5px;">
+                        <?php wp_nonce_field('imagina_license_inject_protection_' . $plugin->id); ?>
+                        <input type="hidden" name="imagina_license_plugin_id" value="<?php echo esc_attr($plugin->id); ?>">
+                        <input type="hidden" name="imagina_license_action" value="inject_protection">
+                        <button type="submit" class="button button-small" style="font-size: 10px; padding: 0 6px; height: 22px; line-height: 20px;">
+                            <?php echo $needs_update ? __('Actualizar', 'imagina-updater-license') : __('Inyectar', 'imagina-updater-license'); ?>
+                        </button>
+                    </form>
+                <?php endif; ?>
+            <?php endif; ?>
         </td>
         <?php
     }
@@ -301,8 +316,82 @@ class Imagina_License_Admin {
             self::handle_toggle_premium();
         }
 
+        // Inyectar protección manualmente
+        if (isset($_POST['imagina_license_action']) && $_POST['imagina_license_action'] === 'inject_protection') {
+            self::handle_inject_protection();
+        }
+
         // Mostrar mensajes
         self::show_admin_notices();
+    }
+
+    /**
+     * Manejar inyección de protección manual
+     */
+    private static function handle_inject_protection() {
+        if (!isset($_POST['imagina_license_plugin_id'])) {
+            return;
+        }
+
+        $plugin_id = intval($_POST['imagina_license_plugin_id']);
+
+        if (!check_admin_referer('imagina_license_inject_protection_' . $plugin_id)) {
+            return;
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'imagina_updater_plugins';
+
+        // Obtener datos del plugin
+        $plugin = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $table WHERE id = %d",
+            $plugin_id
+        ));
+
+        if (!$plugin) {
+            set_transient('imagina_license_premium_error', __('Plugin no encontrado', 'imagina-updater-license'), 30);
+            wp_redirect(admin_url('admin.php?page=imagina-updater-plugins'));
+            exit;
+        }
+
+        // Obtener la ruta del archivo ZIP
+        $upload_dir = wp_upload_dir();
+        $file_path = $upload_dir['basedir'] . '/imagina-updater-plugins/' . $plugin->file_path;
+
+        if (!file_exists($file_path)) {
+            set_transient('imagina_license_premium_error', __('Archivo del plugin no encontrado', 'imagina-updater-license'), 30);
+            wp_redirect(admin_url('admin.php?page=imagina-updater-plugins'));
+            exit;
+        }
+
+        // Inyectar protección
+        $result = Imagina_License_SDK_Injector::inject_sdk_if_needed($file_path, true);
+
+        if ($result['success']) {
+            // Actualizar checksum
+            $new_checksum = hash_file('sha256', $file_path);
+            $new_size = filesize($file_path);
+
+            $wpdb->update(
+                $table,
+                array(
+                    'checksum' => $new_checksum,
+                    'file_size' => $new_size
+                ),
+                array('id' => $plugin_id),
+                array('%s', '%d'),
+                array('%d')
+            );
+
+            imagina_license_log('Protección inyectada manualmente en: ' . $plugin->slug, 'info');
+            set_transient('imagina_license_injection_success', $result['message'], 30);
+        } else {
+            imagina_license_log('Error al inyectar protección: ' . $result['message'], 'error');
+            set_transient('imagina_license_premium_error', $result['message'], 30);
+        }
+
+        wp_redirect(admin_url('admin.php?page=imagina-updater-plugins'));
+        exit;
     }
 
     /**
@@ -433,6 +522,18 @@ class Imagina_License_Admin {
                 'injection_warning',
                 sprintf(__('Advertencia al inyectar protección: %s', 'imagina-updater-license'), $warning),
                 'warning'
+            );
+        }
+
+        // Éxito de inyección manual
+        $injection_success = get_transient('imagina_license_injection_success');
+        if ($injection_success) {
+            delete_transient('imagina_license_injection_success');
+            add_settings_error(
+                'imagina_updater',
+                'injection_success',
+                __('Protección de licencias inyectada correctamente. Los clientes deben actualizar el plugin para obtener la versión protegida.', 'imagina-updater-license'),
+                'success'
             );
         }
 

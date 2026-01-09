@@ -126,23 +126,160 @@ class Imagina_Updater_Server_Admin {
             IMAGINA_UPDATER_SERVER_VERSION
         );
 
-        // Agregar script inline simple para el formulario de edición de slug
-        if ($hook === 'toplevel_page_imagina-updater-plugins' || strpos($hook, 'imagina-updater-plugins') !== false) {
-            wp_add_inline_script('jquery', '
-                jQuery(document).ready(function($) {
-                    $(".edit-slug-link").on("click", function(e) {
-                        e.preventDefault();
-                        var pluginId = $(this).data("plugin-id");
-                        $("#slug-edit-" + pluginId).slideToggle();
-                    });
+        // Script principal para todas las páginas de Imagina Updater
+        wp_add_inline_script('jquery', $this->get_admin_js());
+    }
 
-                    $(".cancel-slug-edit").on("click", function(e) {
-                        e.preventDefault();
-                        $(this).closest(".slug-edit-form").slideUp();
-                    });
-                });
-            ');
+    /**
+     * Obtener JavaScript para administración
+     */
+    private function get_admin_js() {
+        return '
+jQuery(document).ready(function($) {
+    // ============================================
+    // SLUG EDIT FUNCTIONALITY
+    // ============================================
+    $(".edit-slug-link").on("click", function(e) {
+        e.preventDefault();
+        var pluginId = $(this).data("plugin-id");
+        $("#slug-edit-" + pluginId).slideToggle();
+    });
+
+    $(".cancel-slug-edit").on("click", function(e) {
+        e.preventDefault();
+        $(this).closest(".slug-edit-form").slideUp();
+    });
+
+    // ============================================
+    // ENHANCED TABLE SYSTEM
+    // ============================================
+
+    // Column Toggle Dropdown
+    $(document).on("click", ".imagina-column-toggle-btn", function(e) {
+        e.stopPropagation();
+        var $toggle = $(this).closest(".imagina-column-toggle");
+        $(".imagina-column-toggle").not($toggle).removeClass("open");
+        $toggle.toggleClass("open");
+    });
+
+    // Column visibility change
+    $(document).on("change", ".imagina-column-dropdown input[type=checkbox]", function() {
+        var $table = $(this).closest(".imagina-table-toolbar").next(".imagina-table-enhanced");
+        if (!$table.length) {
+            $table = $(this).closest(".imagina-table-toolbar").nextAll(".imagina-table-enhanced").first();
         }
+        var colIndex = $(this).data("col");
+        var isVisible = $(this).is(":checked");
+        var tableId = $table.attr("id") || "default";
+
+        // Toggle column visibility
+        $table.find("th:nth-child(" + colIndex + "), td:nth-child(" + colIndex + ")").toggleClass("column-hidden", !isVisible);
+
+        // Save preference to localStorage
+        var prefs = JSON.parse(localStorage.getItem("imagina_table_cols_" + tableId) || "{}");
+        prefs[colIndex] = isVisible;
+        localStorage.setItem("imagina_table_cols_" + tableId, JSON.stringify(prefs));
+
+        updateRowCount($table);
+    });
+
+    // Load saved column preferences
+    $(".imagina-table-enhanced").each(function() {
+        var $table = $(this);
+        var tableId = $table.attr("id") || "default";
+        var prefs = JSON.parse(localStorage.getItem("imagina_table_cols_" + tableId) || "{}");
+
+        for (var colIndex in prefs) {
+            if (!prefs[colIndex]) {
+                $table.find("th:nth-child(" + colIndex + "), td:nth-child(" + colIndex + ")").addClass("column-hidden");
+                $(".imagina-column-dropdown input[data-col=" + colIndex + "]").prop("checked", false);
+            }
+        }
+    });
+
+    // Table Search
+    $(document).on("input", ".imagina-table-search input", function() {
+        var searchTerm = $(this).val().toLowerCase().trim();
+        var $toolbar = $(this).closest(".imagina-table-toolbar");
+        var $table = $toolbar.next(".imagina-table-enhanced");
+        if (!$table.length) {
+            $table = $toolbar.nextAll(".imagina-table-enhanced").first();
+        }
+
+        var visibleCount = 0;
+        $table.find("tbody tr").not(".permissions-edit-row").each(function() {
+            var $row = $(this);
+            var rowText = $row.text().toLowerCase();
+            var matches = searchTerm === "" || rowText.indexOf(searchTerm) !== -1;
+
+            $row.toggle(matches);
+            if (matches) visibleCount++;
+        });
+
+        // Update row count
+        var $count = $toolbar.find(".imagina-table-count");
+        if ($count.length) {
+            var total = $table.find("tbody tr").not(".permissions-edit-row").length;
+            if (searchTerm !== "") {
+                $count.text(visibleCount + " de " + total + " resultados");
+            } else {
+                $count.text(total + " registros");
+            }
+        }
+
+        // Show/hide no results message
+        var $noResults = $table.find(".imagina-no-results-row");
+        if (visibleCount === 0 && searchTerm !== "") {
+            if (!$noResults.length) {
+                var cols = $table.find("thead th").length;
+                $table.find("tbody").append("<tr class=\"imagina-no-results-row\"><td colspan=\"" + cols + "\" class=\"imagina-no-results\">No se encontraron resultados para \"" + searchTerm + "\"</td></tr>");
+            }
+        } else {
+            $noResults.remove();
+        }
+    });
+
+    function updateRowCount($table) {
+        var $toolbar = $table.prevAll(".imagina-table-toolbar").first();
+        var $count = $toolbar.find(".imagina-table-count");
+        if ($count.length) {
+            var total = $table.find("tbody tr:visible").not(".permissions-edit-row, .imagina-no-results-row").length;
+            $count.text(total + " registros");
+        }
+    }
+
+    // Actions Dropdown
+    $(document).on("click", ".imagina-actions-btn", function(e) {
+        e.stopPropagation();
+        var $dropdown = $(this).closest(".imagina-actions-dropdown");
+        $(".imagina-actions-dropdown").not($dropdown).removeClass("open");
+        $dropdown.toggleClass("open");
+    });
+
+    // Close dropdowns on outside click
+    $(document).on("click", function(e) {
+        if (!$(e.target).closest(".imagina-column-toggle").length) {
+            $(".imagina-column-toggle").removeClass("open");
+        }
+        if (!$(e.target).closest(".imagina-actions-dropdown").length) {
+            $(".imagina-actions-dropdown").removeClass("open");
+        }
+    });
+
+    // Description expand/collapse
+    $(document).on("click", ".desc-more", function(e) {
+        e.preventDefault();
+        var $container = $(this).closest(".imagina-desc-toggle");
+        $container.toggleClass("expanded");
+        $(this).text($container.hasClass("expanded") ? "ver menos" : "ver más");
+    });
+
+    // Initialize row counts
+    $(".imagina-table-enhanced").each(function() {
+        updateRowCount($(this));
+    });
+});
+        ';
     }
 
     /**

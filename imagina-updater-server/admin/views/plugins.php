@@ -99,18 +99,44 @@ if (!defined('ABSPATH')) {
             <p><?php _e('No hay plugins subidos aún. Sube tu primer plugin usando el formulario de arriba.', 'imagina-updater-server'); ?></p>
         </div>
     <?php else: ?>
-        <table class="wp-list-table widefat fixed striped">
+        <!-- Toolbar: Búsqueda y Columnas -->
+        <div class="imagina-table-toolbar">
+            <div class="imagina-table-search">
+                <input type="text" placeholder="<?php esc_attr_e('Buscar plugins...', 'imagina-updater-server'); ?>">
+            </div>
+
+            <div class="imagina-column-toggle">
+                <button type="button" class="imagina-column-toggle-btn">
+                    <span class="dashicons dashicons-visibility"></span>
+                    <?php _e('Columnas', 'imagina-updater-server'); ?>
+                </button>
+                <div class="imagina-column-dropdown">
+                    <label><input type="checkbox" data-col="1" checked> <?php _e('Plugin', 'imagina-updater-server'); ?></label>
+                    <label><input type="checkbox" data-col="2" checked> <?php _e('Slug', 'imagina-updater-server'); ?></label>
+                    <label><input type="checkbox" data-col="3" checked> <?php _e('Versión', 'imagina-updater-server'); ?></label>
+                    <label><input type="checkbox" data-col="4" checked> <?php _e('Categorías', 'imagina-updater-server'); ?></label>
+                    <label><input type="checkbox" data-col="5"> <?php _e('Autor', 'imagina-updater-server'); ?></label>
+                    <label><input type="checkbox" data-col="6"> <?php _e('Actualización', 'imagina-updater-server'); ?></label>
+                    <label><input type="checkbox" data-col="7"> <?php _e('Tamaño', 'imagina-updater-server'); ?></label>
+                    <?php do_action('imagina_updater_plugins_column_toggles'); ?>
+                </div>
+            </div>
+
+            <span class="imagina-table-count"><?php echo count($plugins); ?> registros</span>
+        </div>
+
+        <table id="plugins-table" class="wp-list-table widefat fixed striped imagina-table-enhanced">
             <thead>
                 <tr>
                     <th><?php _e('Plugin', 'imagina-updater-server'); ?></th>
-                    <th><?php _e('Slug', 'imagina-updater-server'); ?></th>
-                    <th><?php _e('Versión', 'imagina-updater-server'); ?></th>
-                    <th><?php _e('Categorías', 'imagina-updater-server'); ?></th>
-                    <th><?php _e('Autor', 'imagina-updater-server'); ?></th>
-                    <th><?php _e('Última Actualización', 'imagina-updater-server'); ?></th>
-                    <th><?php _e('Tamaño', 'imagina-updater-server'); ?></th>
+                    <th style="width: 180px;"><?php _e('Slug', 'imagina-updater-server'); ?></th>
+                    <th style="width: 70px;"><?php _e('Versión', 'imagina-updater-server'); ?></th>
+                    <th style="width: 130px;"><?php _e('Categorías', 'imagina-updater-server'); ?></th>
+                    <th style="width: 100px;"><?php _e('Autor', 'imagina-updater-server'); ?></th>
+                    <th style="width: 100px;"><?php _e('Actualización', 'imagina-updater-server'); ?></th>
+                    <th style="width: 70px;"><?php _e('Tamaño', 'imagina-updater-server'); ?></th>
                     <?php do_action('imagina_updater_plugins_table_header'); ?>
-                    <th><?php _e('Acciones', 'imagina-updater-server'); ?></th>
+                    <th style="width: 90px;"><?php _e('Acciones', 'imagina-updater-server'); ?></th>
                 </tr>
             </thead>
             <tbody>
@@ -122,30 +148,30 @@ if (!defined('ABSPATH')) {
                         <td>
                             <strong><?php echo esc_html($plugin->name); ?></strong>
                             <?php if (!empty($plugin->description)): ?>
-                                <br><small><?php echo esc_html($plugin->description); ?></small>
+                                <div class="imagina-desc-toggle">
+                                    <small class="desc-preview"><?php echo esc_html($plugin->description); ?></small>
+                                    <?php if (strlen($plugin->description) > 60): ?>
+                                        <a href="#" class="desc-more">ver más</a>
+                                    <?php endif; ?>
+                                </div>
                             <?php endif; ?>
                         </td>
                         <td>
-                            <code><?php echo esc_html($effective_slug); ?></code>
+                            <code style="font-size: 11px;"><?php echo esc_html($effective_slug); ?></code>
                             <?php if ($is_custom_slug): ?>
-                                <span class="dashicons dashicons-edit" style="color: #2271b1;" title="<?php esc_attr_e('Slug personalizado', 'imagina-updater-server'); ?>"></span>
+                                <span class="dashicons dashicons-edit" style="color: #2271b1; font-size: 12px;" title="<?php esc_attr_e('Slug personalizado', 'imagina-updater-server'); ?>"></span>
                             <?php endif; ?>
                             <br>
-                            <small style="color: #666;">
-                                <?php _e('Auto:', 'imagina-updater-server'); ?> <code><?php echo esc_html($plugin->slug); ?></code>
-                            </small>
-                            <br>
                             <a href="#" class="edit-slug-link" data-plugin-id="<?php echo esc_attr($plugin->id); ?>" data-current-slug="<?php echo esc_attr($effective_slug); ?>" style="font-size: 11px;">
-                                <?php _e('Editar slug', 'imagina-updater-server'); ?>
+                                <?php _e('editar', 'imagina-updater-server'); ?>
                             </a>
                             <div class="slug-edit-form" id="slug-edit-<?php echo $plugin->id; ?>" style="display:none; margin-top:5px;">
                                 <form method="post" style="display:inline;">
                                     <?php wp_nonce_field('update_slug_' . $plugin->id); ?>
                                     <input type="hidden" name="plugin_id" value="<?php echo esc_attr($plugin->id); ?>">
-                                    <input type="text" name="new_slug" value="<?php echo esc_attr($effective_slug); ?>" style="width:150px;" placeholder="<?php echo esc_attr($plugin->slug); ?>">
-                                    <button type="submit" name="imagina_update_slug" class="button button-small"><?php _e('Guardar', 'imagina-updater-server'); ?></button>
-                                    <button type="button" class="button button-small cancel-slug-edit"><?php _e('Cancelar', 'imagina-updater-server'); ?></button>
-                                    <br><small><?php _e('Deja vacío para usar el slug auto-generado', 'imagina-updater-server'); ?></small>
+                                    <input type="text" name="new_slug" value="<?php echo esc_attr($effective_slug); ?>" style="width:120px; font-size: 11px;" placeholder="<?php echo esc_attr($plugin->slug); ?>">
+                                    <button type="submit" name="imagina_update_slug" class="button button-small"><?php _e('OK', 'imagina-updater-server'); ?></button>
+                                    <button type="button" class="button button-small cancel-slug-edit">✕</button>
                                 </form>
                             </div>
                         </td>
@@ -156,32 +182,39 @@ if (!defined('ABSPATH')) {
                             if (!empty($groups)):
                                 foreach ($groups as $group):
                                     ?>
-                                    <span class="imagina-group-badge" style="display: inline-block; background: #2271b1; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px; margin: 2px;">
-                                        <span class="dashicons dashicons-category" style="font-size: 11px; width: 11px; height: 11px; margin-top: 2px;"></span>
+                                    <span class="imagina-group-badge" style="display: inline-block; background: #2271b1; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin: 1px;">
                                         <?php echo esc_html($group->name); ?>
                                     </span>
                                     <?php
                                 endforeach;
                             else:
                                 ?>
-                                <span class="description"><?php _e('Sin categoría', 'imagina-updater-server'); ?></span>
+                                <span class="description" style="font-size: 11px;"><?php _e('Sin categoría', 'imagina-updater-server'); ?></span>
                                 <?php
                             endif;
                             ?>
                         </td>
-                        <td><?php echo esc_html($plugin->author); ?></td>
-                        <td><?php echo esc_html(mysql2date(get_option('date_format') . ' ' . get_option('time_format'), $plugin->uploaded_at)); ?></td>
-                        <td><?php echo size_format($plugin->file_size); ?></td>
+                        <td style="font-size: 12px;"><?php echo esc_html($plugin->author); ?></td>
+                        <td style="font-size: 11px;"><?php echo esc_html(mysql2date('d/m/Y', $plugin->uploaded_at)); ?></td>
+                        <td style="font-size: 11px;"><?php echo size_format($plugin->file_size); ?></td>
                         <?php do_action('imagina_updater_plugins_table_row', $plugin); ?>
                         <td>
-                            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-plugins&action=download_plugin&slug=' . urlencode($effective_slug)), 'download_plugin_' . $effective_slug)); ?>" class="button button-small">
-                                <span class="dashicons dashicons-download"></span>
-                                <?php _e('Descargar', 'imagina-updater-server'); ?>
-                            </a>
-                            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-plugins&action=delete_plugin&id=' . $plugin->id), 'delete_plugin_' . $plugin->id)); ?>" class="button button-small button-link-delete" onclick="return confirm('<?php esc_attr_e('¿Estás seguro de eliminar este plugin?', 'imagina-updater-server'); ?>');">
-                                <span class="dashicons dashicons-trash"></span>
-                                <?php _e('Eliminar', 'imagina-updater-server'); ?>
-                            </a>
+                            <div class="imagina-actions-dropdown">
+                                <button type="button" class="imagina-actions-btn">
+                                    <?php _e('Acciones', 'imagina-updater-server'); ?>
+                                    <span class="dashicons dashicons-arrow-down-alt2" style="font-size: 14px; width: 14px; height: 14px;"></span>
+                                </button>
+                                <div class="imagina-actions-menu">
+                                    <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-plugins&action=download_plugin&slug=' . urlencode($effective_slug)), 'download_plugin_' . $effective_slug)); ?>">
+                                        <span class="dashicons dashicons-download"></span>
+                                        <?php _e('Descargar', 'imagina-updater-server'); ?>
+                                    </a>
+                                    <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-plugins&action=delete_plugin&id=' . $plugin->id), 'delete_plugin_' . $plugin->id)); ?>" class="action-delete" onclick="return confirm('<?php esc_attr_e('¿Estás seguro de eliminar este plugin?', 'imagina-updater-server'); ?>');">
+                                        <span class="dashicons dashicons-trash"></span>
+                                        <?php _e('Eliminar', 'imagina-updater-server'); ?>
+                                    </a>
+                                </div>
+                            </div>
                         </td>
                     </tr>
                 <?php endforeach; ?>

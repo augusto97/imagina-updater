@@ -855,17 +855,41 @@ class Imagina_License_Admin {
                 </form>
             </div>
 
+            <!-- Toolbar: Búsqueda y Columnas -->
+            <div class="imagina-table-toolbar">
+                <div class="imagina-table-search">
+                    <input type="text" placeholder="<?php esc_attr_e('Buscar licencia, cliente, email...', 'imagina-updater-license'); ?>">
+                </div>
+
+                <div class="imagina-column-toggle">
+                    <button type="button" class="imagina-column-toggle-btn">
+                        <span class="dashicons dashicons-visibility"></span>
+                        <?php _e('Columnas', 'imagina-updater-license'); ?>
+                    </button>
+                    <div class="imagina-column-dropdown">
+                        <label><input type="checkbox" data-col="1" checked> <?php _e('License Key', 'imagina-updater-license'); ?></label>
+                        <label><input type="checkbox" data-col="2" checked> <?php _e('Plugin', 'imagina-updater-license'); ?></label>
+                        <label><input type="checkbox" data-col="3" checked> <?php _e('Cliente', 'imagina-updater-license'); ?></label>
+                        <label><input type="checkbox" data-col="4" checked> <?php _e('Activaciones', 'imagina-updater-license'); ?></label>
+                        <label><input type="checkbox" data-col="5" checked> <?php _e('Estado', 'imagina-updater-license'); ?></label>
+                        <label><input type="checkbox" data-col="6"> <?php _e('Expira', 'imagina-updater-license'); ?></label>
+                    </div>
+                </div>
+
+                <span class="imagina-table-count"><?php echo count($licenses); ?> registros</span>
+            </div>
+
             <!-- Tabla de licencias -->
-            <table class="wp-list-table widefat fixed striped">
+            <table id="licenses-table" class="wp-list-table widefat fixed striped imagina-table-enhanced">
                 <thead>
                     <tr>
-                        <th style="width: 280px;"><?php _e('License Key', 'imagina-updater-license'); ?></th>
+                        <th style="width: 260px;"><?php _e('License Key', 'imagina-updater-license'); ?></th>
                         <th><?php _e('Plugin', 'imagina-updater-license'); ?></th>
                         <th><?php _e('Cliente', 'imagina-updater-license'); ?></th>
-                        <th style="width: 100px;"><?php _e('Activaciones', 'imagina-updater-license'); ?></th>
-                        <th style="width: 90px;"><?php _e('Estado', 'imagina-updater-license'); ?></th>
-                        <th style="width: 100px;"><?php _e('Expira', 'imagina-updater-license'); ?></th>
-                        <th style="width: 150px;"><?php _e('Acciones', 'imagina-updater-license'); ?></th>
+                        <th style="width: 90px;"><?php _e('Activaciones', 'imagina-updater-license'); ?></th>
+                        <th style="width: 75px;"><?php _e('Estado', 'imagina-updater-license'); ?></th>
+                        <th style="width: 85px;"><?php _e('Expira', 'imagina-updater-license'); ?></th>
+                        <th style="width: 90px;"><?php _e('Acciones', 'imagina-updater-license'); ?></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -877,24 +901,22 @@ class Imagina_License_Admin {
                         <?php foreach ($licenses as $license): ?>
                             <tr>
                                 <td>
-                                    <code style="font-size: 11px; background: #f0f0f1; padding: 2px 6px; border-radius: 3px;">
+                                    <code style="font-size: 10px; background: #f0f0f1; padding: 2px 5px; border-radius: 3px;">
                                         <?php echo esc_html($license->license_key); ?>
                                     </code>
-                                    <button type="button" class="button-link" onclick="navigator.clipboard.writeText('<?php echo esc_js($license->license_key); ?>'); this.textContent='Copiado!';" style="margin-left: 5px;">
-                                        <span class="dashicons dashicons-clipboard" style="font-size: 14px;"></span>
+                                    <button type="button" class="button-link" onclick="navigator.clipboard.writeText('<?php echo esc_js($license->license_key); ?>'); this.innerHTML='✓';" style="margin-left: 3px;" title="<?php esc_attr_e('Copiar', 'imagina-updater-license'); ?>">
+                                        <span class="dashicons dashicons-clipboard" style="font-size: 13px; width:13px; height:13px;"></span>
                                     </button>
                                 </td>
-                                <td>
+                                <td style="font-size: 12px;">
                                     <?php echo esc_html($license->plugin_name ?: __('Plugin eliminado', 'imagina-updater-license')); ?>
                                 </td>
                                 <td>
-                                    <strong><?php echo esc_html($license->customer_name ?: '-'); ?></strong><br>
-                                    <small><?php echo esc_html($license->customer_email); ?></small>
+                                    <strong style="font-size: 12px;"><?php echo esc_html($license->customer_name ?: '-'); ?></strong><br>
+                                    <small style="font-size: 11px;"><?php echo esc_html($license->customer_email); ?></small>
                                 </td>
                                 <td style="text-align: center;">
-                                    <span style="font-size: 14px; font-weight: 500;">
-                                        <?php echo intval($license->activations_count); ?> / <?php echo intval($license->max_activations); ?>
-                                    </span>
+                                    <strong><?php echo intval($license->activations_count); ?></strong> / <?php echo intval($license->max_activations); ?>
                                 </td>
                                 <td>
                                     <?php
@@ -913,11 +935,11 @@ class Imagina_License_Admin {
                                     $color = isset($status_colors[$license->status]) ? $status_colors[$license->status] : '#666';
                                     $label = isset($status_labels[$license->status]) ? $status_labels[$license->status] : $license->status;
                                     ?>
-                                    <span style="color: <?php echo $color; ?>; font-weight: 500;">
+                                    <span style="color: <?php echo $color; ?>; font-weight: 500; font-size: 11px;">
                                         <?php echo esc_html($label); ?>
                                     </span>
                                 </td>
-                                <td>
+                                <td style="font-size: 11px;">
                                     <?php
                                     if ($license->expires_at) {
                                         $expires = strtotime($license->expires_at);
@@ -930,28 +952,40 @@ class Imagina_License_Admin {
                                     ?>
                                 </td>
                                 <td>
-                                    <a href="<?php echo admin_url('admin.php?page=imagina-license-keys&edit=' . $license->id); ?>" class="button button-small">
-                                        <?php _e('Editar', 'imagina-updater-license'); ?>
-                                    </a>
-                                    <a href="<?php echo admin_url('admin.php?page=imagina-license-keys&view=' . $license->id); ?>" class="button button-small">
-                                        <?php _e('Ver', 'imagina-updater-license'); ?>
-                                    </a>
-                                    <form method="post" style="display: inline;">
-                                        <?php wp_nonce_field('imagina_license_regenerate'); ?>
-                                        <input type="hidden" name="imagina_license_action" value="regenerate_license">
-                                        <input type="hidden" name="license_id" value="<?php echo esc_attr($license->id); ?>">
-                                        <button type="submit" class="button button-small" onclick="return confirm('<?php esc_attr_e('¿Regenerar esta license key? La anterior dejará de funcionar.', 'imagina-updater-license'); ?>');" title="<?php esc_attr_e('Regenerar Key', 'imagina-updater-license'); ?>">
-                                            <span class="dashicons dashicons-update" style="font-size:14px;line-height:1.8;"></span>
+                                    <div class="imagina-actions-dropdown">
+                                        <button type="button" class="imagina-actions-btn">
+                                            <?php _e('Acciones', 'imagina-updater-license'); ?>
+                                            <span class="dashicons dashicons-arrow-down-alt2" style="font-size: 14px; width: 14px; height: 14px;"></span>
                                         </button>
-                                    </form>
-                                    <form method="post" style="display: inline;">
-                                        <?php wp_nonce_field('imagina_license_delete'); ?>
-                                        <input type="hidden" name="imagina_license_action" value="delete_license">
-                                        <input type="hidden" name="license_id" value="<?php echo esc_attr($license->id); ?>">
-                                        <button type="submit" class="button button-small" onclick="return confirm('<?php esc_attr_e('¿Eliminar esta licencia permanentemente?', 'imagina-updater-license'); ?>');" style="color:#d63638;" title="<?php esc_attr_e('Eliminar', 'imagina-updater-license'); ?>">
-                                            <span class="dashicons dashicons-trash" style="font-size:14px;line-height:1.8;"></span>
-                                        </button>
-                                    </form>
+                                        <div class="imagina-actions-menu">
+                                            <a href="<?php echo admin_url('admin.php?page=imagina-license-keys&view=' . $license->id); ?>">
+                                                <span class="dashicons dashicons-visibility"></span>
+                                                <?php _e('Ver Detalles', 'imagina-updater-license'); ?>
+                                            </a>
+                                            <a href="<?php echo admin_url('admin.php?page=imagina-license-keys&edit=' . $license->id); ?>">
+                                                <span class="dashicons dashicons-edit"></span>
+                                                <?php _e('Editar', 'imagina-updater-license'); ?>
+                                            </a>
+                                            <form method="post" style="margin:0;">
+                                                <?php wp_nonce_field('imagina_license_regenerate'); ?>
+                                                <input type="hidden" name="imagina_license_action" value="regenerate_license">
+                                                <input type="hidden" name="license_id" value="<?php echo esc_attr($license->id); ?>">
+                                                <button type="submit" onclick="return confirm('<?php esc_attr_e('¿Regenerar esta license key?', 'imagina-updater-license'); ?>');">
+                                                    <span class="dashicons dashicons-update"></span>
+                                                    <?php _e('Regenerar Key', 'imagina-updater-license'); ?>
+                                                </button>
+                                            </form>
+                                            <form method="post" style="margin:0;">
+                                                <?php wp_nonce_field('imagina_license_delete'); ?>
+                                                <input type="hidden" name="imagina_license_action" value="delete_license">
+                                                <input type="hidden" name="license_id" value="<?php echo esc_attr($license->id); ?>">
+                                                <button type="submit" class="action-delete" onclick="return confirm('<?php esc_attr_e('¿Eliminar esta licencia permanentemente?', 'imagina-updater-license'); ?>');">
+                                                    <span class="dashicons dashicons-trash"></span>
+                                                    <?php _e('Eliminar', 'imagina-updater-license'); ?>
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>

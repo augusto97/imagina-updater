@@ -365,30 +365,55 @@
     color: #d63638;
 }
 
-/* Description Toggle */
-.imagina-desc-toggle {
-    display: inline-block;
-    max-width: 200px;
+/* Description Block - Below Plugin Name */
+.imagina-desc-block {
+    margin-top: 4px;
 }
 
-.imagina-desc-toggle .desc-preview {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 12px;
-    color: #646970;
-}
-
-.imagina-desc-toggle.expanded .desc-preview {
-    white-space: normal;
-    overflow: visible;
-}
-
-.imagina-desc-toggle .desc-more {
+.imagina-desc-block .desc-toggle-link {
     color: #2271b1;
-    cursor: pointer;
     font-size: 11px;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.imagina-desc-block .desc-toggle-link:hover {
+    text-decoration: underline;
+}
+
+.imagina-desc-block .desc-content {
+    margin-top: 6px;
+    padding: 8px 10px;
+    background: #f6f7f7;
+    border-left: 3px solid #2271b1;
+    border-radius: 0 4px 4px 0;
+}
+
+.imagina-desc-block .desc-content small {
+    color: #50575e;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+/* Filter Dropdown */
+.imagina-filter-dropdown {
+    display: inline-block;
+}
+
+.imagina-filter-select {
+    padding: 6px 10px;
+    border: 1px solid #8c8f94;
+    border-radius: 4px;
+    font-size: 13px;
+    background: #fff;
+    cursor: pointer;
+    min-width: 140px;
+}
+
+.imagina-filter-select:focus {
+    border-color: #2271b1;
+    box-shadow: 0 0 0 1px #2271b1;
+    outline: none;
 }
 
 /* Hidden columns */

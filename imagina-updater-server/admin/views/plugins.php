@@ -99,11 +99,26 @@ if (!defined('ABSPATH')) {
             <p><?php _e('No hay plugins subidos aún. Sube tu primer plugin usando el formulario de arriba.', 'imagina-updater-server'); ?></p>
         </div>
     <?php else: ?>
-        <!-- Toolbar: Búsqueda y Columnas -->
+        <!-- Toolbar: Búsqueda, Filtros y Columnas -->
         <div class="imagina-table-toolbar">
             <div class="imagina-table-search">
                 <input type="text" placeholder="<?php esc_attr_e('Buscar plugins...', 'imagina-updater-server'); ?>">
             </div>
+
+            <?php
+            // Verificar si la extensión de licencias está activa (existe el campo is_premium)
+            global $wpdb;
+            $has_license_extension = $wpdb->get_results("SHOW COLUMNS FROM {$wpdb->prefix}imagina_updater_plugins LIKE 'is_premium'");
+            if ($has_license_extension):
+            ?>
+            <div class="imagina-filter-dropdown">
+                <select class="imagina-filter-select" data-filter="premium">
+                    <option value=""><?php _e('Todos los plugins', 'imagina-updater-server'); ?></option>
+                    <option value="premium"><?php _e('Solo Premium', 'imagina-updater-server'); ?></option>
+                    <option value="free"><?php _e('Solo Gratuitos', 'imagina-updater-server'); ?></option>
+                </select>
+            </div>
+            <?php endif; ?>
 
             <div class="imagina-column-toggle">
                 <button type="button" class="imagina-column-toggle-btn">
@@ -143,16 +158,17 @@ if (!defined('ABSPATH')) {
                 <?php foreach ($plugins as $plugin):
                     $effective_slug = !empty($plugin->slug_override) ? $plugin->slug_override : $plugin->slug;
                     $is_custom_slug = !empty($plugin->slug_override);
+                    $is_premium = isset($plugin->is_premium) && $plugin->is_premium == 1;
                 ?>
-                    <tr>
+                    <tr data-premium="<?php echo $is_premium ? '1' : '0'; ?>">
                         <td>
                             <strong><?php echo esc_html($plugin->name); ?></strong>
                             <?php if (!empty($plugin->description)): ?>
-                                <div class="imagina-desc-toggle">
-                                    <small class="desc-preview"><?php echo esc_html($plugin->description); ?></small>
-                                    <?php if (strlen($plugin->description) > 60): ?>
-                                        <a href="#" class="desc-more">ver más</a>
-                                    <?php endif; ?>
+                                <div class="imagina-desc-block">
+                                    <a href="#" class="desc-toggle-link">ver descripción</a>
+                                    <div class="desc-content" style="display:none;">
+                                        <small><?php echo esc_html($plugin->description); ?></small>
+                                    </div>
                                 </div>
                             <?php endif; ?>
                         </td>

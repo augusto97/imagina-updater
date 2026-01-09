@@ -1,9 +1,9 @@
 <?php
 /**
- * Generador de Código de Protección v5.1
+ * Generador de Código de Protección v5.2
  *
  * @package Imagina_License_Extension
- * @version 5.1.0
+ * @version 5.2.0
  */
 
 if (!defined('ABSPATH')) {
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
 
 class Imagina_License_Protection_Generator {
 
-    const PROTECTION_VERSION = '5.1.0';
+    const PROTECTION_VERSION = '5.2.0';
 
     public static function generate($plugin_name, $plugin_slug, $server_url = '') {
         $unique_id = self::generate_unique_id($plugin_slug);
@@ -63,6 +63,7 @@ if (!class_exists('{{CLASS_NAME}}')) {
         private static $license_data = array();
         private static $last_error = '';
         private static $initialized = false;
+        private static $notices_shown = false;
 
         const GRACE_PERIOD = 604800;
         const CACHE_DURATION = 21600;
@@ -71,11 +72,49 @@ if (!class_exists('{{CLASS_NAME}}')) {
             if (self::$initialized) return;
             self::$initialized = true;
 
+            // Verificar licencia inmediatamente (sin hacer request al servidor aún)
+            self::quick_license_check();
+
             add_action('admin_menu', array(__CLASS__, 'add_license_menu'));
             add_action('admin_init', array(__CLASS__, 'handle_license_actions'));
             add_action('plugins_loaded', array(__CLASS__, 'verify_on_load'), 5);
             add_action('admin_notices', array(__CLASS__, 'show_admin_notices'));
             add_filter('plugin_action_links', array(__CLASS__, 'add_settings_link'), 10, 2);
+        }
+
+        /**
+         * Verificación rápida de licencia (solo cache local, sin HTTP)
+         */
+        private static function quick_license_check() {
+            // Verificar cache primero
+            $cached = get_transient('ilp_status_' . self::$unique_id);
+            if ($cached !== false) {
+                self::$is_licensed = ($cached === 'valid');
+                return;
+            }
+
+            // Verificar si hay datos de licencia guardados
+            $license_data = get_option('ilp_license_' . self::$unique_id, array());
+            if (empty($license_data['license_key'])) {
+                self::$is_licensed = false;
+                return;
+            }
+
+            // Si hay licencia guardada pero no hay cache, asumir válida temporalmente
+            // La verificación real se hará en plugins_loaded
+            self::$is_licensed = true;
+            self::$license_data = $license_data;
+        }
+
+        /**
+         * Verificar si el plugin debe cargarse
+         * Retorna true si tiene licencia o false si no
+         */
+        public static function should_load_plugin() {
+            if (self::$is_licensed === null) {
+                self::quick_license_check();
+            }
+            return self::$is_licensed === true;
         }
 
         public static function add_license_menu() {
@@ -113,7 +152,6 @@ if (!class_exists('{{CLASS_NAME}}')) {
             ?>
             <div class="wrap">
                 <h1><?php echo esc_html(self::$plugin_name); ?> - Licencia</h1>
-                <?php settings_errors('ilp_license_' . self::$unique_id); ?>
 
                 <div class="card" style="max-width: 600px; padding: 20px;">
                     <?php if ($is_active && !empty($license_data['license_key'])): ?>
@@ -204,13 +242,20 @@ if (!class_exists('{{CLASS_NAME}}')) {
             if ($_POST['ilp_plugin'] !== self::$unique_id) return;
 
             $action = sanitize_key($_POST['ilp_action']);
+            $redirect_url = admin_url('options-general.php?page=' . self::$plugin_slug . '-license');
 
             if ($action === 'activate') {
                 self::process_activation();
+                wp_redirect($redirect_url . '&ilp_notice=activated');
+                exit;
             } elseif ($action === 'deactivate') {
                 self::process_deactivation();
+                wp_redirect($redirect_url . '&ilp_notice=deactivated');
+                exit;
             } elseif ($action === 'update_server') {
                 self::process_update_server();
+                wp_redirect($redirect_url . '&ilp_notice=server_updated');
+                exit;
             }
         }
 
@@ -219,13 +264,13 @@ if (!class_exists('{{CLASS_NAME}}')) {
 
             $license_key = isset($_POST['license_key']) ? sanitize_text_field($_POST['license_key']) : '';
             if (empty($license_key)) {
-                add_settings_error('ilp_license_' . self::$unique_id, 'empty_key', 'Por favor ingresa una license key.', 'error');
+                update_option('ilp_notice_' . self::$unique_id, array('type' => 'error', 'message' => 'Por favor ingresa una license key.'));
                 return;
             }
 
             $server_url = self::get_server_url();
             if (empty($server_url)) {
-                add_settings_error('ilp_license_' . self::$unique_id, 'no_server', 'No hay servidor configurado. Configura la URL del servidor primero.', 'error');
+                update_option('ilp_notice_' . self::$unique_id, array('type' => 'error', 'message' => 'No hay servidor configurado. Configura la URL del servidor primero.'));
                 return;
             }
 
@@ -243,7 +288,7 @@ if (!class_exists('{{CLASS_NAME}}')) {
             if (is_wp_error($response)) {
                 $error_msg = 'Error de conexión: ' . $response->get_error_message();
                 self::save_last_error($error_msg);
-                add_settings_error('ilp_license_' . self::$unique_id, 'connection_error', $error_msg, 'error');
+                update_option('ilp_notice_' . self::$unique_id, array('type' => 'error', 'message' => $error_msg));
                 return;
             }
 
@@ -254,7 +299,7 @@ if (!class_exists('{{CLASS_NAME}}')) {
                 $error = isset($body['error']) ? $body['error'] : 'unknown';
                 $message = self::get_error_message($error, isset($body['message']) ? $body['message'] : '');
                 self::save_last_error($message);
-                add_settings_error('ilp_license_' . self::$unique_id, 'activation_error', $message, 'error');
+                update_option('ilp_notice_' . self::$unique_id, array('type' => 'error', 'message' => $message));
                 return;
             }
 
@@ -274,7 +319,7 @@ if (!class_exists('{{CLASS_NAME}}')) {
             self::$is_licensed = true;
             self::$license_data = $license_data;
 
-            add_settings_error('ilp_license_' . self::$unique_id, 'activated', '¡Licencia activada correctamente! Todas las funciones premium están habilitadas.', 'success');
+            update_option('ilp_notice_' . self::$unique_id, array('type' => 'success', 'message' => '¡Licencia activada correctamente! Todas las funciones premium están habilitadas.'));
         }
 
         private static function process_deactivation() {
@@ -301,7 +346,7 @@ if (!class_exists('{{CLASS_NAME}}')) {
             self::$is_licensed = false;
             self::$license_data = array();
 
-            add_settings_error('ilp_license_' . self::$unique_id, 'deactivated', 'Licencia desactivada. Las funciones premium han sido deshabilitadas.', 'success');
+            update_option('ilp_notice_' . self::$unique_id, array('type' => 'warning', 'message' => 'Licencia desactivada. Las funciones premium han sido deshabilitadas.'));
         }
 
         private static function process_update_server() {
@@ -311,7 +356,7 @@ if (!class_exists('{{CLASS_NAME}}')) {
             update_option('ilp_server_' . self::$unique_id, $server_url);
             delete_transient('ilp_status_' . self::$unique_id);
 
-            add_settings_error('ilp_license_' . self::$unique_id, 'server_updated', 'Configuración del servidor actualizada.', 'success');
+            update_option('ilp_notice_' . self::$unique_id, array('type' => 'success', 'message' => 'Configuración del servidor actualizada.'));
         }
 
         private static function get_error_message($error, $default = '') {
@@ -423,7 +468,24 @@ if (!class_exists('{{CLASS_NAME}}')) {
         }
 
         public static function show_admin_notices() {
+            if (self::$notices_shown) return;
+            self::$notices_shown = true;
+
             if (!current_user_can('manage_options')) return;
+
+            // Mostrar notificación guardada (solo una vez)
+            $notice = get_option('ilp_notice_' . self::$unique_id);
+            if ($notice && isset($_GET['page']) && $_GET['page'] === self::$plugin_slug . '-license') {
+                $type = isset($notice['type']) ? $notice['type'] : 'info';
+                $message = isset($notice['message']) ? $notice['message'] : '';
+                if ($message) {
+                    echo '<div class="notice notice-' . esc_attr($type) . ' is-dismissible"><p>' . esc_html($message) . '</p></div>';
+                }
+                delete_option('ilp_notice_' . self::$unique_id);
+                return;
+            }
+
+            // Mostrar aviso de licencia no activa (excepto en página de licencia)
             if (isset($_GET['page']) && $_GET['page'] === self::$plugin_slug . '-license') return;
 
             if (!self::is_licensed()) {
@@ -470,6 +532,15 @@ if (!class_exists('{{CLASS_NAME}}')) {
     }
 
     {{CLASS_NAME}}::init();
+}
+
+// ============================================================================
+// PLUGIN PROTECTION - BLOCK LOADING IF UNLICENSED
+// ============================================================================
+
+if (!{{CLASS_NAME}}::should_load_plugin()) {
+    // Plugin sin licencia - no cargar funcionalidad
+    return;
 }
 
 // ============================================================================

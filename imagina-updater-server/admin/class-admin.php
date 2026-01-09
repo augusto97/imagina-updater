@@ -206,12 +206,28 @@ jQuery(document).ready(function($) {
             $table = $toolbar.nextAll(".imagina-table-enhanced").first();
         }
 
+        // Obtener filtro premium si existe
+        var $premiumFilter = $toolbar.find(".imagina-filter-select[data-filter=premium]");
+        var premiumFilterValue = $premiumFilter.length ? $premiumFilter.val() : "";
+
         var visibleCount = 0;
         $table.find("tbody tr").not(".permissions-edit-row").each(function() {
             var $row = $(this);
             var rowText = $row.text().toLowerCase();
-            var matches = searchTerm === "" || rowText.indexOf(searchTerm) !== -1;
+            var matchesSearch = searchTerm === "" || rowText.indexOf(searchTerm) !== -1;
 
+            // Aplicar filtro premium
+            var matchesPremium = true;
+            if (premiumFilterValue !== "" && $row.data("premium") !== undefined) {
+                var isPremium = $row.data("premium") == 1;
+                if (premiumFilterValue === "premium" && !isPremium) {
+                    matchesPremium = false;
+                } else if (premiumFilterValue === "free" && isPremium) {
+                    matchesPremium = false;
+                }
+            }
+
+            var matches = matchesSearch && matchesPremium;
             $row.toggle(matches);
             if (matches) visibleCount++;
         });
@@ -266,12 +282,48 @@ jQuery(document).ready(function($) {
         }
     });
 
-    // Description expand/collapse
-    $(document).on("click", ".desc-more", function(e) {
+    // Description expand/collapse (new block style)
+    $(document).on("click", ".desc-toggle-link", function(e) {
         e.preventDefault();
-        var $container = $(this).closest(".imagina-desc-toggle");
-        $container.toggleClass("expanded");
-        $(this).text($container.hasClass("expanded") ? "ver menos" : "ver más");
+        var $block = $(this).closest(".imagina-desc-block");
+        var $content = $block.find(".desc-content");
+        $content.slideToggle(200);
+        $(this).text($content.is(":visible") ? "ocultar descripción" : "ver descripción");
+    });
+
+    // Premium filter dropdown
+    $(document).on("change", ".imagina-filter-select[data-filter=premium]", function() {
+        var filterValue = $(this).val();
+        var $toolbar = $(this).closest(".imagina-table-toolbar");
+        var $table = $toolbar.next(".imagina-table-enhanced");
+        if (!$table.length) {
+            $table = $toolbar.nextAll(".imagina-table-enhanced").first();
+        }
+
+        var visibleCount = 0;
+        $table.find("tbody tr").not(".permissions-edit-row, .imagina-no-results-row").each(function() {
+            var $row = $(this);
+            var isPremium = $row.data("premium") == 1;
+            var show = true;
+
+            if (filterValue === "premium" && !isPremium) {
+                show = false;
+            } else if (filterValue === "free" && isPremium) {
+                show = false;
+            }
+
+            // También respetar la búsqueda activa
+            var searchTerm = $toolbar.find(".imagina-table-search input").val().toLowerCase().trim();
+            if (show && searchTerm !== "") {
+                var rowText = $row.text().toLowerCase();
+                show = rowText.indexOf(searchTerm) !== -1;
+            }
+
+            $row.toggle(show);
+            if (show) visibleCount++;
+        });
+
+        updateRowCount($table);
     });
 
     // Initialize row counts
@@ -803,9 +855,54 @@ jQuery(document).ready(function($) {
     public function render_dashboard_page() {
         global $wpdb;
 
+        // Estadísticas básicas
         $total_plugins = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}imagina_updater_plugins");
         $total_api_keys = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}imagina_updater_api_keys WHERE is_active = 1");
+        $total_api_keys_inactive = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}imagina_updater_api_keys WHERE is_active = 0");
         $total_downloads = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}imagina_updater_downloads");
+
+        // Estadísticas adicionales
+        $total_groups = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}imagina_updater_plugin_groups");
+        $total_activations = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}imagina_updater_activations WHERE is_active = 1");
+
+        // Descargas recientes (últimos 7 días)
+        $downloads_week = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}imagina_updater_downloads WHERE downloaded_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
+        $downloads_month = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}imagina_updater_downloads WHERE downloaded_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)");
+
+        // Plugin más descargado
+        $most_downloaded = $wpdb->get_row("
+            SELECT p.name, COUNT(d.id) as downloads
+            FROM {$wpdb->prefix}imagina_updater_downloads d
+            INNER JOIN {$wpdb->prefix}imagina_updater_plugins p ON d.plugin_id = p.id
+            GROUP BY d.plugin_id
+            ORDER BY downloads DESC
+            LIMIT 1
+        ");
+
+        // Verificar si la extensión de licencias está activa
+        $has_license_extension = $wpdb->get_results("SHOW COLUMNS FROM {$wpdb->prefix}imagina_updater_plugins LIKE 'is_premium'");
+        $license_stats = array();
+
+        if ($has_license_extension) {
+            // Plugins premium vs gratuitos
+            $license_stats['premium_plugins'] = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}imagina_updater_plugins WHERE is_premium = 1");
+            $license_stats['free_plugins'] = $total_plugins - $license_stats['premium_plugins'];
+
+            // Estadísticas de licencias (si la tabla existe)
+            $table_licenses = $wpdb->prefix . 'imagina_license_keys';
+            if ($wpdb->get_var("SHOW TABLES LIKE '$table_licenses'")) {
+                $license_stats['total_licenses'] = $wpdb->get_var("SELECT COUNT(*) FROM $table_licenses");
+                $license_stats['active_licenses'] = $wpdb->get_var("SELECT COUNT(*) FROM $table_licenses WHERE status = 'active'");
+                $license_stats['expired_licenses'] = $wpdb->get_var("SELECT COUNT(*) FROM $table_licenses WHERE status = 'expired'");
+                $license_stats['revoked_licenses'] = $wpdb->get_var("SELECT COUNT(*) FROM $table_licenses WHERE status = 'revoked'");
+
+                // Activaciones de licencias
+                $table_activations = $wpdb->prefix . 'imagina_license_activations';
+                if ($wpdb->get_var("SHOW TABLES LIKE '$table_activations'")) {
+                    $license_stats['license_activations'] = $wpdb->get_var("SELECT COUNT(*) FROM $table_activations WHERE is_active = 1");
+                }
+            }
+        }
 
         include IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'admin/views/dashboard.php';
     }

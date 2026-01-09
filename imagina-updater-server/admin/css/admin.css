@@ -176,3 +176,253 @@
 .wp-list-table .button-small {
     margin: 2px;
 }
+
+/* ============================================
+   ENHANCED TABLE SYSTEM
+   ============================================ */
+
+/* Table Toolbar */
+.imagina-table-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    align-items: center;
+    margin-bottom: 15px;
+    padding: 12px 15px;
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+}
+
+.imagina-table-search {
+    flex: 1;
+    min-width: 200px;
+    max-width: 350px;
+}
+
+.imagina-table-search input {
+    width: 100%;
+    padding: 6px 12px;
+    border: 1px solid #8c8f94;
+    border-radius: 4px;
+}
+
+.imagina-table-search input:focus {
+    border-color: #2271b1;
+    box-shadow: 0 0 0 1px #2271b1;
+    outline: none;
+}
+
+/* Column Toggle Dropdown */
+.imagina-column-toggle {
+    position: relative;
+}
+
+.imagina-column-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
+    background: #f6f7f7;
+    border: 1px solid #8c8f94;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.imagina-column-toggle-btn:hover {
+    background: #f0f0f1;
+}
+
+.imagina-column-toggle-btn .dashicons {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+}
+
+.imagina-column-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 100;
+    min-width: 200px;
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+    margin-top: 5px;
+}
+
+.imagina-column-toggle.open .imagina-column-dropdown {
+    display: block;
+}
+
+.imagina-column-dropdown label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #f0f0f1;
+    font-size: 13px;
+}
+
+.imagina-column-dropdown label:last-child {
+    border-bottom: none;
+}
+
+.imagina-column-dropdown label:hover {
+    background: #f6f7f7;
+}
+
+/* Table row count */
+.imagina-table-count {
+    color: #646970;
+    font-size: 13px;
+    margin-left: auto;
+}
+
+/* Compact Actions - Dropdown */
+.imagina-actions-dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.imagina-actions-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    background: #f6f7f7;
+    border: 1px solid #8c8f94;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.imagina-actions-btn:hover {
+    background: #f0f0f1;
+}
+
+.imagina-actions-menu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 100;
+    min-width: 160px;
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+    margin-top: 3px;
+}
+
+.imagina-actions-dropdown.open .imagina-actions-menu {
+    display: block;
+}
+
+.imagina-actions-menu a,
+.imagina-actions-menu button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+    font-size: 13px;
+    color: #1d2327;
+    text-decoration: none;
+    border-bottom: 1px solid #f0f0f1;
+}
+
+.imagina-actions-menu a:last-child,
+.imagina-actions-menu button:last-child {
+    border-bottom: none;
+}
+
+.imagina-actions-menu a:hover,
+.imagina-actions-menu button:hover {
+    background: #f6f7f7;
+}
+
+.imagina-actions-menu .dashicons {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    color: #646970;
+}
+
+.imagina-actions-menu .action-delete {
+    color: #d63638;
+}
+
+.imagina-actions-menu .action-delete .dashicons {
+    color: #d63638;
+}
+
+/* Description Toggle */
+.imagina-desc-toggle {
+    display: inline-block;
+    max-width: 200px;
+}
+
+.imagina-desc-toggle .desc-preview {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: #646970;
+}
+
+.imagina-desc-toggle.expanded .desc-preview {
+    white-space: normal;
+    overflow: visible;
+}
+
+.imagina-desc-toggle .desc-more {
+    color: #2271b1;
+    cursor: pointer;
+    font-size: 11px;
+}
+
+/* Hidden columns */
+.imagina-table-enhanced th.column-hidden,
+.imagina-table-enhanced td.column-hidden {
+    display: none;
+}
+
+/* No results message */
+.imagina-no-results {
+    text-align: center;
+    padding: 30px;
+    color: #646970;
+    font-style: italic;
+}
+
+/* Row highlight on search */
+.imagina-table-enhanced tbody tr.search-match {
+    background-color: #fffbeb;
+}
+
+/* Responsive adjustments */
+@media screen and (max-width: 782px) {
+    .imagina-table-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .imagina-table-search {
+        max-width: none;
+    }
+
+    .imagina-column-dropdown {
+        right: auto;
+        left: 0;
+    }
+}

@@ -166,17 +166,42 @@ if (!defined('ABSPATH')) {
             <p><?php _e('No hay API Keys creadas aún. Crea una usando el formulario de arriba.', 'imagina-updater-server'); ?></p>
         </div>
     <?php else: ?>
-        <table class="wp-list-table widefat fixed striped">
+        <!-- Toolbar: Búsqueda y Columnas -->
+        <div class="imagina-table-toolbar">
+            <div class="imagina-table-search">
+                <input type="text" placeholder="<?php esc_attr_e('Buscar cliente, sitio...', 'imagina-updater-server'); ?>">
+            </div>
+
+            <div class="imagina-column-toggle">
+                <button type="button" class="imagina-column-toggle-btn">
+                    <span class="dashicons dashicons-visibility"></span>
+                    <?php _e('Columnas', 'imagina-updater-server'); ?>
+                </button>
+                <div class="imagina-column-dropdown">
+                    <label><input type="checkbox" data-col="1" checked> <?php _e('Cliente', 'imagina-updater-server'); ?></label>
+                    <label><input type="checkbox" data-col="2" checked> <?php _e('Estado', 'imagina-updater-server'); ?></label>
+                    <label><input type="checkbox" data-col="3" checked> <?php _e('Activaciones', 'imagina-updater-server'); ?></label>
+                    <label><input type="checkbox" data-col="4" checked> <?php _e('Permisos', 'imagina-updater-server'); ?></label>
+                    <label><input type="checkbox" data-col="5"> <?php _e('Creada', 'imagina-updater-server'); ?></label>
+                    <label><input type="checkbox" data-col="6"> <?php _e('Último Uso', 'imagina-updater-server'); ?></label>
+                    <label><input type="checkbox" data-col="7"> <?php _e('Estadísticas', 'imagina-updater-server'); ?></label>
+                </div>
+            </div>
+
+            <span class="imagina-table-count"><?php echo count($api_keys); ?> registros</span>
+        </div>
+
+        <table id="apikeys-table" class="wp-list-table widefat fixed striped imagina-table-enhanced">
             <thead>
                 <tr>
-                    <th style="width: 20%;"><?php _e('Cliente / Licencia', 'imagina-updater-server'); ?></th>
-                    <th style="width: 8%;"><?php _e('Estado', 'imagina-updater-server'); ?></th>
-                    <th style="width: 10%;"><?php _e('Activaciones', 'imagina-updater-server'); ?></th>
-                    <th style="width: 18%;"><?php _e('Permisos', 'imagina-updater-server'); ?></th>
-                    <th style="width: 8%;"><?php _e('Creada', 'imagina-updater-server'); ?></th>
-                    <th style="width: 10%;"><?php _e('Último Uso', 'imagina-updater-server'); ?></th>
-                    <th style="width: 10%;"><?php _e('Estadísticas', 'imagina-updater-server'); ?></th>
-                    <th style="width: 16%;"><?php _e('Acciones', 'imagina-updater-server'); ?></th>
+                    <th><?php _e('Cliente / Licencia', 'imagina-updater-server'); ?></th>
+                    <th style="width: 75px;"><?php _e('Estado', 'imagina-updater-server'); ?></th>
+                    <th style="width: 90px;"><?php _e('Activaciones', 'imagina-updater-server'); ?></th>
+                    <th style="width: 140px;"><?php _e('Permisos', 'imagina-updater-server'); ?></th>
+                    <th style="width: 85px;"><?php _e('Creada', 'imagina-updater-server'); ?></th>
+                    <th style="width: 85px;"><?php _e('Último Uso', 'imagina-updater-server'); ?></th>
+                    <th style="width: 90px;"><?php _e('Estadísticas', 'imagina-updater-server'); ?></th>
+                    <th style="width: 90px;"><?php _e('Acciones', 'imagina-updater-server'); ?></th>
                 </tr>
             </thead>
             <tbody>
@@ -194,88 +219,83 @@ if (!defined('ABSPATH')) {
                     $permission_detail = '';
 
                     if ($access_type === 'all') {
-                        $permission_text = __('Todos los plugins', 'imagina-updater-server');
+                        $permission_text = __('Todos', 'imagina-updater-server');
                         $permission_detail = __('Acceso completo', 'imagina-updater-server');
                     } elseif ($access_type === 'specific' && !empty($key->allowed_plugins)) {
                         $allowed_ids = json_decode($key->allowed_plugins, true);
                         $count = is_array($allowed_ids) ? count($allowed_ids) : 0;
-                        $permission_text = __('Plugins específicos', 'imagina-updater-server');
-                        $permission_detail = sprintf(_n('%d plugin', '%d plugins', $count, 'imagina-updater-server'), $count);
+                        $permission_text = sprintf(_n('%d plugin', '%d plugins', $count, 'imagina-updater-server'), $count);
+                        $permission_detail = __('Específicos', 'imagina-updater-server');
                     } elseif ($access_type === 'groups' && !empty($key->allowed_groups)) {
                         $allowed_group_ids = json_decode($key->allowed_groups, true);
                         $count = is_array($allowed_group_ids) ? count($allowed_group_ids) : 0;
-                        $permission_text = __('Grupos de plugins', 'imagina-updater-server');
-                        $permission_detail = sprintf(_n('%d grupo', '%d grupos', $count, 'imagina-updater-server'), $count);
+                        $permission_text = sprintf(_n('%d grupo', '%d grupos', $count, 'imagina-updater-server'), $count);
+                        $permission_detail = __('Por grupos', 'imagina-updater-server');
                     } else {
-                        $permission_text = __('Sin permisos', 'imagina-updater-server');
-                        $permission_detail = __('Ningún plugin asignado', 'imagina-updater-server');
+                        $permission_text = __('Ninguno', 'imagina-updater-server');
+                        $permission_detail = __('Sin acceso', 'imagina-updater-server');
                     }
                     ?>
                     <tr>
                         <td><strong><?php echo esc_html($key->site_name); ?></strong></td>
                         <td>
                             <?php if ($key->is_active): ?>
-                                <span class="imagina-status imagina-status-active">
-                                    <span class="dashicons dashicons-yes-alt"></span>
+                                <span class="imagina-status imagina-status-active" style="font-size: 11px; padding: 2px 6px;">
                                     <?php _e('Activa', 'imagina-updater-server'); ?>
                                 </span>
                             <?php else: ?>
-                                <span class="imagina-status imagina-status-inactive">
-                                    <span class="dashicons dashicons-dismiss"></span>
+                                <span class="imagina-status imagina-status-inactive" style="font-size: 11px; padding: 2px 6px;">
                                     <?php _e('Inactiva', 'imagina-updater-server'); ?>
                                 </span>
                             <?php endif; ?>
                         </td>
-                        <td>
-                            <strong><?php echo esc_html($active_count); ?></strong> /
-                            <?php echo $max_activations == 0 ? '∞' : esc_html($max_activations); ?>
+                        <td style="text-align: center;">
+                            <strong><?php echo esc_html($active_count); ?></strong> / <?php echo $max_activations == 0 ? '∞' : esc_html($max_activations); ?>
                             <?php if ($active_count > 0): ?>
-                                <br>
-                                <a href="<?php echo admin_url('admin.php?page=imagina-updater-activations&api_key_id=' . $key->id); ?>" class="description">
-                                    <?php _e('Ver sitios', 'imagina-updater-server'); ?>
-                                </a>
+                                <br><a href="<?php echo admin_url('admin.php?page=imagina-updater-activations&api_key_id=' . $key->id); ?>" style="font-size: 11px;"><?php _e('ver', 'imagina-updater-server'); ?></a>
                             <?php endif; ?>
                         </td>
                         <td>
-                            <strong><?php echo esc_html($permission_text); ?></strong><br>
+                            <strong style="font-size: 12px;"><?php echo esc_html($permission_text); ?></strong><br>
                             <small class="description"><?php echo esc_html($permission_detail); ?></small>
                         </td>
-                        <td><?php echo esc_html(mysql2date(get_option('date_format'), $key->created_at)); ?></td>
-                        <td>
+                        <td style="font-size: 11px;"><?php echo esc_html(mysql2date('d/m/Y', $key->created_at)); ?></td>
+                        <td style="font-size: 11px;">
                             <?php if ($key->last_used): ?>
-                                <?php echo esc_html(mysql2date(get_option('date_format') . ' ' . get_option('time_format'), $key->last_used)); ?>
+                                <?php echo esc_html(mysql2date('d/m/Y', $key->last_used)); ?>
                             <?php else: ?>
                                 <span class="description"><?php _e('Nunca', 'imagina-updater-server'); ?></span>
                             <?php endif; ?>
                         </td>
-                        <td>
-                            <strong><?php echo esc_html($stats['total_downloads']); ?></strong> <?php _e('descargas', 'imagina-updater-server'); ?>
-                            <br>
-                            <small><?php echo esc_html($stats['last_30_days']); ?> <?php _e('últimos 30 días', 'imagina-updater-server'); ?></small>
+                        <td style="font-size: 11px;">
+                            <strong><?php echo esc_html($stats['total_downloads']); ?></strong> <?php _e('desc.', 'imagina-updater-server'); ?>
+                            <br><small><?php echo esc_html($stats['last_30_days']); ?> (30d)</small>
                         </td>
                         <td>
-                            <a href="#" class="button button-small edit-permissions-btn" data-key-id="<?php echo esc_attr($key->id); ?>">
-                                <span class="dashicons dashicons-admin-generic"></span>
-                                <?php _e('Permisos', 'imagina-updater-server'); ?>
-                            </a>
-                            <br>
-                            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-api-keys&action=regenerate_api_key&id=' . $key->id), 'regenerate_api_key_' . $key->id)); ?>" class="button button-small" onclick="return confirm('<?php esc_attr_e('¿Regenerar esta API Key? El cliente deberá ingresar la nueva clave. Esta acción no puede deshacerse.', 'imagina-updater-server'); ?>');" style="margin-top: 2px;">
-                                <span class="dashicons dashicons-update"></span>
-                                <?php _e('Regenerar Key', 'imagina-updater-server'); ?>
-                            </a>
-                            <br>
-                            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-api-keys&action=toggle_api_key&id=' . $key->id), 'toggle_api_key_' . $key->id)); ?>" class="button button-small" style="margin-top: 2px;">
-                                <?php if ($key->is_active): ?>
-                                    <?php _e('Desactivar', 'imagina-updater-server'); ?>
-                                <?php else: ?>
-                                    <?php _e('Activar', 'imagina-updater-server'); ?>
-                                <?php endif; ?>
-                            </a>
-                            <br>
-                            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-api-keys&action=delete_api_key&id=' . $key->id), 'delete_api_key_' . $key->id)); ?>" class="button button-small button-link-delete" onclick="return confirm('<?php esc_attr_e('¿Estás seguro de eliminar esta API Key?', 'imagina-updater-server'); ?>');" style="margin-top: 2px;">
-                                <span class="dashicons dashicons-trash"></span>
-                                <?php _e('Eliminar', 'imagina-updater-server'); ?>
-                            </a>
+                            <div class="imagina-actions-dropdown">
+                                <button type="button" class="imagina-actions-btn">
+                                    <?php _e('Acciones', 'imagina-updater-server'); ?>
+                                    <span class="dashicons dashicons-arrow-down-alt2" style="font-size: 14px; width: 14px; height: 14px;"></span>
+                                </button>
+                                <div class="imagina-actions-menu">
+                                    <a href="#" class="edit-permissions-btn" data-key-id="<?php echo esc_attr($key->id); ?>">
+                                        <span class="dashicons dashicons-admin-generic"></span>
+                                        <?php _e('Editar Permisos', 'imagina-updater-server'); ?>
+                                    </a>
+                                    <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-api-keys&action=regenerate_api_key&id=' . $key->id), 'regenerate_api_key_' . $key->id)); ?>" onclick="return confirm('<?php esc_attr_e('¿Regenerar esta API Key?', 'imagina-updater-server'); ?>');">
+                                        <span class="dashicons dashicons-update"></span>
+                                        <?php _e('Regenerar Key', 'imagina-updater-server'); ?>
+                                    </a>
+                                    <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-api-keys&action=toggle_api_key&id=' . $key->id), 'toggle_api_key_' . $key->id)); ?>">
+                                        <span class="dashicons dashicons-<?php echo $key->is_active ? 'hidden' : 'visibility'; ?>"></span>
+                                        <?php echo $key->is_active ? __('Desactivar', 'imagina-updater-server') : __('Activar', 'imagina-updater-server'); ?>
+                                    </a>
+                                    <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-api-keys&action=delete_api_key&id=' . $key->id), 'delete_api_key_' . $key->id)); ?>" class="action-delete" onclick="return confirm('<?php esc_attr_e('¿Eliminar esta API Key?', 'imagina-updater-server'); ?>');">
+                                        <span class="dashicons dashicons-trash"></span>
+                                        <?php _e('Eliminar', 'imagina-updater-server'); ?>
+                                    </a>
+                                </div>
+                            </div>
                         </td>
                     </tr>
                     <!-- Row expandable para editar permisos -->

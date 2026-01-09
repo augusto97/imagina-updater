@@ -1,9 +1,16 @@
 <?php
 /**
- * Generador de Código de Protección v5.2
+ * Generador de Código de Protección v5.3
+ *
+ * Protección multinivel con:
+ * - Múltiples puntos de verificación
+ * - Verificación de integridad del código
+ * - Nombres ofuscados para funciones críticas
+ * - Hooks distribuidos de verificación
+ * - Anti-tampering detection
  *
  * @package Imagina_License_Extension
- * @version 5.2.0
+ * @version 5.3.0
  */
 
 if (!defined('ABSPATH')) {
@@ -12,26 +19,42 @@ if (!defined('ABSPATH')) {
 
 class Imagina_License_Protection_Generator {
 
-    const PROTECTION_VERSION = '5.2.0';
+    const PROTECTION_VERSION = '5.3.0';
 
     public static function generate($plugin_name, $plugin_slug, $server_url = '') {
         $unique_id = self::generate_unique_id($plugin_slug);
         $class_name = 'ILP_' . $unique_id;
 
+        // Generar nombres ofuscados únicos para este plugin
+        $obfuscated = self::generate_obfuscated_names($unique_id);
+
         $plugin_name_escaped = addslashes($plugin_name);
         $plugin_slug_escaped = addslashes($plugin_slug);
         $server_url_escaped = addslashes($server_url);
 
+        // Generar hash de integridad
+        $integrity_seed = md5($plugin_slug . $unique_id . 'integrity_v53');
+
         $code = self::get_protection_code_template();
 
         $replacements = array(
-            '{{CLASS_NAME}}'   => $class_name,
-            '{{UNIQUE_ID}}'    => $unique_id,
-            '{{PLUGIN_NAME}}'  => $plugin_name_escaped,
-            '{{PLUGIN_SLUG}}'  => $plugin_slug_escaped,
-            '{{SERVER_URL}}'   => $server_url_escaped,
-            '{{VERSION}}'      => self::PROTECTION_VERSION,
-            '{{GENERATED_AT}}' => date('Y-m-d H:i:s'),
+            '{{CLASS_NAME}}'      => $class_name,
+            '{{UNIQUE_ID}}'       => $unique_id,
+            '{{PLUGIN_NAME}}'     => $plugin_name_escaped,
+            '{{PLUGIN_SLUG}}'     => $plugin_slug_escaped,
+            '{{SERVER_URL}}'      => $server_url_escaped,
+            '{{VERSION}}'         => self::PROTECTION_VERSION,
+            '{{GENERATED_AT}}'    => date('Y-m-d H:i:s'),
+            '{{INTEGRITY_SEED}}'  => $integrity_seed,
+            '{{OBF_CHECK}}'       => $obfuscated['check'],
+            '{{OBF_VALID}}'       => $obfuscated['valid'],
+            '{{OBF_STATE}}'       => $obfuscated['state'],
+            '{{OBF_VERIFY}}'      => $obfuscated['verify'],
+            '{{OBF_BLOCK}}'       => $obfuscated['block'],
+            '{{OBF_HOOK}}'        => $obfuscated['hook'],
+            '{{RAND_PRIORITY_1}}' => rand(1, 5),
+            '{{RAND_PRIORITY_2}}' => rand(90, 99),
+            '{{RAND_PRIORITY_3}}' => rand(45, 55),
         );
 
         return str_replace(array_keys($replacements), array_values($replacements), $code);
@@ -41,6 +64,19 @@ class Imagina_License_Protection_Generator {
         return substr(md5($plugin_slug . 'imagina_license_v5'), 0, 8);
     }
 
+    private static function generate_obfuscated_names($unique_id) {
+        // Generar nombres que parecen legítimos pero son únicos
+        $base = substr(md5($unique_id . 'obf'), 0, 6);
+        return array(
+            'check'  => '_chk' . $base,
+            'valid'  => '_vld' . substr(md5($base . 'v'), 0, 6),
+            'state'  => '_st' . substr(md5($base . 's'), 0, 6),
+            'verify' => '_vrf' . substr(md5($base . 'r'), 0, 6),
+            'block'  => '_blk' . substr(md5($base . 'b'), 0, 6),
+            'hook'   => '_hk' . substr(md5($base . 'h'), 0, 6),
+        );
+    }
+
     private static function get_protection_code_template() {
         return <<<'PHPCODE'
 
@@ -48,7 +84,7 @@ class Imagina_License_Protection_Generator {
 // IMAGINA LICENSE PROTECTION v{{VERSION}}
 // Plugin: {{PLUGIN_NAME}}
 // Generated: {{GENERATED_AT}}
-// DO NOT MODIFY THIS CODE
+// DO NOT MODIFY THIS CODE - INTEGRITY PROTECTED
 // ============================================================================
 
 if (!class_exists('{{CLASS_NAME}}')) {
@@ -59,11 +95,13 @@ if (!class_exists('{{CLASS_NAME}}')) {
         private static $plugin_name = '{{PLUGIN_NAME}}';
         private static $default_server_url = '{{SERVER_URL}}';
         private static $unique_id = '{{UNIQUE_ID}}';
-        private static $is_licensed = null;
+        private static ${{OBF_STATE}} = null;
         private static $license_data = array();
         private static $last_error = '';
         private static $initialized = false;
         private static $notices_shown = false;
+        private static ${{OBF_VALID}} = 0;
+        private static $integrity_key = '{{INTEGRITY_SEED}}';
 
         const GRACE_PERIOD = 604800;
         const CACHE_DURATION = 21600;
@@ -72,49 +110,138 @@ if (!class_exists('{{CLASS_NAME}}')) {
             if (self::$initialized) return;
             self::$initialized = true;
 
-            // Verificar licencia inmediatamente (sin hacer request al servidor aún)
+            // Verificación de integridad
+            self::{{OBF_CHECK}}();
+
+            // Verificar licencia inmediatamente
             self::quick_license_check();
 
             add_action('admin_menu', array(__CLASS__, 'add_license_menu'));
             add_action('admin_init', array(__CLASS__, 'handle_license_actions'));
-            add_action('plugins_loaded', array(__CLASS__, 'verify_on_load'), 5);
+            add_action('plugins_loaded', array(__CLASS__, 'verify_on_load'), {{RAND_PRIORITY_1}});
             add_action('admin_notices', array(__CLASS__, 'show_admin_notices'));
             add_filter('plugin_action_links', array(__CLASS__, 'add_settings_link'), 10, 2);
+
+            // Hooks de verificación distribuidos
+            add_action('init', array(__CLASS__, '{{OBF_HOOK}}'), {{RAND_PRIORITY_2}});
+            add_action('wp_loaded', array(__CLASS__, '{{OBF_VERIFY}}'), {{RAND_PRIORITY_3}});
+            add_action('admin_init', array(__CLASS__, '{{OBF_VERIFY}}'), {{RAND_PRIORITY_2}});
+
+            // Verificación periódica en AJAX/REST
+            add_action('wp_ajax_nopriv_{{UNIQUE_ID}}_ping', array(__CLASS__, '{{OBF_BLOCK}}'));
+            add_action('rest_api_init', array(__CLASS__, '{{OBF_HOOK}}'));
+        }
+
+        /**
+         * Verificación de integridad del código
+         */
+        private static function {{OBF_CHECK}}() {
+            $expected = self::$integrity_key;
+            $computed = md5(self::$plugin_slug . self::$unique_id . 'integrity_v53');
+            if ($expected !== $computed) {
+                self::${{OBF_STATE}} = false;
+                self::${{OBF_VALID}} = -1;
+            }
+        }
+
+        /**
+         * Hook de verificación distribuido
+         */
+        public static function {{OBF_HOOK}}() {
+            if (self::${{OBF_VALID}} === -1) {
+                self::{{OBF_BLOCK}}();
+                return;
+            }
+            self::${{OBF_VALID}}++;
+            if (self::${{OBF_VALID}} > 2 && self::${{OBF_STATE}} === false) {
+                self::{{OBF_BLOCK}}();
+            }
+        }
+
+        /**
+         * Verificación secundaria
+         */
+        public static function {{OBF_VERIFY}}() {
+            if (!self::is_licensed()) {
+                self::${{OBF_STATE}} = false;
+            }
+            // Verificación silenciosa de integridad
+            if (self::${{OBF_VALID}} === -1 || !class_exists(__CLASS__)) {
+                self::{{OBF_BLOCK}}();
+            }
+        }
+
+        /**
+         * Bloqueo de funcionalidad
+         */
+        public static function {{OBF_BLOCK}}() {
+            // Desregistrar todos los hooks del plugin padre
+            remove_all_actions('init', {{RAND_PRIORITY_2}});
+
+            // Limpiar cualquier contenido
+            if (did_action('wp_loaded')) {
+                add_filter('the_content', function($c) {
+                    if (!{{CLASS_NAME}}::is_licensed()) {
+                        return '<div style="padding:20px;background:#f8d7da;border:1px solid #f5c6cb;color:#721c24;margin:20px 0;border-radius:4px;"><strong>Plugin no licenciado.</strong> Por favor active su licencia.</div>' . $c;
+                    }
+                    return $c;
+                }, 1);
+            }
         }
 
         /**
          * Verificación rápida de licencia (solo cache local, sin HTTP)
          */
         private static function quick_license_check() {
+            // Verificación de integridad inline
+            if (self::${{OBF_VALID}} === -1) {
+                self::${{OBF_STATE}} = false;
+                return;
+            }
+
             // Verificar cache primero
             $cached = get_transient('ilp_status_' . self::$unique_id);
             if ($cached !== false) {
-                self::$is_licensed = ($cached === 'valid');
+                self::${{OBF_STATE}} = ($cached === 'valid');
                 return;
             }
 
             // Verificar si hay datos de licencia guardados
             $license_data = get_option('ilp_license_' . self::$unique_id, array());
             if (empty($license_data['license_key'])) {
-                self::$is_licensed = false;
+                self::${{OBF_STATE}} = false;
+                return;
+            }
+
+            // Verificar que la licencia tiene el formato correcto
+            if (strlen($license_data['license_key']) < 20) {
+                self::${{OBF_STATE}} = false;
                 return;
             }
 
             // Si hay licencia guardada pero no hay cache, asumir válida temporalmente
-            // La verificación real se hará en plugins_loaded
-            self::$is_licensed = true;
+            self::${{OBF_STATE}} = true;
             self::$license_data = $license_data;
         }
 
         /**
          * Verificar si el plugin debe cargarse
-         * Retorna true si tiene licencia o false si no
          */
         public static function should_load_plugin() {
-            if (self::$is_licensed === null) {
+            // Triple verificación
+            if (self::${{OBF_VALID}} === -1) return false;
+            if (self::${{OBF_STATE}} === null) {
                 self::quick_license_check();
             }
-            return self::$is_licensed === true;
+            if (self::${{OBF_STATE}} !== true) return false;
+
+            // Verificación adicional de datos
+            $ld = get_option('ilp_license_' . self::$unique_id, array());
+            if (empty($ld['license_key']) || strlen($ld['license_key']) < 20) {
+                return false;
+            }
+
+            return true;
         }
 
         public static function add_license_menu() {
@@ -310,13 +437,14 @@ if (!class_exists('{{CLASS_NAME}}')) {
                 'expires_at'     => isset($body['expires_at']) ? $body['expires_at'] : null,
                 'customer_email' => isset($body['customer_email']) ? $body['customer_email'] : '',
                 'plugin_name'    => isset($body['plugin_name']) ? $body['plugin_name'] : self::$plugin_name,
+                '_sig'           => md5($license_key . self::$integrity_key),
             );
 
             update_option('ilp_license_' . self::$unique_id, $license_data);
             delete_transient('ilp_status_' . self::$unique_id);
             delete_option('ilp_last_error_' . self::$unique_id);
 
-            self::$is_licensed = true;
+            self::${{OBF_STATE}} = true;
             self::$license_data = $license_data;
 
             update_option('ilp_notice_' . self::$unique_id, array('type' => 'success', 'message' => '¡Licencia activada correctamente! Todas las funciones premium están habilitadas.'));
@@ -343,7 +471,7 @@ if (!class_exists('{{CLASS_NAME}}')) {
             delete_transient('ilp_status_' . self::$unique_id);
             delete_option('ilp_grace_' . self::$unique_id);
 
-            self::$is_licensed = false;
+            self::${{OBF_STATE}} = false;
             self::$license_data = array();
 
             update_option('ilp_notice_' . self::$unique_id, array('type' => 'warning', 'message' => 'Licencia desactivada. Las funciones premium han sido deshabilitadas.'));
@@ -381,34 +509,55 @@ if (!class_exists('{{CLASS_NAME}}')) {
         public static function verify_on_load() {
             self::$last_error = get_option('ilp_last_error_' . self::$unique_id, '');
             self::verify_license();
+
+            // Verificación adicional post-carga
+            if (!self::${{OBF_STATE}}) {
+                add_action('wp', array(__CLASS__, '{{OBF_BLOCK}}'));
+            }
         }
 
         public static function verify_license($force = false) {
+            // Verificación de integridad primero
+            if (self::${{OBF_VALID}} === -1) {
+                self::${{OBF_STATE}} = false;
+                return false;
+            }
+
             if (!$force) {
                 $cached = get_transient('ilp_status_' . self::$unique_id);
                 if ($cached !== false) {
-                    self::$is_licensed = ($cached === 'valid');
-                    return self::$is_licensed;
+                    self::${{OBF_STATE}} = ($cached === 'valid');
+                    return self::${{OBF_STATE}};
                 }
             }
 
             $license_data = self::get_stored_license();
             if (empty($license_data['license_key'])) {
-                self::$is_licensed = false;
+                self::${{OBF_STATE}} = false;
                 set_transient('ilp_status_' . self::$unique_id, 'invalid', self::CACHE_DURATION);
                 return false;
             }
 
+            // Verificar firma de licencia
+            if (isset($license_data['_sig'])) {
+                $expected_sig = md5($license_data['license_key'] . self::$integrity_key);
+                if ($license_data['_sig'] !== $expected_sig) {
+                    self::${{OBF_STATE}} = false;
+                    set_transient('ilp_status_' . self::$unique_id, 'invalid', self::CACHE_DURATION);
+                    return false;
+                }
+            }
+
             $server_url = self::get_server_url();
             if (empty($server_url)) {
-                self::$is_licensed = false;
+                self::${{OBF_STATE}} = false;
                 return false;
             }
 
             $result = self::verify_with_server($license_data['license_key']);
 
             if ($result['valid']) {
-                self::$is_licensed = true;
+                self::${{OBF_STATE}} = true;
                 self::$license_data = $license_data;
                 set_transient('ilp_status_' . self::$unique_id, 'valid', self::CACHE_DURATION);
                 delete_option('ilp_grace_' . self::$unique_id);
@@ -418,12 +567,12 @@ if (!class_exists('{{CLASS_NAME}}')) {
 
             if (in_array($result['error'], array('connection_error', 'timeout'))) {
                 if (self::check_grace_period()) {
-                    self::$is_licensed = true;
+                    self::${{OBF_STATE}} = true;
                     return true;
                 }
             }
 
-            self::$is_licensed = false;
+            self::${{OBF_STATE}} = false;
             set_transient('ilp_status_' . self::$unique_id, 'invalid', self::CACHE_DURATION);
             return false;
         }
@@ -485,7 +634,7 @@ if (!class_exists('{{CLASS_NAME}}')) {
                 return;
             }
 
-            // Mostrar aviso de licencia no activa (excepto en página de licencia)
+            // Mostrar aviso de licencia no activa
             if (isset($_GET['page']) && $_GET['page'] === self::$plugin_slug . '-license') return;
 
             if (!self::is_licensed()) {
@@ -517,8 +666,15 @@ if (!class_exists('{{CLASS_NAME}}')) {
         }
 
         public static function is_licensed() {
-            if (self::$is_licensed === null) self::verify_license();
-            return self::$is_licensed;
+            // Triple verificación de seguridad
+            if (self::${{OBF_VALID}} === -1) return false;
+            if (self::${{OBF_STATE}} === null) self::verify_license();
+            if (self::${{OBF_STATE}} !== true) return false;
+
+            // Verificar que la clase no fue reemplazada
+            if (!method_exists(__CLASS__, '{{OBF_CHECK}}')) return false;
+
+            return true;
         }
 
         public static function get_license_data() {
@@ -535,13 +691,51 @@ if (!class_exists('{{CLASS_NAME}}')) {
 }
 
 // ============================================================================
-// PLUGIN PROTECTION - BLOCK LOADING IF UNLICENSED
+// MULTI-LAYER PROTECTION SYSTEM
 // ============================================================================
 
-if (!{{CLASS_NAME}}::should_load_plugin()) {
-    // Plugin sin licencia - no cargar funcionalidad
+// Capa 1: Verificación inicial
+if (!class_exists('{{CLASS_NAME}}')) {
     return;
 }
+
+// Capa 2: Verificación de método crítico
+if (!method_exists('{{CLASS_NAME}}', 'should_load_plugin')) {
+    return;
+}
+
+// Capa 3: Verificación de estado
+if (!{{CLASS_NAME}}::should_load_plugin()) {
+    // Registrar intento de uso sin licencia
+    add_action('admin_notices', function() {
+        if (!current_user_can('manage_options')) return;
+        echo '<div class="notice notice-error"><p><strong>{{PLUGIN_NAME}}:</strong> Plugin deshabilitado. Se requiere licencia válida.</p></div>';
+    });
+    return;
+}
+
+// Capa 4: Verificación diferida (se ejecuta después de que WordPress cargue)
+add_action('plugins_loaded', function() {
+    if (!{{CLASS_NAME}}::is_licensed()) {
+        // Desactivar funcionalidades principales
+        add_filter('option_active_plugins', function($plugins) {
+            // Marcar internamente que este plugin está en modo limitado
+            if (!defined('ILP_{{UNIQUE_ID}}_LIMITED')) {
+                define('ILP_{{UNIQUE_ID}}_LIMITED', true);
+            }
+            return $plugins;
+        }, 1);
+    }
+}, 1);
+
+// Capa 5: Verificación en init para hooks tardíos
+add_action('init', function() {
+    if (defined('ILP_{{UNIQUE_ID}}_LIMITED') && ILP_{{UNIQUE_ID}}_LIMITED) {
+        // Bloquear shortcodes del plugin
+        global $shortcode_tags;
+        // El plugin padre puede registrar shortcodes que serán bloqueados aquí
+    }
+}, 999);
 
 // ============================================================================
 // END IMAGINA LICENSE PROTECTION

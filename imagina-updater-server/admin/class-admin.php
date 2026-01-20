@@ -524,6 +524,27 @@ jQuery(document).ready(function($) {
             add_settings_error('imagina_updater', 'permissions_success', __('Permisos actualizados', 'imagina-updater-server'), 'success');
         }
 
+        // Detectar si hubo un intento de subida que falló por límites de PHP
+        // Cuando el archivo excede post_max_size, PHP descarta TODO el POST silenciosamente
+        if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST' &&
+            isset($_SERVER['CONTENT_LENGTH']) && empty($_POST) && empty($_FILES)) {
+
+            $post_max = $this->return_bytes(ini_get('post_max_size'));
+            $content_length = (int) $_SERVER['CONTENT_LENGTH'];
+
+            if ($content_length > $post_max) {
+                add_settings_error('imagina_updater', 'upload_size_exceeded',
+                    sprintf(
+                        __('Error: El archivo que intentaste subir (%s) excede el límite permitido por el servidor (%s). Contacta a tu proveedor de hosting para aumentar el valor de post_max_size en PHP.', 'imagina-updater-server'),
+                        size_format($content_length),
+                        size_format($post_max)
+                    ),
+                    'error'
+                );
+                imagina_updater_server_log(sprintf('Subida rechazada: archivo de %s excede post_max_size de %s', size_format($content_length), size_format($post_max)), 'warning');
+            }
+        }
+
         // Subir plugin
         if (isset($_POST['imagina_upload_plugin'])) {
             // Verificar nonce con mejor manejo de errores
@@ -1078,5 +1099,28 @@ jQuery(document).ready(function($) {
         header('Content-Length: ' . filesize($log_file));
         readfile($log_file);
         exit;
+    }
+
+    /**
+     * Convertir valores de PHP ini (como "8M", "128K") a bytes
+     *
+     * @param string $val Valor de PHP ini
+     * @return int Valor en bytes
+     */
+    private function return_bytes($val) {
+        $val = trim($val);
+        $last = strtolower($val[strlen($val) - 1]);
+        $val = (int) $val;
+
+        switch ($last) {
+            case 'g':
+                $val *= 1024;
+            case 'm':
+                $val *= 1024;
+            case 'k':
+                $val *= 1024;
+        }
+
+        return $val;
     }
 }

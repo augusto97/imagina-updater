@@ -28,6 +28,12 @@ if (!defined('ABSPATH')) {
                         <input type="file" name="plugin_file" id="plugin_file" accept=".zip" required>
                         <p class="description">
                             <?php _e('Sube el archivo ZIP del plugin. Si el plugin ya existe, se actualizará a la nueva versión.', 'imagina-updater-server'); ?>
+                            <br>
+                            <strong><?php _e('Tamaño máximo:', 'imagina-updater-server'); ?></strong>
+                            <?php echo esc_html(min((int)ini_get('upload_max_filesize'), (int)ini_get('post_max_size'))); ?>
+                            <span style="color: #646970; font-size: 11px;">
+                                (upload_max_filesize: <?php echo esc_html(ini_get('upload_max_filesize')); ?>, post_max_size: <?php echo esc_html(ini_get('post_max_size')); ?>)
+                            </span>
                         </p>
                     </td>
                 </tr>

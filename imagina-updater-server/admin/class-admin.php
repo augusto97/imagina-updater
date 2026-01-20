@@ -526,6 +526,22 @@ jQuery(document).ready(function($) {
 
         // Subir plugin
         if (isset($_POST['imagina_upload_plugin'])) {
+            // DEBUG: Log para verificar que el código se ejecuta
+            error_log('IMAGINA DEBUG: Formulario de subida recibido');
+            imagina_updater_server_log('DEBUG: Iniciando proceso de subida de plugin', 'info');
+
+            // DEBUG: Verificar si $_FILES está vacío
+            if (empty($_FILES) || !isset($_FILES['plugin_file'])) {
+                error_log('IMAGINA DEBUG: $_FILES está vacío o plugin_file no existe. post_max_size podría ser muy pequeño.');
+                imagina_updater_server_log('DEBUG: $_FILES vacío - posible problema de post_max_size', 'error');
+                add_settings_error('imagina_updater', 'debug_files_empty',
+                    'DEBUG: $_FILES está vacío. Verifica que post_max_size (' . ini_get('post_max_size') . ') y upload_max_filesize (' . ini_get('upload_max_filesize') . ') son suficientes para tu archivo.',
+                    'error'
+                );
+            } else {
+                imagina_updater_server_log('DEBUG: $_FILES = ' . print_r($_FILES, true), 'info');
+            }
+
             // Verificar nonce con mejor manejo de errores
             if (!check_admin_referer('imagina_upload_plugin', '_wpnonce', false)) {
                 imagina_updater_server_log('Error de seguridad: Nonce inválido al subir plugin', 'warning');
@@ -535,6 +551,8 @@ jQuery(document).ready(function($) {
                 );
                 return;
             }
+
+            imagina_updater_server_log('DEBUG: Nonce válido, continuando...', 'info');
 
             // Verificar que se subió un archivo
             if (!isset($_FILES['plugin_file']) || $_FILES['plugin_file']['error'] !== UPLOAD_ERR_OK) {

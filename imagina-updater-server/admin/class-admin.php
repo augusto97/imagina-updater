@@ -524,24 +524,29 @@ jQuery(document).ready(function($) {
             add_settings_error('imagina_updater', 'permissions_success', __('Permisos actualizados', 'imagina-updater-server'), 'success');
         }
 
-        // Subir plugin
-        if (isset($_POST['imagina_upload_plugin'])) {
-            // DEBUG: Log para verificar que el código se ejecuta
-            error_log('IMAGINA DEBUG: Formulario de subida recibido');
-            imagina_updater_server_log('DEBUG: Iniciando proceso de subida de plugin', 'info');
+        // Detectar si hubo un intento de subida que falló por límites de PHP
+        // Cuando el archivo excede post_max_size, PHP descarta TODO el POST silenciosamente
+        if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST' &&
+            isset($_SERVER['CONTENT_LENGTH']) && empty($_POST) && empty($_FILES)) {
 
-            // DEBUG: Verificar si $_FILES está vacío
-            if (empty($_FILES) || !isset($_FILES['plugin_file'])) {
-                error_log('IMAGINA DEBUG: $_FILES está vacío o plugin_file no existe. post_max_size podría ser muy pequeño.');
-                imagina_updater_server_log('DEBUG: $_FILES vacío - posible problema de post_max_size', 'error');
-                add_settings_error('imagina_updater', 'debug_files_empty',
-                    'DEBUG: $_FILES está vacío. Verifica que post_max_size (' . ini_get('post_max_size') . ') y upload_max_filesize (' . ini_get('upload_max_filesize') . ') son suficientes para tu archivo.',
+            $post_max = $this->return_bytes(ini_get('post_max_size'));
+            $content_length = (int) $_SERVER['CONTENT_LENGTH'];
+
+            if ($content_length > $post_max) {
+                add_settings_error('imagina_updater', 'upload_size_exceeded',
+                    sprintf(
+                        __('Error: El archivo que intentaste subir (%s) excede el límite permitido por el servidor (%s). Contacta a tu proveedor de hosting para aumentar el valor de post_max_size en PHP.', 'imagina-updater-server'),
+                        size_format($content_length),
+                        size_format($post_max)
+                    ),
                     'error'
                 );
-            } else {
-                imagina_updater_server_log('DEBUG: $_FILES = ' . print_r($_FILES, true), 'info');
+                imagina_updater_server_log(sprintf('Subida rechazada: archivo de %s excede post_max_size de %s', size_format($content_length), size_format($post_max)), 'warning');
             }
+        }
 
+        // Subir plugin
+        if (isset($_POST['imagina_upload_plugin'])) {
             // Verificar nonce con mejor manejo de errores
             if (!check_admin_referer('imagina_upload_plugin', '_wpnonce', false)) {
                 imagina_updater_server_log('Error de seguridad: Nonce inválido al subir plugin', 'warning');
@@ -551,8 +556,6 @@ jQuery(document).ready(function($) {
                 );
                 return;
             }
-
-            imagina_updater_server_log('DEBUG: Nonce válido, continuando...', 'info');
 
             // Verificar que se subió un archivo
             if (!isset($_FILES['plugin_file']) || $_FILES['plugin_file']['error'] !== UPLOAD_ERR_OK) {
@@ -1096,5 +1099,28 @@ jQuery(document).ready(function($) {
         header('Content-Length: ' . filesize($log_file));
         readfile($log_file);
         exit;
+    }
+
+    /**
+     * Convertir valores de PHP ini (como "8M", "128K") a bytes
+     *
+     * @param string $val Valor de PHP ini
+     * @return int Valor en bytes
+     */
+    private function return_bytes($val) {
+        $val = trim($val);
+        $last = strtolower($val[strlen($val) - 1]);
+        $val = (int) $val;
+
+        switch ($last) {
+            case 'g':
+                $val *= 1024;
+            case 'm':
+                $val *= 1024;
+            case 'k':
+                $val *= 1024;
+        }
+
+        return $val;
     }
 }

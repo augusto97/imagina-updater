@@ -712,7 +712,7 @@ jQuery(document).ready(function($) {
                 ob_end_clean();
             }
 
-            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_readfile -- Using for file download to browser
+            // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Binary file content for download
             echo $wp_filesystem->get_contents($plugin->file_path);
             exit;
         }
@@ -961,13 +961,11 @@ jQuery(document).ready(function($) {
     private function get_plugin_groups($plugin_id) {
         global $wpdb;
 
-        $table_items = $wpdb->prefix . 'imagina_updater_plugin_group_items';
-        $table_groups = $wpdb->prefix . 'imagina_updater_plugin_groups';
-
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom tables require direct query
         return $wpdb->get_results($wpdb->prepare(
             "SELECT g.*
-            FROM $table_groups g
-            INNER JOIN $table_items gi ON g.id = gi.group_id
+            FROM {$wpdb->prefix}imagina_updater_plugin_groups g
+            INNER JOIN {$wpdb->prefix}imagina_updater_plugin_group_items gi ON g.id = gi.group_id
             WHERE gi.plugin_id = %d
             ORDER BY g.name ASC",
             $plugin_id
@@ -1049,21 +1047,26 @@ jQuery(document).ready(function($) {
         // Filtrar por API key si se especifica
         $api_key_id = isset($_GET['api_key_id']) ? intval($_GET['api_key_id']) : null;
 
-        // Obtener todas las activaciones con información de API key
-        $table_activations = $wpdb->prefix . 'imagina_updater_activations';
-        $table_api_keys = $wpdb->prefix . 'imagina_updater_api_keys';
-
-        $query = "SELECT a.*, k.site_name, k.api_key
-                  FROM $table_activations a
-                  INNER JOIN $table_api_keys k ON a.api_key_id = k.id";
-
+        // Construir query con prepared statements
         if ($api_key_id) {
-            $query .= $wpdb->prepare(" WHERE a.api_key_id = %d", $api_key_id);
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom tables require direct query
+            $activations = $wpdb->get_results($wpdb->prepare(
+                "SELECT a.*, k.site_name, k.api_key
+                FROM {$wpdb->prefix}imagina_updater_activations a
+                INNER JOIN {$wpdb->prefix}imagina_updater_api_keys k ON a.api_key_id = k.id
+                WHERE a.api_key_id = %d
+                ORDER BY a.is_active DESC, a.activated_at DESC",
+                $api_key_id
+            ));
+        } else {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom tables require direct query
+            $activations = $wpdb->get_results(
+                "SELECT a.*, k.site_name, k.api_key
+                FROM {$wpdb->prefix}imagina_updater_activations a
+                INNER JOIN {$wpdb->prefix}imagina_updater_api_keys k ON a.api_key_id = k.id
+                ORDER BY a.is_active DESC, a.activated_at DESC"
+            );
         }
-
-        $query .= " ORDER BY a.is_active DESC, a.activated_at DESC";
-
-        $activations = $wpdb->get_results($query);
 
         // Obtener todas las API keys para el filtro
         $api_keys = Imagina_Updater_Server_API_Keys::get_all();
@@ -1116,7 +1119,7 @@ jQuery(document).ready(function($) {
         header('Content-Disposition: attachment; filename="imagina-updater-server-' . gmdate('Y-m-d-His') . '.log"');
         header('Content-Length: ' . filesize($log_file));
 
-        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_readfile -- Using for file download to browser
+        // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Text file content for download
         echo $wp_filesystem->get_contents($log_file);
         exit;
     }

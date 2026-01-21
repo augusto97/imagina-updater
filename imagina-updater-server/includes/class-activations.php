@@ -136,9 +136,10 @@ class Imagina_Updater_Server_Activations {
         $table = $wpdb->prefix . 'imagina_updater_activations';
         $site_domain = self::normalize_domain($site_domain);
 
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom tables require direct query
         $activation = $wpdb->get_row($wpdb->prepare(
             "SELECT a.*, k.api_key, k.is_active as api_key_active
-             FROM $table a
+             FROM {$wpdb->prefix}imagina_updater_activations a
              INNER JOIN {$wpdb->prefix}imagina_updater_api_keys k ON a.api_key_id = k.id
              WHERE a.activation_token = %s AND a.is_active = 1",
             $activation_token
@@ -222,12 +223,12 @@ class Imagina_Updater_Server_Activations {
     public static function deactivate_by_token($activation_token, $site_domain) {
         global $wpdb;
 
-        $table = $wpdb->prefix . 'imagina_updater_activations';
         $site_domain = self::normalize_domain($site_domain);
 
         // Buscar la activación
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom tables require direct query
         $activation = $wpdb->get_row($wpdb->prepare(
-            "SELECT id, api_key_id FROM $table WHERE activation_token = %s AND site_domain = %s AND is_active = 1",
+            "SELECT id, api_key_id FROM {$wpdb->prefix}imagina_updater_activations WHERE activation_token = %s AND site_domain = %s AND is_active = 1",
             $activation_token,
             $site_domain
         ));
@@ -237,8 +238,9 @@ class Imagina_Updater_Server_Activations {
         }
 
         // Eliminar registro
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom table delete
         $result = $wpdb->delete(
-            $table,
+            $wpdb->prefix . 'imagina_updater_activations',
             array('id' => $activation->id),
             array('%d')
         );

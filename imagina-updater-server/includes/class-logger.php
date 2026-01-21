@@ -172,6 +172,13 @@ class Imagina_Updater_Server_Logger {
             return;
         }
 
+        // Inicializar WP_Filesystem
+        global $wp_filesystem;
+        if (empty($wp_filesystem)) {
+            require_once ABSPATH . '/wp-admin/includes/file.php';
+            WP_Filesystem();
+        }
+
         // Rotar archivos existentes
         for ($i = $this->max_files - 1; $i > 0; $i--) {
             $old_file = $this->log_file . '.' . $i;
@@ -180,16 +187,16 @@ class Imagina_Updater_Server_Logger {
             if (file_exists($old_file)) {
                 if ($i === $this->max_files - 1) {
                     // Eliminar el archivo más antiguo
-                    unlink($old_file);
+                    wp_delete_file($old_file);
                 } else {
                     // Renombrar archivo
-                    rename($old_file, $new_file);
+                    $wp_filesystem->move($old_file, $new_file);
                 }
             }
         }
 
         // Rotar archivo actual
-        rename($this->log_file, $this->log_file . '.1');
+        $wp_filesystem->move($this->log_file, $this->log_file . '.1');
     }
 
     /**
@@ -257,14 +264,14 @@ class Imagina_Updater_Server_Logger {
      */
     public function clear_logs() {
         if (file_exists($this->log_file)) {
-            unlink($this->log_file);
+            wp_delete_file($this->log_file);
         }
 
         // También limpiar archivos rotados
         for ($i = 1; $i <= $this->max_files; $i++) {
             $rotated_file = $this->log_file . '.' . $i;
             if (file_exists($rotated_file)) {
-                unlink($rotated_file);
+                wp_delete_file($rotated_file);
             }
         }
     }

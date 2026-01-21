@@ -151,7 +151,23 @@ location ~ ^/wp-content/uploads/imagina-updater-plugins/.*\\.zip$ {
         $filename = sanitize_file_name($plugin_data['slug'] . '-' . $plugin_data['version'] . '.zip');
         $file_path = $upload_dir . '/' . $filename;
 
-        if (!move_uploaded_file($file['tmp_name'], $file_path)) {
+        // Usar wp_handle_upload para mover el archivo de forma segura
+        $upload_overrides = array(
+            'test_form' => false,
+            'unique_filename_callback' => function ($dir, $name, $ext) use ($filename) {
+                return $filename;
+            },
+        );
+
+        // Mover archivo usando la función de WordPress
+        global $wp_filesystem;
+        if (empty($wp_filesystem)) {
+            require_once ABSPATH . '/wp-admin/includes/file.php';
+            WP_Filesystem();
+        }
+
+        // Copiar el archivo temporal al destino
+        if (!copy($file['tmp_name'], $file_path)) {
             $error_msg = error_get_last();
             return new WP_Error('upload_failed', __('Error al mover el archivo', 'imagina-updater-server') . ': ' . ($error_msg['message'] ?? 'Desconocido'));
         }
@@ -185,9 +201,7 @@ location ~ ^/wp-content/uploads/imagina-updater-plugins/.*\\.zip$ {
             if ($existing) {
                 // Verificar si la versión es más nueva
                 if (version_compare($plugin_data['version'], $existing->current_version, '<=')) {
-                    if (!unlink($file_path)) {
-                        error_log('IMAGINA UPDATER SERVER: No se pudo eliminar archivo: ' . $file_path);
-                    }
+                    wp_delete_file($file_path);
                     throw new Exception(__('La versión debe ser mayor a la actual', 'imagina-updater-server'));
                 }
 
@@ -302,9 +316,7 @@ location ~ ^/wp-content/uploads/imagina-updater-plugins/.*\\.zip$ {
 
             // Limpiar archivo si existe
             if (file_exists($file_path)) {
-                if (!unlink($file_path)) {
-                    error_log('IMAGINA UPDATER SERVER: No se pudo eliminar archivo tras error: ' . $file_path);
-                }
+                wp_delete_file($file_path);
             }
 
             return new WP_Error('transaction_failed', $e->getMessage());
@@ -552,18 +564,14 @@ location ~ ^/wp-content/uploads/imagina-updater-plugins/.*\\.zip$ {
 
         // Eliminar archivo actual
         if (file_exists($plugin->file_path)) {
-            if (!unlink($plugin->file_path)) {
-                error_log('IMAGINA UPDATER SERVER: No se pudo eliminar archivo actual: ' . $plugin->file_path);
-            }
+            wp_delete_file($plugin->file_path);
         }
 
         // Obtener y eliminar archivos de versiones antiguas
         $versions = self::get_version_history($plugin_id);
         foreach ($versions as $version) {
             if (file_exists($version->file_path)) {
-                if (!unlink($version->file_path)) {
-                    error_log('IMAGINA UPDATER SERVER: No se pudo eliminar versión antigua: ' . $version->file_path);
-                }
+                wp_delete_file($version->file_path);
             }
         }
 

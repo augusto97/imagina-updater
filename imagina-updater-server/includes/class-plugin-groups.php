@@ -191,13 +191,11 @@ class Imagina_Updater_Server_Plugin_Groups {
     public static function get_group_plugins($group_id) {
         global $wpdb;
 
-        $table_items = $wpdb->prefix . 'imagina_updater_plugin_group_items';
-        $table_plugins = $wpdb->prefix . 'imagina_updater_plugins';
-
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom tables require direct query
         return $wpdb->get_results($wpdb->prepare(
             "SELECT p.*
-            FROM $table_plugins p
-            INNER JOIN $table_items gi ON p.id = gi.plugin_id
+            FROM {$wpdb->prefix}imagina_updater_plugins p
+            INNER JOIN {$wpdb->prefix}imagina_updater_plugin_group_items gi ON p.id = gi.plugin_id
             WHERE gi.group_id = %d
             ORDER BY p.name ASC",
             $group_id

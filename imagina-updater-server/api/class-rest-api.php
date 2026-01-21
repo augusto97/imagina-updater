@@ -780,7 +780,7 @@ class Imagina_Updater_Server_REST_API {
         header('Pragma: no-cache');
         header('Expires: 0');
 
-        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_readfile -- Serving file download to browser
+        // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Binary file content for download
         echo $wp_filesystem->get_contents($plugin->file_path);
         exit;
     }

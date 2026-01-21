@@ -187,7 +187,7 @@ if (!defined('ABSPATH')) {
                             <a href="#" class="edit-slug-link" data-plugin-id="<?php echo esc_attr($plugin->id); ?>" data-current-slug="<?php echo esc_attr($effective_slug); ?>" style="font-size: 11px;">
                                 <?php esc_html_e('editar', 'imagina-updater-server'); ?>
                             </a>
-                            <div class="slug-edit-form" id="slug-edit-<?php echo $plugin->id; ?>" style="display:none; margin-top:5px;">
+                            <div class="slug-edit-form" id="slug-edit-<?php echo esc_attr($plugin->id); ?>" style="display:none; margin-top:5px;">
                                 <form method="post" style="display:inline;">
                                     <?php wp_nonce_field('update_slug_' . $plugin->id); ?>
                                     <input type="hidden" name="plugin_id" value="<?php echo esc_attr($plugin->id); ?>">

@@ -124,7 +124,7 @@ if (!defined('ABSPATH')) {
                                         <?php $count = Imagina_Updater_Server_Plugin_Groups::get_group_plugin_count($group->id); ?>
                                         <label style="display: block; margin-bottom: 5px;">
                                             <input type="checkbox" name="allowed_groups[]" value="<?php echo esc_attr($group->id); ?>">
-                                            <?php echo esc_html($group->name); ?> <span class="description">(<?php echo $count; ?> plugins)</span>
+                                            <?php echo esc_html($group->name); ?> <span class="description">(<?php echo intval($count); ?> plugins)</span>
                                         </label>
                                     <?php endforeach; ?>
                                 <?php endif; ?>
@@ -224,11 +224,13 @@ if (!defined('ABSPATH')) {
                     } elseif ($access_type === 'specific' && !empty($key->allowed_plugins)) {
                         $allowed_ids = json_decode($key->allowed_plugins, true);
                         $count = is_array($allowed_ids) ? count($allowed_ids) : 0;
+                        /* translators: %d: number of plugins */
                         $permission_text = sprintf(_n('%d plugin', '%d plugins', $count, 'imagina-updater-server'), $count);
                         $permission_detail = __('Específicos', 'imagina-updater-server');
                     } elseif ($access_type === 'groups' && !empty($key->allowed_groups)) {
                         $allowed_group_ids = json_decode($key->allowed_groups, true);
                         $count = is_array($allowed_group_ids) ? count($allowed_group_ids) : 0;
+                        /* translators: %d: number of groups */
                         $permission_text = sprintf(_n('%d grupo', '%d grupos', $count, 'imagina-updater-server'), $count);
                         $permission_detail = __('Por grupos', 'imagina-updater-server');
                     } else {
@@ -351,7 +353,7 @@ if (!defined('ABSPATH')) {
                                                             <?php $count = Imagina_Updater_Server_Plugin_Groups::get_group_plugin_count($group->id); ?>
                                                             <label style="display: block; margin-bottom: 5px;">
                                                                 <input type="checkbox" name="allowed_groups[]" value="<?php echo esc_attr($group->id); ?>" <?php checked(in_array($group->id, $current_allowed_groups)); ?>>
-                                                                <?php echo esc_html($group->name); ?> <span class="description">(<?php echo $count; ?> plugins)</span>
+                                                                <?php echo esc_html($group->name); ?> <span class="description">(<?php echo intval($count); ?> plugins)</span>
                                                             </label>
                                                         <?php endforeach; ?>
                                                     <?php endif; ?>

@@ -218,7 +218,7 @@ if (!defined('ABSPATH')) {
                         </td>
                         <td style="font-size: 12px;"><?php echo esc_html($plugin->author); ?></td>
                         <td style="font-size: 11px;"><?php echo esc_html(mysql2date('d/m/Y', $plugin->uploaded_at)); ?></td>
-                        <td style="font-size: 11px;"><?php echo size_format($plugin->file_size); ?></td>
+                        <td style="font-size: 11px;"><?php echo esc_html(size_format($plugin->file_size)); ?></td>
                         <?php do_action('imagina_updater_plugins_table_row', $plugin); ?>
                         <td>
                             <div class="imagina-actions-dropdown">

@@ -765,6 +765,13 @@ class Imagina_Updater_Server_REST_API {
             ob_end_clean();
         }
 
+        // Usar WP_Filesystem para leer el archivo
+        global $wp_filesystem;
+        if (empty($wp_filesystem)) {
+            require_once ABSPATH . '/wp-admin/includes/file.php';
+            WP_Filesystem();
+        }
+
         // Enviar archivo
         header('Content-Type: application/zip');
         header('Content-Disposition: attachment; filename="' . basename($plugin->file_path) . '"');
@@ -773,7 +780,8 @@ class Imagina_Updater_Server_REST_API {
         header('Pragma: no-cache');
         header('Expires: 0');
 
-        readfile($plugin->file_path);
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_readfile -- Serving file download to browser
+        echo $wp_filesystem->get_contents($plugin->file_path);
         exit;
     }
 

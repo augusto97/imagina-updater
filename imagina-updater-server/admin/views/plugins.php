@@ -9,12 +9,12 @@ if (!defined('ABSPATH')) {
 ?>
 
 <div class="wrap">
-    <h1><?php _e('Gestión de Plugins', 'imagina-updater-server'); ?></h1>
+    <h1><?php esc_html_e('Gestión de Plugins', 'imagina-updater-server'); ?></h1>
 
     <?php settings_errors('imagina_updater', false); ?>
 
     <div class="imagina-upload-section">
-        <h2><?php _e('Subir Nuevo Plugin o Actualización', 'imagina-updater-server'); ?></h2>
+        <h2><?php esc_html_e('Subir Nuevo Plugin o Actualización', 'imagina-updater-server'); ?></h2>
 
         <form method="post" enctype="multipart/form-data" class="imagina-upload-form">
             <?php wp_nonce_field('imagina_upload_plugin'); ?>
@@ -22,14 +22,14 @@ if (!defined('ABSPATH')) {
             <table class="form-table">
                 <tr>
                     <th scope="row">
-                        <label for="plugin_file"><?php _e('Archivo ZIP del Plugin', 'imagina-updater-server'); ?></label>
+                        <label for="plugin_file"><?php esc_html_e('Archivo ZIP del Plugin', 'imagina-updater-server'); ?></label>
                     </th>
                     <td>
                         <input type="file" name="plugin_file" id="plugin_file" accept=".zip" required>
                         <p class="description">
-                            <?php _e('Sube el archivo ZIP del plugin. Si el plugin ya existe, se actualizará a la nueva versión.', 'imagina-updater-server'); ?>
+                            <?php esc_html_e('Sube el archivo ZIP del plugin. Si el plugin ya existe, se actualizará a la nueva versión.', 'imagina-updater-server'); ?>
                             <br>
-                            <strong><?php _e('Tamaño máximo:', 'imagina-updater-server'); ?></strong>
+                            <strong><?php esc_html_e('Tamaño máximo:', 'imagina-updater-server'); ?></strong>
                             <?php echo esc_html(min((int)ini_get('upload_max_filesize'), (int)ini_get('post_max_size'))); ?>
                             <span style="color: #646970; font-size: 11px;">
                                 (upload_max_filesize: <?php echo esc_html(ini_get('upload_max_filesize')); ?>, post_max_size: <?php echo esc_html(ini_get('post_max_size')); ?>)
@@ -40,26 +40,26 @@ if (!defined('ABSPATH')) {
 
                 <tr>
                     <th scope="row">
-                        <label for="changelog"><?php _e('Notas de la Versión (Opcional)', 'imagina-updater-server'); ?></label>
+                        <label for="changelog"><?php esc_html_e('Notas de la Versión (Opcional)', 'imagina-updater-server'); ?></label>
                     </th>
                     <td>
                         <textarea name="changelog" id="changelog" rows="5" class="large-text" placeholder="<?php esc_attr_e('Describe los cambios en esta versión...', 'imagina-updater-server'); ?>"></textarea>
                         <p class="description">
-                            <?php _e('Changelog o notas de la versión que se mostrarán a los clientes.', 'imagina-updater-server'); ?>
+                            <?php esc_html_e('Changelog o notas de la versión que se mostrarán a los clientes.', 'imagina-updater-server'); ?>
                         </p>
                     </td>
                 </tr>
 
                 <tr>
                     <th scope="row">
-                        <label for="plugin_groups"><?php _e('Categoría / Grupo (Opcional)', 'imagina-updater-server'); ?></label>
+                        <label for="plugin_groups"><?php esc_html_e('Categoría / Grupo (Opcional)', 'imagina-updater-server'); ?></label>
                     </th>
                     <td>
                         <?php if (empty($all_groups)): ?>
                             <p class="description">
-                                <?php _e('No hay grupos creados. ', 'imagina-updater-server'); ?>
-                                <a href="<?php echo admin_url('admin.php?page=imagina-updater-plugin-groups&action=new'); ?>" target="_blank">
-                                    <?php _e('Crear primer grupo', 'imagina-updater-server'); ?>
+                                <?php esc_html_e('No hay grupos creados. ', 'imagina-updater-server'); ?>
+                                <a href="<?php echo esc_url(admin_url('admin.php?page=imagina-updater-plugin-groups&action=new')); ?>" target="_blank">
+                                    <?php esc_html_e('Crear primer grupo', 'imagina-updater-server'); ?>
                                 </a>
                             </p>
                         <?php else: ?>
@@ -74,10 +74,10 @@ if (!defined('ABSPATH')) {
                                 <?php endforeach; ?>
                             </select>
                             <p class="description">
-                                <?php _e('Selecciona uno o más grupos a los que pertenece este plugin. Mantén presionado Ctrl (o Cmd en Mac) para seleccionar múltiples.', 'imagina-updater-server'); ?>
+                                <?php esc_html_e('Selecciona uno o más grupos a los que pertenece este plugin. Mantén presionado Ctrl (o Cmd en Mac) para seleccionar múltiples.', 'imagina-updater-server'); ?>
                                 <br>
-                                <a href="<?php echo admin_url('admin.php?page=imagina-updater-plugin-groups'); ?>" target="_blank">
-                                    <?php _e('Gestionar grupos', 'imagina-updater-server'); ?>
+                                <a href="<?php echo esc_url(admin_url('admin.php?page=imagina-updater-plugin-groups')); ?>" target="_blank">
+                                    <?php esc_html_e('Gestionar grupos', 'imagina-updater-server'); ?>
                                 </a>
                             </p>
                         <?php endif; ?>
@@ -89,7 +89,7 @@ if (!defined('ABSPATH')) {
             <p class="submit">
                 <button type="submit" name="imagina_upload_plugin" class="button button-primary">
                     <span class="dashicons dashicons-upload"></span>
-                    <?php _e('Subir Plugin', 'imagina-updater-server'); ?>
+                    <?php esc_html_e('Subir Plugin', 'imagina-updater-server'); ?>
                 </button>
             </p>
         </form>
@@ -97,12 +97,12 @@ if (!defined('ABSPATH')) {
 
     <hr>
 
-    <h2><?php _e('Plugins Gestionados', 'imagina-updater-server'); ?></h2>
+    <h2><?php esc_html_e('Plugins Gestionados', 'imagina-updater-server'); ?></h2>
 
     <?php if (empty($plugins)): ?>
         <div class="imagina-empty-state">
             <span class="dashicons dashicons-admin-plugins"></span>
-            <p><?php _e('No hay plugins subidos aún. Sube tu primer plugin usando el formulario de arriba.', 'imagina-updater-server'); ?></p>
+            <p><?php esc_html_e('No hay plugins subidos aún. Sube tu primer plugin usando el formulario de arriba.', 'imagina-updater-server'); ?></p>
         </div>
     <?php else: ?>
         <!-- Toolbar: Búsqueda, Filtros y Columnas -->
@@ -119,9 +119,9 @@ if (!defined('ABSPATH')) {
             ?>
             <div class="imagina-filter-dropdown">
                 <select class="imagina-filter-select" data-filter="premium">
-                    <option value=""><?php _e('Todos los plugins', 'imagina-updater-server'); ?></option>
-                    <option value="premium"><?php _e('Solo Premium', 'imagina-updater-server'); ?></option>
-                    <option value="free"><?php _e('Solo Gratuitos', 'imagina-updater-server'); ?></option>
+                    <option value=""><?php esc_html_e('Todos los plugins', 'imagina-updater-server'); ?></option>
+                    <option value="premium"><?php esc_html_e('Solo Premium', 'imagina-updater-server'); ?></option>
+                    <option value="free"><?php esc_html_e('Solo Gratuitos', 'imagina-updater-server'); ?></option>
                 </select>
             </div>
             <?php endif; ?>
@@ -129,16 +129,16 @@ if (!defined('ABSPATH')) {
             <div class="imagina-column-toggle">
                 <button type="button" class="imagina-column-toggle-btn">
                     <span class="dashicons dashicons-visibility"></span>
-                    <?php _e('Columnas', 'imagina-updater-server'); ?>
+                    <?php esc_html_e('Columnas', 'imagina-updater-server'); ?>
                 </button>
                 <div class="imagina-column-dropdown">
-                    <label><input type="checkbox" data-col="1" checked> <?php _e('Plugin', 'imagina-updater-server'); ?></label>
-                    <label><input type="checkbox" data-col="2" checked> <?php _e('Slug', 'imagina-updater-server'); ?></label>
-                    <label><input type="checkbox" data-col="3" checked> <?php _e('Versión', 'imagina-updater-server'); ?></label>
-                    <label><input type="checkbox" data-col="4" checked> <?php _e('Categorías', 'imagina-updater-server'); ?></label>
-                    <label><input type="checkbox" data-col="5"> <?php _e('Autor', 'imagina-updater-server'); ?></label>
-                    <label><input type="checkbox" data-col="6"> <?php _e('Actualización', 'imagina-updater-server'); ?></label>
-                    <label><input type="checkbox" data-col="7"> <?php _e('Tamaño', 'imagina-updater-server'); ?></label>
+                    <label><input type="checkbox" data-col="1" checked> <?php esc_html_e('Plugin', 'imagina-updater-server'); ?></label>
+                    <label><input type="checkbox" data-col="2" checked> <?php esc_html_e('Slug', 'imagina-updater-server'); ?></label>
+                    <label><input type="checkbox" data-col="3" checked> <?php esc_html_e('Versión', 'imagina-updater-server'); ?></label>
+                    <label><input type="checkbox" data-col="4" checked> <?php esc_html_e('Categorías', 'imagina-updater-server'); ?></label>
+                    <label><input type="checkbox" data-col="5"> <?php esc_html_e('Autor', 'imagina-updater-server'); ?></label>
+                    <label><input type="checkbox" data-col="6"> <?php esc_html_e('Actualización', 'imagina-updater-server'); ?></label>
+                    <label><input type="checkbox" data-col="7"> <?php esc_html_e('Tamaño', 'imagina-updater-server'); ?></label>
                     <?php do_action('imagina_updater_plugins_column_toggles'); ?>
                 </div>
             </div>
@@ -149,15 +149,15 @@ if (!defined('ABSPATH')) {
         <table id="plugins-table" class="wp-list-table widefat fixed striped imagina-table-enhanced">
             <thead>
                 <tr>
-                    <th><?php _e('Plugin', 'imagina-updater-server'); ?></th>
-                    <th style="width: 180px;"><?php _e('Slug', 'imagina-updater-server'); ?></th>
-                    <th style="width: 70px;"><?php _e('Versión', 'imagina-updater-server'); ?></th>
-                    <th style="width: 130px;"><?php _e('Categorías', 'imagina-updater-server'); ?></th>
-                    <th style="width: 100px;"><?php _e('Autor', 'imagina-updater-server'); ?></th>
-                    <th style="width: 100px;"><?php _e('Actualización', 'imagina-updater-server'); ?></th>
-                    <th style="width: 70px;"><?php _e('Tamaño', 'imagina-updater-server'); ?></th>
+                    <th><?php esc_html_e('Plugin', 'imagina-updater-server'); ?></th>
+                    <th style="width: 180px;"><?php esc_html_e('Slug', 'imagina-updater-server'); ?></th>
+                    <th style="width: 70px;"><?php esc_html_e('Versión', 'imagina-updater-server'); ?></th>
+                    <th style="width: 130px;"><?php esc_html_e('Categorías', 'imagina-updater-server'); ?></th>
+                    <th style="width: 100px;"><?php esc_html_e('Autor', 'imagina-updater-server'); ?></th>
+                    <th style="width: 100px;"><?php esc_html_e('Actualización', 'imagina-updater-server'); ?></th>
+                    <th style="width: 70px;"><?php esc_html_e('Tamaño', 'imagina-updater-server'); ?></th>
                     <?php do_action('imagina_updater_plugins_table_header'); ?>
-                    <th style="width: 90px;"><?php _e('Acciones', 'imagina-updater-server'); ?></th>
+                    <th style="width: 90px;"><?php esc_html_e('Acciones', 'imagina-updater-server'); ?></th>
                 </tr>
             </thead>
             <tbody>
@@ -185,14 +185,14 @@ if (!defined('ABSPATH')) {
                             <?php endif; ?>
                             <br>
                             <a href="#" class="edit-slug-link" data-plugin-id="<?php echo esc_attr($plugin->id); ?>" data-current-slug="<?php echo esc_attr($effective_slug); ?>" style="font-size: 11px;">
-                                <?php _e('editar', 'imagina-updater-server'); ?>
+                                <?php esc_html_e('editar', 'imagina-updater-server'); ?>
                             </a>
                             <div class="slug-edit-form" id="slug-edit-<?php echo $plugin->id; ?>" style="display:none; margin-top:5px;">
                                 <form method="post" style="display:inline;">
                                     <?php wp_nonce_field('update_slug_' . $plugin->id); ?>
                                     <input type="hidden" name="plugin_id" value="<?php echo esc_attr($plugin->id); ?>">
                                     <input type="text" name="new_slug" value="<?php echo esc_attr($effective_slug); ?>" style="width:120px; font-size: 11px;" placeholder="<?php echo esc_attr($plugin->slug); ?>">
-                                    <button type="submit" name="imagina_update_slug" class="button button-small"><?php _e('OK', 'imagina-updater-server'); ?></button>
+                                    <button type="submit" name="imagina_update_slug" class="button button-small"><?php esc_html_e('OK', 'imagina-updater-server'); ?></button>
                                     <button type="button" class="button button-small cancel-slug-edit">✕</button>
                                 </form>
                             </div>
@@ -211,7 +211,7 @@ if (!defined('ABSPATH')) {
                                 endforeach;
                             else:
                                 ?>
-                                <span class="description" style="font-size: 11px;"><?php _e('Sin categoría', 'imagina-updater-server'); ?></span>
+                                <span class="description" style="font-size: 11px;"><?php esc_html_e('Sin categoría', 'imagina-updater-server'); ?></span>
                                 <?php
                             endif;
                             ?>
@@ -223,17 +223,17 @@ if (!defined('ABSPATH')) {
                         <td>
                             <div class="imagina-actions-dropdown">
                                 <button type="button" class="imagina-actions-btn">
-                                    <?php _e('Acciones', 'imagina-updater-server'); ?>
+                                    <?php esc_html_e('Acciones', 'imagina-updater-server'); ?>
                                     <span class="dashicons dashicons-arrow-down-alt2" style="font-size: 14px; width: 14px; height: 14px;"></span>
                                 </button>
                                 <div class="imagina-actions-menu">
                                     <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-plugins&action=download_plugin&slug=' . urlencode($effective_slug)), 'download_plugin_' . $effective_slug)); ?>">
                                         <span class="dashicons dashicons-download"></span>
-                                        <?php _e('Descargar', 'imagina-updater-server'); ?>
+                                        <?php esc_html_e('Descargar', 'imagina-updater-server'); ?>
                                     </a>
                                     <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-plugins&action=delete_plugin&id=' . $plugin->id), 'delete_plugin_' . $plugin->id)); ?>" class="action-delete" onclick="return confirm('<?php esc_attr_e('¿Estás seguro de eliminar este plugin?', 'imagina-updater-server'); ?>');">
                                         <span class="dashicons dashicons-trash"></span>
-                                        <?php _e('Eliminar', 'imagina-updater-server'); ?>
+                                        <?php esc_html_e('Eliminar', 'imagina-updater-server'); ?>
                                     </a>
                                 </div>
                             </div>

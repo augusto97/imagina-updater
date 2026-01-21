@@ -9,16 +9,16 @@ if (!defined('ABSPATH')) {
 ?>
 
 <div class="wrap">
-    <h1><?php _e('Logs del Servidor', 'imagina-updater-server'); ?></h1>
+    <h1><?php esc_html_e('Logs del Servidor', 'imagina-updater-server'); ?></h1>
 
     <?php settings_errors('imagina_updater', false); ?>
 
     <?php if (!$is_enabled): ?>
         <div class="notice notice-warning">
             <p>
-                <?php _e('El sistema de logs está desactivado.', 'imagina-updater-server'); ?>
-                <a href="<?php echo admin_url('admin.php?page=imagina-updater-settings'); ?>">
-                    <?php _e('Activar logging', 'imagina-updater-server'); ?>
+                <?php esc_html_e('El sistema de logs está desactivado.', 'imagina-updater-server'); ?>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=imagina-updater-settings')); ?>">
+                    <?php esc_html_e('Activar logging', 'imagina-updater-server'); ?>
                 </a>
             </p>
         </div>
@@ -28,9 +28,9 @@ if (!defined('ABSPATH')) {
         <div class="tablenav top">
             <div class="alignleft actions">
                 <?php if (!empty($logs)): ?>
-                    <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=imagina-updater-logs&action=download_log'), 'download_log'); ?>" class="button">
+                    <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=imagina-updater-logs&action=download_log'), 'download_log')); ?>" class="button">
                         <span class="dashicons dashicons-download"></span>
-                        <?php _e('Descargar Log', 'imagina-updater-server'); ?>
+                        <?php esc_html_e('Descargar Log', 'imagina-updater-server'); ?>
                     </a>
                 <?php endif; ?>
             </div>
@@ -40,7 +40,7 @@ if (!defined('ABSPATH')) {
                         <?php wp_nonce_field('imagina_clear_logs'); ?>
                         <button type="submit" name="imagina_clear_logs" class="button button-link-delete" onclick="return confirm('<?php esc_attr_e('¿Estás seguro de eliminar todos los logs?', 'imagina-updater-server'); ?>');">
                             <span class="dashicons dashicons-trash"></span>
-                            <?php _e('Limpiar Logs', 'imagina-updater-server'); ?>
+                            <?php esc_html_e('Limpiar Logs', 'imagina-updater-server'); ?>
                         </button>
                     </form>
                 <?php endif; ?>
@@ -50,7 +50,7 @@ if (!defined('ABSPATH')) {
         <?php if (empty($logs)): ?>
             <div class="imagina-empty-state">
                 <span class="dashicons dashicons-media-text"></span>
-                <p><?php _e('No hay logs disponibles', 'imagina-updater-server'); ?></p>
+                <p><?php esc_html_e('No hay logs disponibles', 'imagina-updater-server'); ?></p>
             </div>
         <?php else: ?>
             <div class="imagina-logs-viewer" style="background: #1e1e1e; color: #d4d4d4; padding: 15px; font-family: 'Courier New', monospace; font-size: 13px; border-radius: 3px; max-height: 600px; overflow-y: auto;">
@@ -76,12 +76,15 @@ if (!defined('ABSPATH')) {
         <?php endif; ?>
 
         <p class="description" style="margin-top: 15px;">
-            <?php printf(
-                __('Mostrando las últimas %d líneas de log.', 'imagina-updater-server'),
+            <?php
+            printf(
+                /* translators: %d: number of log lines displayed */
+                esc_html__('Mostrando las últimas %d líneas de log.', 'imagina-updater-server'),
                 count($logs)
-            ); ?>
+            );
+            ?>
             <?php if ($is_enabled): ?>
-                <?php _e('Los logs se rotan automáticamente cuando alcanzan 5MB.', 'imagina-updater-server'); ?>
+                <?php esc_html_e('Los logs se rotan automáticamente cuando alcanzan 5MB.', 'imagina-updater-server'); ?>
             <?php endif; ?>
         </p>
     </div>

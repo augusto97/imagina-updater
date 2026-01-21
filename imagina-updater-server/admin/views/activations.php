@@ -9,7 +9,7 @@ if (!defined('ABSPATH')) {
 ?>
 
 <div class="wrap">
-    <h1><?php _e('Gestión de Activaciones', 'imagina-updater-server'); ?></h1>
+    <h1><?php esc_html_e('Gestión de Activaciones', 'imagina-updater-server'); ?></h1>
 
     <?php settings_errors('imagina_updater', false); ?>
 
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
         <div class="imagina-card">
             <h2 class="imagina-card-title">
                 <span class="dashicons dashicons-filter"></span>
-                <?php _e('Filtros', 'imagina-updater-server'); ?>
+                <?php esc_html_e('Filtros', 'imagina-updater-server'); ?>
             </h2>
 
             <form method="get" style="padding: 20px;">
@@ -27,11 +27,11 @@ if (!defined('ABSPATH')) {
                 <table class="form-table" style="margin-top: 0;">
                     <tr>
                         <th scope="row">
-                            <label for="api_key_id"><?php _e('Filtrar por Licencia', 'imagina-updater-server'); ?></label>
+                            <label for="api_key_id"><?php esc_html_e('Filtrar por Licencia', 'imagina-updater-server'); ?></label>
                         </th>
                         <td>
                             <select name="api_key_id" id="api_key_id">
-                                <option value=""><?php _e('Todas las licencias', 'imagina-updater-server'); ?></option>
+                                <option value=""><?php esc_html_e('Todas las licencias', 'imagina-updater-server'); ?></option>
                                 <?php foreach ($api_keys as $key): ?>
                                     <option value="<?php echo esc_attr($key->id); ?>" <?php selected($api_key_id, $key->id); ?>>
                                         <?php echo esc_html($key->site_name); ?> (<?php echo substr($key->api_key, 0, 15); ?>...)
@@ -39,11 +39,11 @@ if (!defined('ABSPATH')) {
                                 <?php endforeach; ?>
                             </select>
                             <button type="submit" class="button">
-                                <?php _e('Filtrar', 'imagina-updater-server'); ?>
+                                <?php esc_html_e('Filtrar', 'imagina-updater-server'); ?>
                             </button>
                             <?php if ($api_key_id): ?>
-                                <a href="<?php echo admin_url('admin.php?page=imagina-updater-activations'); ?>" class="button">
-                                    <?php _e('Limpiar filtros', 'imagina-updater-server'); ?>
+                                <a href="<?php echo esc_url(admin_url('admin.php?page=imagina-updater-activations')); ?>" class="button">
+                                    <?php esc_html_e('Limpiar filtros', 'imagina-updater-server'); ?>
                                 </a>
                             <?php endif; ?>
                         </td>
@@ -56,25 +56,25 @@ if (!defined('ABSPATH')) {
         <div class="imagina-card" style="margin-top: 20px;">
             <h2 class="imagina-card-title">
                 <span class="dashicons dashicons-admin-site-alt3"></span>
-                <?php _e('Sitios Activados', 'imagina-updater-server'); ?>
+                <?php esc_html_e('Sitios Activados', 'imagina-updater-server'); ?>
             </h2>
 
             <?php if (empty($activations)): ?>
                 <div class="imagina-empty-state">
                     <span class="dashicons dashicons-admin-site-alt3"></span>
-                    <p><?php _e('No hay activaciones registradas.', 'imagina-updater-server'); ?></p>
+                    <p><?php esc_html_e('No hay activaciones registradas.', 'imagina-updater-server'); ?></p>
                 </div>
             <?php else: ?>
                 <table class="wp-list-table widefat fixed striped">
                     <thead>
                         <tr>
-                            <th style="width: 15%;"><?php _e('Licencia', 'imagina-updater-server'); ?></th>
-                            <th style="width: 20%;"><?php _e('Dominio', 'imagina-updater-server'); ?></th>
-                            <th style="width: 10%;"><?php _e('Estado', 'imagina-updater-server'); ?></th>
-                            <th style="width: 15%;"><?php _e('Activado', 'imagina-updater-server'); ?></th>
-                            <th style="width: 15%;"><?php _e('Última Verificación', 'imagina-updater-server'); ?></th>
-                            <th style="width: 15%;"><?php _e('Desactivado', 'imagina-updater-server'); ?></th>
-                            <th style="width: 10%;"><?php _e('Acciones', 'imagina-updater-server'); ?></th>
+                            <th style="width: 15%;"><?php esc_html_e('Licencia', 'imagina-updater-server'); ?></th>
+                            <th style="width: 20%;"><?php esc_html_e('Dominio', 'imagina-updater-server'); ?></th>
+                            <th style="width: 10%;"><?php esc_html_e('Estado', 'imagina-updater-server'); ?></th>
+                            <th style="width: 15%;"><?php esc_html_e('Activado', 'imagina-updater-server'); ?></th>
+                            <th style="width: 15%;"><?php esc_html_e('Última Verificación', 'imagina-updater-server'); ?></th>
+                            <th style="width: 15%;"><?php esc_html_e('Desactivado', 'imagina-updater-server'); ?></th>
+                            <th style="width: 10%;"><?php esc_html_e('Acciones', 'imagina-updater-server'); ?></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -92,12 +92,12 @@ if (!defined('ABSPATH')) {
                                     <?php if ($activation->is_active): ?>
                                         <span class="imagina-status imagina-status-active">
                                             <span class="dashicons dashicons-yes-alt"></span>
-                                            <?php _e('Activo', 'imagina-updater-server'); ?>
+                                            <?php esc_html_e('Activo', 'imagina-updater-server'); ?>
                                         </span>
                                     <?php else: ?>
                                         <span class="imagina-status imagina-status-inactive">
                                             <span class="dashicons dashicons-dismiss"></span>
-                                            <?php _e('Inactivo', 'imagina-updater-server'); ?>
+                                            <?php esc_html_e('Inactivo', 'imagina-updater-server'); ?>
                                         </span>
                                     <?php endif; ?>
                                 </td>
@@ -108,7 +108,7 @@ if (!defined('ABSPATH')) {
                                     <?php if ($activation->last_verified): ?>
                                         <?php echo esc_html(mysql2date(get_option('date_format') . ' ' . get_option('time_format'), $activation->last_verified)); ?>
                                     <?php else: ?>
-                                        <span class="description"><?php _e('Nunca', 'imagina-updater-server'); ?></span>
+                                        <span class="description"><?php esc_html_e('Nunca', 'imagina-updater-server'); ?></span>
                                     <?php endif; ?>
                                 </td>
                                 <td>
@@ -124,10 +124,10 @@ if (!defined('ABSPATH')) {
                                            class="button button-small button-link-delete"
                                            onclick="return confirm('<?php esc_attr_e('¿Estás seguro de desactivar este sitio? El cliente necesitará reactivar con la API key.', 'imagina-updater-server'); ?>');">
                                             <span class="dashicons dashicons-dismiss"></span>
-                                            <?php _e('Desactivar', 'imagina-updater-server'); ?>
+                                            <?php esc_html_e('Desactivar', 'imagina-updater-server'); ?>
                                         </a>
                                     <?php else: ?>
-                                        <span class="description"><?php _e('Desactivado', 'imagina-updater-server'); ?></span>
+                                        <span class="description"><?php esc_html_e('Desactivado', 'imagina-updater-server'); ?></span>
                                     <?php endif; ?>
                                 </td>
                             </tr>

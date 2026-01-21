@@ -9,7 +9,7 @@ if (!defined('ABSPATH')) {
 ?>
 
 <div class="wrap">
-    <h1><?php _e('Configuración de Imagina Updater Server', 'imagina-updater-server'); ?></h1>
+    <h1><?php esc_html_e('Configuración de Imagina Updater Server', 'imagina-updater-server'); ?></h1>
 
     <?php settings_errors('imagina_updater', false); ?>
 
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
         <div class="imagina-card">
             <h2 class="imagina-card-title">
                 <span class="dashicons dashicons-media-text"></span>
-                <?php _e('Configuración de Logs', 'imagina-updater-server'); ?>
+                <?php esc_html_e('Configuración de Logs', 'imagina-updater-server'); ?>
             </h2>
 
             <form method="post">
@@ -26,7 +26,7 @@ if (!defined('ABSPATH')) {
                 <table class="form-table">
                     <tr>
                         <th scope="row">
-                            <label for="enable_logging"><?php _e('Habilitar Logging', 'imagina-updater-server'); ?></label>
+                            <label for="enable_logging"><?php esc_html_e('Habilitar Logging', 'imagina-updater-server'); ?></label>
                         </th>
                         <td>
                             <label for="enable_logging">
@@ -35,13 +35,13 @@ if (!defined('ABSPATH')) {
                                        id="enable_logging"
                                        value="1"
                                        <?php checked(isset($config['enable_logging']) && $config['enable_logging']); ?>>
-                                <?php _e('Activar sistema de logs', 'imagina-updater-server'); ?>
+                                <?php esc_html_e('Activar sistema de logs', 'imagina-updater-server'); ?>
                             </label>
                             <p class="description">
-                                <?php _e('Los logs te ayudarán a diagnosticar problemas con las subidas de plugins y las solicitudes de los clientes.', 'imagina-updater-server'); ?>
+                                <?php esc_html_e('Los logs te ayudarán a diagnosticar problemas con las subidas de plugins y las solicitudes de los clientes.', 'imagina-updater-server'); ?>
                                 <?php if (isset($config['enable_logging']) && $config['enable_logging']): ?>
                                     <br>
-                                    <a href="<?php echo admin_url('admin.php?page=imagina-updater-logs'); ?>"><?php _e('Ver logs', 'imagina-updater-server'); ?></a>
+                                    <a href="<?php echo esc_url(admin_url('admin.php?page=imagina-updater-logs')); ?>"><?php esc_html_e('Ver logs', 'imagina-updater-server'); ?></a>
                                 <?php endif; ?>
                             </p>
                         </td>
@@ -49,25 +49,25 @@ if (!defined('ABSPATH')) {
 
                     <tr>
                         <th scope="row">
-                            <label for="log_level"><?php _e('Nivel de Log', 'imagina-updater-server'); ?></label>
+                            <label for="log_level"><?php esc_html_e('Nivel de Log', 'imagina-updater-server'); ?></label>
                         </th>
                         <td>
                             <select name="log_level" id="log_level">
                                 <option value="DEBUG" <?php selected(isset($config['log_level']) ? $config['log_level'] : 'INFO', 'DEBUG'); ?>>
-                                    <?php _e('DEBUG - Todos los mensajes', 'imagina-updater-server'); ?>
+                                    <?php esc_html_e('DEBUG - Todos los mensajes', 'imagina-updater-server'); ?>
                                 </option>
                                 <option value="INFO" <?php selected(isset($config['log_level']) ? $config['log_level'] : 'INFO', 'INFO'); ?>>
-                                    <?php _e('INFO - Información y superiores', 'imagina-updater-server'); ?>
+                                    <?php esc_html_e('INFO - Información y superiores', 'imagina-updater-server'); ?>
                                 </option>
                                 <option value="WARNING" <?php selected(isset($config['log_level']) ? $config['log_level'] : 'INFO', 'WARNING'); ?>>
-                                    <?php _e('WARNING - Advertencias y errores', 'imagina-updater-server'); ?>
+                                    <?php esc_html_e('WARNING - Advertencias y errores', 'imagina-updater-server'); ?>
                                 </option>
                                 <option value="ERROR" <?php selected(isset($config['log_level']) ? $config['log_level'] : 'INFO', 'ERROR'); ?>>
-                                    <?php _e('ERROR - Solo errores', 'imagina-updater-server'); ?>
+                                    <?php esc_html_e('ERROR - Solo errores', 'imagina-updater-server'); ?>
                                 </option>
                             </select>
                             <p class="description">
-                                <?php _e('Selecciona qué nivel de mensajes quieres registrar. DEBUG genera muchos logs, úsalo solo para diagnóstico.', 'imagina-updater-server'); ?>
+                                <?php esc_html_e('Selecciona qué nivel de mensajes quieres registrar. DEBUG genera muchos logs, úsalo solo para diagnóstico.', 'imagina-updater-server'); ?>
                             </p>
                         </td>
                     </tr>
@@ -75,7 +75,7 @@ if (!defined('ABSPATH')) {
 
                 <p class="submit">
                     <button type="submit" name="imagina_save_settings" class="button button-primary">
-                        <?php _e('Guardar Configuración', 'imagina-updater-server'); ?>
+                        <?php esc_html_e('Guardar Configuración', 'imagina-updater-server'); ?>
                     </button>
                 </p>
             </form>
@@ -84,17 +84,17 @@ if (!defined('ABSPATH')) {
         <div class="imagina-card" style="margin-top: 20px;">
             <h2 class="imagina-card-title">
                 <span class="dashicons dashicons-database"></span>
-                <?php _e('Mantenimiento de Base de Datos', 'imagina-updater-server'); ?>
+                <?php esc_html_e('Mantenimiento de Base de Datos', 'imagina-updater-server'); ?>
             </h2>
 
             <div style="padding: 20px;">
-                <p><?php _e('Si has actualizado el plugin y experimentas errores, ejecuta las migraciones de base de datos para actualizar las tablas.', 'imagina-updater-server'); ?></p>
+                <p><?php esc_html_e('Si has actualizado el plugin y experimentas errores, ejecuta las migraciones de base de datos para actualizar las tablas.', 'imagina-updater-server'); ?></p>
 
                 <form method="post">
                     <?php wp_nonce_field('imagina_run_migration'); ?>
                     <button type="submit" name="imagina_run_migration" class="button button-secondary">
                         <span class="dashicons dashicons-update"></span>
-                        <?php _e('Ejecutar Migraciones de Base de Datos', 'imagina-updater-server'); ?>
+                        <?php esc_html_e('Ejecutar Migraciones de Base de Datos', 'imagina-updater-server'); ?>
                     </button>
                 </form>
             </div>
@@ -103,33 +103,33 @@ if (!defined('ABSPATH')) {
         <div class="imagina-card" style="margin-top: 20px;">
             <h2 class="imagina-card-title">
                 <span class="dashicons dashicons-info"></span>
-                <?php _e('Información del Sistema', 'imagina-updater-server'); ?>
+                <?php esc_html_e('Información del Sistema', 'imagina-updater-server'); ?>
             </h2>
 
             <table class="widefat">
                 <tbody>
                     <tr>
-                        <td style="width: 250px;"><strong><?php _e('Versión del Plugin:', 'imagina-updater-server'); ?></strong></td>
-                        <td><?php echo IMAGINA_UPDATER_SERVER_VERSION; ?></td>
+                        <td style="width: 250px;"><strong><?php esc_html_e('Versión del Plugin:', 'imagina-updater-server'); ?></strong></td>
+                        <td><?php echo esc_html(IMAGINA_UPDATER_SERVER_VERSION); ?></td>
                     </tr>
                     <tr>
-                        <td><strong><?php _e('Tamaño máximo de subida:', 'imagina-updater-server'); ?></strong></td>
-                        <td><?php echo ini_get('upload_max_filesize'); ?></td>
+                        <td><strong><?php esc_html_e('Tamaño máximo de subida:', 'imagina-updater-server'); ?></strong></td>
+                        <td><?php echo esc_html(ini_get('upload_max_filesize')); ?></td>
                     </tr>
                     <tr>
-                        <td><strong><?php _e('Tamaño máximo de POST:', 'imagina-updater-server'); ?></strong></td>
-                        <td><?php echo ini_get('post_max_size'); ?></td>
+                        <td><strong><?php esc_html_e('Tamaño máximo de POST:', 'imagina-updater-server'); ?></strong></td>
+                        <td><?php echo esc_html(ini_get('post_max_size')); ?></td>
                     </tr>
                     <tr>
-                        <td><strong><?php _e('Tiempo máximo de ejecución:', 'imagina-updater-server'); ?></strong></td>
-                        <td><?php echo ini_get('max_execution_time'); ?>s</td>
+                        <td><strong><?php esc_html_e('Tiempo máximo de ejecución:', 'imagina-updater-server'); ?></strong></td>
+                        <td><?php echo esc_html(ini_get('max_execution_time')); ?>s</td>
                     </tr>
                     <tr>
-                        <td><strong><?php _e('Versión de PHP:', 'imagina-updater-server'); ?></strong></td>
-                        <td><?php echo PHP_VERSION; ?></td>
+                        <td><strong><?php esc_html_e('Versión de PHP:', 'imagina-updater-server'); ?></strong></td>
+                        <td><?php echo esc_html(PHP_VERSION); ?></td>
                     </tr>
                     <tr>
-                        <td><strong><?php _e('Directorio de plugins:', 'imagina-updater-server'); ?></strong></td>
+                        <td><strong><?php esc_html_e('Directorio de plugins:', 'imagina-updater-server'); ?></strong></td>
                         <td>
                             <?php
                             $upload_dir = wp_upload_dir();

@@ -34,7 +34,7 @@ if (!defined('ABSPATH')) {
                                 <option value=""><?php esc_html_e('Todas las licencias', 'imagina-updater-server'); ?></option>
                                 <?php foreach ($api_keys as $key): ?>
                                     <option value="<?php echo esc_attr($key->id); ?>" <?php selected($api_key_id, $key->id); ?>>
-                                        <?php echo esc_html($key->site_name); ?> (<?php echo substr($key->api_key, 0, 15); ?>...)
+                                        <?php echo esc_html($key->site_name); ?> (<?php echo esc_html(substr($key->api_key, 0, 15)); ?>...)
                                     </option>
                                 <?php endforeach; ?>
                             </select>
@@ -83,7 +83,7 @@ if (!defined('ABSPATH')) {
                                 <td>
                                     <strong><?php echo esc_html($activation->site_name); ?></strong>
                                     <br>
-                                    <small class="description"><?php echo substr($activation->api_key, 0, 15); ?>...</small>
+                                    <small class="description"><?php echo esc_html(substr($activation->api_key, 0, 15)); ?>...</small>
                                 </td>
                                 <td>
                                     <code><?php echo esc_html($activation->site_domain); ?></code>

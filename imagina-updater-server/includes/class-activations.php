@@ -77,7 +77,8 @@ class Imagina_Updater_Server_Activations {
             return new WP_Error(
                 'activation_limit_reached',
                 sprintf(
-                    __('Límite de activaciones alcanzado (%d/%d). Sitios activados: %s. Contacta al administrador para desactivar un sitio.', 'imagina-updater-server'),
+                    /* translators: %1$d: current activations count, %2$d: maximum activations allowed, %3$s: list of activated sites */
+                    __('Límite de activaciones alcanzado (%1$d/%2$d). Sitios activados: %3$s. Contacta al administrador para desactivar un sitio.', 'imagina-updater-server'),
                     $current_activations,
                     $key_data->max_activations,
                     implode(', ', $activated_sites)
@@ -306,7 +307,7 @@ class Imagina_Updater_Server_Activations {
             $url = 'https://' . $url;
         }
 
-        $parsed = parse_url($url);
+        $parsed = wp_parse_url($url);
         if (!isset($parsed['host'])) {
             return '';
         }

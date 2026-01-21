@@ -693,7 +693,13 @@ jQuery(document).ready(function($) {
             // Registrar la descarga
             imagina_updater_server_log(sprintf('Admin descarga plugin: %s v%s', $plugin->name, $plugin->current_version), 'info');
 
-            // Enviar archivo
+            // Enviar archivo usando WP_Filesystem
+            global $wp_filesystem;
+            if (empty($wp_filesystem)) {
+                require_once ABSPATH . '/wp-admin/includes/file.php';
+                WP_Filesystem();
+            }
+
             header('Content-Description: File Transfer');
             header('Content-Type: application/zip');
             header('Content-Disposition: attachment; filename="' . basename($plugin->file_path) . '"');
@@ -706,7 +712,8 @@ jQuery(document).ready(function($) {
                 ob_end_clean();
             }
 
-            readfile($plugin->file_path);
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_readfile -- Using for file download to browser
+            echo $wp_filesystem->get_contents($plugin->file_path);
             exit;
         }
 
@@ -1098,10 +1105,19 @@ jQuery(document).ready(function($) {
             wp_die(esc_html__('No hay logs disponibles para descargar', 'imagina-updater-server'));
         }
 
+        // Usar WP_Filesystem para leer el archivo
+        global $wp_filesystem;
+        if (empty($wp_filesystem)) {
+            require_once ABSPATH . '/wp-admin/includes/file.php';
+            WP_Filesystem();
+        }
+
         header('Content-Type: text/plain');
-        header('Content-Disposition: attachment; filename="imagina-updater-server-' . date('Y-m-d-His') . '.log"');
+        header('Content-Disposition: attachment; filename="imagina-updater-server-' . gmdate('Y-m-d-His') . '.log"');
         header('Content-Length: ' . filesize($log_file));
-        readfile($log_file);
+
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_readfile -- Using for file download to browser
+        echo $wp_filesystem->get_contents($log_file);
         exit;
     }
 

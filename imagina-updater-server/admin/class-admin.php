@@ -344,10 +344,10 @@ jQuery(document).ready(function($) {
 
         // Crear API Key
         if (isset($_POST['imagina_create_api_key']) && check_admin_referer('imagina_create_api_key')) {
-            $site_name = sanitize_text_field($_POST['site_name']);
+            $site_name = isset($_POST['site_name']) ? sanitize_text_field(wp_unslash($_POST['site_name'])) : '';
             $site_url = '-'; // Ya no se usa site_url, solo site_name (cliente/descripción)
             $max_activations = isset($_POST['max_activations']) ? max(0, intval($_POST['max_activations'])) : 1;
-            $access_type = isset($_POST['access_type']) ? sanitize_text_field($_POST['access_type']) : 'all';
+            $access_type = isset($_POST['access_type']) ? sanitize_text_field(wp_unslash($_POST['access_type'])) : 'all';
             $allowed_plugins = isset($_POST['allowed_plugins']) ? array_map('intval', $_POST['allowed_plugins']) : array();
             $allowed_groups = isset($_POST['allowed_groups']) ? array_map('intval', $_POST['allowed_groups']) : array();
 
@@ -362,7 +362,7 @@ jQuery(document).ready(function($) {
                 set_transient('imagina_new_api_key', $result['api_key'], 60);
             }
 
-            wp_redirect(admin_url('admin.php?page=imagina-updater-api-keys'));
+            wp_safe_redirect(admin_url('admin.php?page=imagina-updater-api-keys'));
             exit;
         }
 
@@ -377,13 +377,13 @@ jQuery(document).ready(function($) {
         }
 
         // Eliminar API Key
-        if (isset($_GET['action']) && $_GET['action'] === 'delete_api_key' && isset($_GET['id']) && check_admin_referer('delete_api_key_' . $_GET['id'])) {
+        if (isset($_GET['action']) && $_GET['action'] === 'delete_api_key' && isset($_GET['id']) && check_admin_referer('delete_api_key_' . intval($_GET['id']))) {
             $id = intval($_GET['id']);
             Imagina_Updater_Server_API_Keys::delete($id);
             imagina_updater_server_log('API Key eliminada: ID ' . $id, 'info');
             set_transient('imagina_updater_api_deleted', true, 30);
 
-            wp_redirect(admin_url('admin.php?page=imagina-updater-api-keys'));
+            wp_safe_redirect(admin_url('admin.php?page=imagina-updater-api-keys'));
             exit;
         }
 
@@ -394,7 +394,7 @@ jQuery(document).ready(function($) {
         }
 
         // Activar/Desactivar API Key
-        if (isset($_GET['action']) && $_GET['action'] === 'toggle_api_key' && isset($_GET['id']) && check_admin_referer('toggle_api_key_' . $_GET['id'])) {
+        if (isset($_GET['action']) && $_GET['action'] === 'toggle_api_key' && isset($_GET['id']) && check_admin_referer('toggle_api_key_' . intval($_GET['id']))) {
             $id = intval($_GET['id']);
             $key = Imagina_Updater_Server_API_Keys::get_by_id($id);
             if ($key) {
@@ -404,7 +404,7 @@ jQuery(document).ready(function($) {
                 set_transient('imagina_updater_api_toggled', true, 30);
             }
 
-            wp_redirect(admin_url('admin.php?page=imagina-updater-api-keys'));
+            wp_safe_redirect(admin_url('admin.php?page=imagina-updater-api-keys'));
             exit;
         }
 
@@ -415,7 +415,7 @@ jQuery(document).ready(function($) {
         }
 
         // Regenerar API Key
-        if (isset($_GET['action']) && $_GET['action'] === 'regenerate_api_key' && isset($_GET['id']) && check_admin_referer('regenerate_api_key_' . $_GET['id'])) {
+        if (isset($_GET['action']) && $_GET['action'] === 'regenerate_api_key' && isset($_GET['id']) && check_admin_referer('regenerate_api_key_' . intval($_GET['id']))) {
             $id = intval($_GET['id']);
             $result = Imagina_Updater_Server_API_Keys::regenerate_key($id);
 
@@ -428,7 +428,7 @@ jQuery(document).ready(function($) {
                 set_transient('imagina_regenerated_api_key', $result['api_key'], 60);
             }
 
-            wp_redirect(admin_url('admin.php?page=imagina-updater-api-keys'));
+            wp_safe_redirect(admin_url('admin.php?page=imagina-updater-api-keys'));
             exit;
         }
 
@@ -440,9 +440,9 @@ jQuery(document).ready(function($) {
 
         // Actualizar información del sitio (nombre y URL)
         if (isset($_POST['imagina_update_site_info']) && check_admin_referer('imagina_update_site_info')) {
-            $api_key_id = intval($_POST['api_key_id']);
-            $site_name = sanitize_text_field($_POST['site_name']);
-            $site_url = esc_url_raw($_POST['site_url']);
+            $api_key_id = isset($_POST['api_key_id']) ? intval($_POST['api_key_id']) : 0;
+            $site_name = isset($_POST['site_name']) ? sanitize_text_field(wp_unslash($_POST['site_name'])) : '';
+            $site_url = isset($_POST['site_url']) ? esc_url_raw(wp_unslash($_POST['site_url'])) : '';
 
             $result = Imagina_Updater_Server_API_Keys::update_site_info($api_key_id, $site_name, $site_url);
 
@@ -454,7 +454,7 @@ jQuery(document).ready(function($) {
                 set_transient('imagina_updater_site_info_success', true, 30);
             }
 
-            wp_redirect(admin_url('admin.php?page=imagina-updater-api-keys'));
+            wp_safe_redirect(admin_url('admin.php?page=imagina-updater-api-keys'));
             exit;
         }
 
@@ -466,8 +466,8 @@ jQuery(document).ready(function($) {
 
         // Actualizar permisos de API Key
         if (isset($_POST['imagina_update_api_permissions']) && check_admin_referer('imagina_update_api_permissions')) {
-            $api_key_id = intval($_POST['api_key_id']);
-            $access_type = isset($_POST['access_type']) ? sanitize_text_field($_POST['access_type']) : 'all';
+            $api_key_id = isset($_POST['api_key_id']) ? intval($_POST['api_key_id']) : 0;
+            $access_type = isset($_POST['access_type']) ? sanitize_text_field(wp_unslash($_POST['access_type'])) : 'all';
             $allowed_plugins = isset($_POST['allowed_plugins']) ? array_map('intval', $_POST['allowed_plugins']) : array();
             $allowed_groups = isset($_POST['allowed_groups']) ? array_map('intval', $_POST['allowed_groups']) : array();
 
@@ -481,12 +481,12 @@ jQuery(document).ready(function($) {
                 set_transient('imagina_updater_api_permissions_success', true, 30);
             }
 
-            wp_redirect(admin_url('admin.php?page=imagina-updater-api-keys'));
+            wp_safe_redirect(admin_url('admin.php?page=imagina-updater-api-keys'));
             exit;
         }
 
         // Desactivar activación de sitio
-        if (isset($_GET['action']) && $_GET['action'] === 'deactivate_activation' && isset($_GET['id']) && check_admin_referer('deactivate_activation_' . $_GET['id'])) {
+        if (isset($_GET['action']) && $_GET['action'] === 'deactivate_activation' && isset($_GET['id']) && check_admin_referer('deactivate_activation_' . intval($_GET['id']))) {
             $activation_id = intval($_GET['id']);
             $result = Imagina_Updater_Server_Activations::deactivate_site($activation_id);
 
@@ -504,7 +504,7 @@ jQuery(document).ready(function($) {
                 $redirect_url = add_query_arg('api_key_id', intval($_GET['api_key_id']), $redirect_url);
             }
 
-            wp_redirect($redirect_url);
+            wp_safe_redirect($redirect_url);
             exit;
         }
 
@@ -535,7 +535,8 @@ jQuery(document).ready(function($) {
             if ($content_length > $post_max) {
                 add_settings_error('imagina_updater', 'upload_size_exceeded',
                     sprintf(
-                        __('Error: El archivo que intentaste subir (%s) excede el límite permitido por el servidor (%s). Contacta a tu proveedor de hosting para aumentar el valor de post_max_size en PHP.', 'imagina-updater-server'),
+                        /* translators: %1$s: file size attempted, %2$s: maximum allowed size */
+                        __('Error: El archivo que intentaste subir (%1$s) excede el límite permitido por el servidor (%2$s). Contacta a tu proveedor de hosting para aumentar el valor de post_max_size en PHP.', 'imagina-updater-server'),
                         size_format($content_length),
                         size_format($post_max)
                     ),
@@ -591,10 +592,11 @@ jQuery(document).ready(function($) {
                 return;
             }
 
-            $changelog = isset($_POST['changelog']) ? $_POST['changelog'] : '';
+            $changelog = isset($_POST['changelog']) ? sanitize_textarea_field(wp_unslash($_POST['changelog'])) : '';
             $plugin_groups = isset($_POST['plugin_groups']) ? array_map('intval', $_POST['plugin_groups']) : array();
 
-            imagina_updater_server_log('Iniciando subida de plugin: ' . $_FILES['plugin_file']['name'], 'info');
+            $plugin_filename = isset($_FILES['plugin_file']['name']) ? sanitize_file_name($_FILES['plugin_file']['name']) : '';
+            imagina_updater_server_log('Iniciando subida de plugin: ' . $plugin_filename, 'info');
             $result = Imagina_Updater_Server_Plugin_Manager::upload_plugin($_FILES['plugin_file'], $changelog);
 
             if (is_wp_error($result)) {
@@ -616,7 +618,7 @@ jQuery(document).ready(function($) {
                 ), 30);
 
                 // Redirect limpio para evitar reenvío de formulario
-                wp_redirect(admin_url('admin.php?page=imagina-updater-plugins'));
+                wp_safe_redirect(admin_url('admin.php?page=imagina-updater-plugins'));
                 exit;
             }
         }
@@ -626,14 +628,15 @@ jQuery(document).ready(function($) {
         if ($upload_success) {
             delete_transient('imagina_updater_upload_success');
             add_settings_error('imagina_updater', 'upload_success', sprintf(
-                __('Plugin "%s" versión %s subido exitosamente', 'imagina-updater-server'),
+                /* translators: %1$s: plugin name, %2$s: plugin version */
+                __('Plugin "%1$s" versión %2$s subido exitosamente', 'imagina-updater-server'),
                 $upload_success['name'],
                 $upload_success['version']
             ), 'success');
         }
 
         // Eliminar plugin
-        if (isset($_GET['action']) && $_GET['action'] === 'delete_plugin' && isset($_GET['id']) && check_admin_referer('delete_plugin_' . $_GET['id'])) {
+        if (isset($_GET['action']) && $_GET['action'] === 'delete_plugin' && isset($_GET['id']) && check_admin_referer('delete_plugin_' . intval($_GET['id']))) {
             $id = intval($_GET['id']);
             $result = Imagina_Updater_Server_Plugin_Manager::delete_plugin($id);
 
@@ -646,7 +649,7 @@ jQuery(document).ready(function($) {
             }
 
             // Redirect limpio
-            wp_redirect(admin_url('admin.php?page=imagina-updater-plugins'));
+            wp_safe_redirect(admin_url('admin.php?page=imagina-updater-plugins'));
             exit;
         }
 
@@ -662,29 +665,29 @@ jQuery(document).ready(function($) {
 
         // Descargar plugin directamente (sin REST API)
         if (isset($_GET['action']) && $_GET['action'] === 'download_plugin' && isset($_GET['slug'])) {
-            $slug = sanitize_text_field($_GET['slug']);
+            $slug = sanitize_text_field(wp_unslash($_GET['slug']));
 
             // Verificar nonce
             if (!check_admin_referer('download_plugin_' . $slug)) {
-                wp_die(__('Error de seguridad: Nonce inválido', 'imagina-updater-server'));
+                wp_die(esc_html__('Error de seguridad: Nonce inválido', 'imagina-updater-server'));
             }
 
             // Verificar permisos de administrador
             if (!current_user_can('manage_options')) {
-                wp_die(__('No tienes permisos para descargar plugins', 'imagina-updater-server'));
+                wp_die(esc_html__('No tienes permisos para descargar plugins', 'imagina-updater-server'));
             }
 
             // Obtener información del plugin
             $plugin = Imagina_Updater_Server_Plugin_Manager::get_plugin_by_slug($slug);
 
             if (!$plugin) {
-                wp_die(__('Plugin no encontrado', 'imagina-updater-server'));
+                wp_die(esc_html__('Plugin no encontrado', 'imagina-updater-server'));
             }
 
             // Verificar que el archivo existe
             if (!file_exists($plugin->file_path)) {
                 imagina_updater_server_log('Archivo de plugin no encontrado: ' . $plugin->file_path, 'error');
-                wp_die(__('Archivo de plugin no encontrado', 'imagina-updater-server'));
+                wp_die(esc_html__('Archivo de plugin no encontrado', 'imagina-updater-server'));
             }
 
             // Registrar la descarga
@@ -709,10 +712,10 @@ jQuery(document).ready(function($) {
 
         // Actualizar slug del plugin
         if (isset($_POST['imagina_update_slug'])) {
-            $plugin_id = intval($_POST['plugin_id']);
+            $plugin_id = isset($_POST['plugin_id']) ? intval($_POST['plugin_id']) : 0;
 
             if (check_admin_referer('update_slug_' . $plugin_id)) {
-                $new_slug = isset($_POST['new_slug']) ? trim($_POST['new_slug']) : '';
+                $new_slug = isset($_POST['new_slug']) ? sanitize_title(wp_unslash($_POST['new_slug'])) : '';
 
                 // Si está vacío, pasar null para usar el auto-generado
                 if (empty($new_slug)) {
@@ -730,7 +733,7 @@ jQuery(document).ready(function($) {
                 }
 
                 // Redirect limpio
-                wp_redirect(admin_url('admin.php?page=imagina-updater-plugins'));
+                wp_safe_redirect(admin_url('admin.php?page=imagina-updater-plugins'));
                 exit;
             }
         }
@@ -743,6 +746,7 @@ jQuery(document).ready(function($) {
         if ($slug_error = get_transient('imagina_updater_slug_error')) {
             delete_transient('imagina_updater_slug_error');
             add_settings_error('imagina_updater', 'slug_error', sprintf(
+                /* translators: %s: error message */
                 __('Error al actualizar slug: %s', 'imagina-updater-server'),
                 $slug_error
             ), 'error');
@@ -750,8 +754,8 @@ jQuery(document).ready(function($) {
 
         // Crear grupo de plugins
         if (isset($_POST['imagina_create_group']) && check_admin_referer('imagina_create_group')) {
-            $name = sanitize_text_field($_POST['group_name']);
-            $description = sanitize_textarea_field($_POST['group_description']);
+            $name = isset($_POST['group_name']) ? sanitize_text_field(wp_unslash($_POST['group_name'])) : '';
+            $description = isset($_POST['group_description']) ? sanitize_textarea_field(wp_unslash($_POST['group_description'])) : '';
             $plugin_ids = isset($_POST['plugin_ids']) ? array_map('intval', $_POST['plugin_ids']) : array();
 
             $result = Imagina_Updater_Server_Plugin_Groups::create_group($name, $description, $plugin_ids);
@@ -764,15 +768,15 @@ jQuery(document).ready(function($) {
                 set_transient('imagina_updater_group_success', __('Grupo creado exitosamente', 'imagina-updater-server'), 30);
             }
 
-            wp_redirect(admin_url('admin.php?page=imagina-updater-plugin-groups'));
+            wp_safe_redirect(admin_url('admin.php?page=imagina-updater-plugin-groups'));
             exit;
         }
 
         // Actualizar grupo de plugins
         if (isset($_POST['imagina_update_group']) && check_admin_referer('imagina_update_group')) {
-            $group_id = intval($_POST['group_id']);
-            $name = sanitize_text_field($_POST['group_name']);
-            $description = sanitize_textarea_field($_POST['group_description']);
+            $group_id = isset($_POST['group_id']) ? intval($_POST['group_id']) : 0;
+            $name = isset($_POST['group_name']) ? sanitize_text_field(wp_unslash($_POST['group_name'])) : '';
+            $description = isset($_POST['group_description']) ? sanitize_textarea_field(wp_unslash($_POST['group_description'])) : '';
             $plugin_ids = isset($_POST['plugin_ids']) ? array_map('intval', $_POST['plugin_ids']) : array();
 
             $result = Imagina_Updater_Server_Plugin_Groups::update_group($group_id, $name, $description, $plugin_ids);
@@ -785,12 +789,12 @@ jQuery(document).ready(function($) {
                 set_transient('imagina_updater_group_success', __('Grupo actualizado exitosamente', 'imagina-updater-server'), 30);
             }
 
-            wp_redirect(admin_url('admin.php?page=imagina-updater-plugin-groups'));
+            wp_safe_redirect(admin_url('admin.php?page=imagina-updater-plugin-groups'));
             exit;
         }
 
         // Eliminar grupo de plugins
-        if (isset($_GET['action']) && $_GET['action'] === 'delete_group' && isset($_GET['group_id']) && check_admin_referer('delete_group_' . $_GET['group_id'])) {
+        if (isset($_GET['action']) && $_GET['action'] === 'delete_group' && isset($_GET['group_id']) && check_admin_referer('delete_group_' . intval($_GET['group_id']))) {
             $group_id = intval($_GET['group_id']);
             $result = Imagina_Updater_Server_Plugin_Groups::delete_group($group_id);
 
@@ -802,7 +806,7 @@ jQuery(document).ready(function($) {
                 set_transient('imagina_updater_group_success', __('Grupo eliminado', 'imagina-updater-server'), 30);
             }
 
-            wp_redirect(admin_url('admin.php?page=imagina-updater-plugin-groups'));
+            wp_safe_redirect(admin_url('admin.php?page=imagina-updater-plugin-groups'));
             exit;
         }
 
@@ -828,7 +832,7 @@ jQuery(document).ready(function($) {
         // Guardar configuración
         if (isset($_POST['imagina_save_settings']) && check_admin_referer('imagina_save_settings')) {
             $enable_logging = isset($_POST['enable_logging']) ? true : false;
-            $log_level = isset($_POST['log_level']) ? sanitize_text_field($_POST['log_level']) : 'INFO';
+            $log_level = isset($_POST['log_level']) ? sanitize_text_field(wp_unslash($_POST['log_level'])) : 'INFO';
 
             update_option('imagina_updater_server_config', array(
                 'enable_logging' => $enable_logging,
@@ -838,7 +842,7 @@ jQuery(document).ready(function($) {
             imagina_updater_server_log('Configuración actualizada: logging=' . ($enable_logging ? 'enabled' : 'disabled') . ', level=' . $log_level, 'info');
             set_transient('imagina_updater_settings_saved', true, 30);
 
-            wp_redirect(admin_url('admin.php?page=imagina-updater-settings'));
+            wp_safe_redirect(admin_url('admin.php?page=imagina-updater-settings'));
             exit;
         }
 
@@ -854,7 +858,7 @@ jQuery(document).ready(function($) {
             imagina_updater_server_log('Logs limpiados manualmente', 'info');
             set_transient('imagina_updater_logs_cleared', true, 30);
 
-            wp_redirect(admin_url('admin.php?page=imagina-updater-logs'));
+            wp_safe_redirect(admin_url('admin.php?page=imagina-updater-logs'));
             exit;
         }
 
@@ -1091,7 +1095,7 @@ jQuery(document).ready(function($) {
         $log_file = $logger->get_log_file();
 
         if (!file_exists($log_file)) {
-            wp_die(__('No hay logs disponibles para descargar', 'imagina-updater-server'));
+            wp_die(esc_html__('No hay logs disponibles para descargar', 'imagina-updater-server'));
         }
 
         header('Content-Type: text/plain');

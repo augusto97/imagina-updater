@@ -89,9 +89,10 @@ if (class_exists($class_name)) {
     $is_licensed = call_user_func(array($class_name, 'is_licensed'));
 
     if ($is_licensed) {
-        // Plugin licenciado, ejecutar funcionalidades
+        // Plugin licenciado, ejecutar funcionalidades premium
     } else {
-        // Plugin no licenciado, mostrar aviso
+        // Plugin no licenciado - las funciones premium estan deshabilitadas
+        // IMPORTANTE: Los avisos SOLO se muestran en el admin, NUNCA en el frontend
     }
 }
 ```

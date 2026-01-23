@@ -594,10 +594,11 @@ jQuery(document).ready(function($) {
 
             $changelog = isset($_POST['changelog']) ? sanitize_textarea_field(wp_unslash($_POST['changelog'])) : '';
             $plugin_groups = isset($_POST['plugin_groups']) ? array_map('intval', $_POST['plugin_groups']) : array();
+            $force_replace = isset($_POST['force_replace']) && $_POST['force_replace'] === '1';
 
             $plugin_filename = isset($_FILES['plugin_file']['name']) ? sanitize_file_name($_FILES['plugin_file']['name']) : '';
-            imagina_updater_server_log('Iniciando subida de plugin: ' . $plugin_filename, 'info');
-            $result = Imagina_Updater_Server_Plugin_Manager::upload_plugin($_FILES['plugin_file'], $changelog);
+            imagina_updater_server_log('Iniciando subida de plugin: ' . $plugin_filename . ($force_replace ? ' (forzar reemplazo)' : ''), 'info');
+            $result = Imagina_Updater_Server_Plugin_Manager::upload_plugin($_FILES['plugin_file'], $changelog, $force_replace);
 
             if (is_wp_error($result)) {
                 imagina_updater_server_log('Error al subir plugin: ' . $result->get_error_message(), 'error');

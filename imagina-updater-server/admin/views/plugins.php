@@ -83,6 +83,21 @@ if (!defined('ABSPATH')) {
                         <?php endif; ?>
                     </td>
                 </tr>
+
+                <tr>
+                    <th scope="row">
+                        <?php esc_html_e('Opciones Avanzadas', 'imagina-updater-server'); ?>
+                    </th>
+                    <td>
+                        <label for="force_replace">
+                            <input type="checkbox" name="force_replace" id="force_replace" value="1">
+                            <?php esc_html_e('Permitir reemplazar misma versión', 'imagina-updater-server'); ?>
+                        </label>
+                        <p class="description">
+                            <?php esc_html_e('Activa esta opción si necesitas resubir el plugin con la misma versión (por ejemplo, para re-inyectar protección de licencia o corregir archivos).', 'imagina-updater-server'); ?>
+                        </p>
+                    </td>
+                </tr>
                 <?php do_action('imagina_updater_after_upload_form'); ?>
             </table>
 

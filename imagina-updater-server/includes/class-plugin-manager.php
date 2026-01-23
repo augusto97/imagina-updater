@@ -113,9 +113,10 @@ location ~ ^/wp-content/uploads/imagina-updater-plugins/.*\\.zip$ {
      *
      * @param array $file Archivo ZIP del plugin ($_FILES)
      * @param string|null $changelog Notas de la versión
+     * @param bool $force_replace Permitir reemplazar misma versión (para re-inyectar protección, etc.)
      * @return array|WP_Error
      */
-    public static function upload_plugin($file, $changelog = null) {
+    public static function upload_plugin($file, $changelog = null, $force_replace = false) {
         // Validar archivo
         if (!isset($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
             return new WP_Error('invalid_file', __('Archivo no válido', 'imagina-updater-server'));
@@ -199,28 +200,44 @@ location ~ ^/wp-content/uploads/imagina-updater-plugins/.*\\.zip$ {
 
         try {
             if ($existing) {
-                // Verificar si la versión es más nueva
-                if (version_compare($plugin_data['version'], $existing->current_version, '<=')) {
+                // Verificar versión: si force_replace está activo, permitir misma versión
+                $is_same_version = version_compare($plugin_data['version'], $existing->current_version, '=');
+                $is_older_version = version_compare($plugin_data['version'], $existing->current_version, '<');
+
+                if ($is_older_version) {
                     wp_delete_file($file_path);
-                    throw new Exception(__('La versión debe ser mayor a la actual', 'imagina-updater-server'));
+                    throw new Exception(__('La versión debe ser igual o mayor a la actual', 'imagina-updater-server'));
                 }
 
-                // Guardar versión anterior en historial
-                $result = $wpdb->insert(
-                    $table_versions,
-                    array(
-                        'plugin_id' => $existing->id,
-                        'version' => $existing->current_version,
-                        'file_path' => $existing->file_path,
-                        'file_size' => $existing->file_size,
-                        'checksum' => $existing->checksum,
-                        'uploaded_at' => $existing->uploaded_at
-                    ),
-                    array('%d', '%s', '%s', '%d', '%s', '%s')
-                );
+                if ($is_same_version && !$force_replace) {
+                    wp_delete_file($file_path);
+                    throw new Exception(__('Esta versión ya existe. Activa "Permitir reemplazar misma versión" si deseas resubir el plugin.', 'imagina-updater-server'));
+                }
 
-                if ($result === false) {
-                    throw new Exception(__('Error al guardar historial de versión', 'imagina-updater-server'));
+                // Si es misma versión con force_replace, eliminar archivo anterior (no guardar en historial)
+                if ($is_same_version && $force_replace) {
+                    if (file_exists($existing->file_path) && $existing->file_path !== $file_path) {
+                        wp_delete_file($existing->file_path);
+                    }
+                    imagina_updater_server_log(sprintf('Reemplazando misma versión del plugin: %s v%s', $plugin_data['name'], $plugin_data['version']), 'info');
+                } else {
+                    // Solo guardar versión anterior en historial si es una versión diferente
+                    $result = $wpdb->insert(
+                        $table_versions,
+                        array(
+                            'plugin_id' => $existing->id,
+                            'version' => $existing->current_version,
+                            'file_path' => $existing->file_path,
+                            'file_size' => $existing->file_size,
+                            'checksum' => $existing->checksum,
+                            'uploaded_at' => $existing->uploaded_at
+                        ),
+                        array('%d', '%s', '%s', '%d', '%s', '%s')
+                    );
+
+                    if ($result === false) {
+                        throw new Exception(__('Error al guardar historial de versión', 'imagina-updater-server'));
+                    }
                 }
 
                 // Actualizar plugin con nueva versión

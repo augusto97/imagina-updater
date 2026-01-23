@@ -173,20 +173,16 @@ if (!class_exists('{{CLASS_NAME}}')) {
 
         /**
          * Bloqueo de funcionalidad
+         * IMPORTANTE: Solo afecta al admin, NUNCA mostrar mensajes en el frontend
          */
         public static function {{OBF_BLOCK}}() {
+            // SOLO en admin - NUNCA mostrar nada en el frontend público
+            if (!is_admin()) {
+                return;
+            }
+
             // Desregistrar todos los hooks del plugin padre
             remove_all_actions('init', {{RAND_PRIORITY_2}});
-
-            // Limpiar cualquier contenido
-            if (did_action('wp_loaded')) {
-                add_filter('the_content', function($c) {
-                    if (!{{CLASS_NAME}}::is_licensed()) {
-                        return '<div style="padding:20px;background:#f8d7da;border:1px solid #f5c6cb;color:#721c24;margin:20px 0;border-radius:4px;"><strong>Plugin no licenciado.</strong> Por favor active su licencia.</div>' . $c;
-                    }
-                    return $c;
-                }, 1);
-            }
         }
 
         /**

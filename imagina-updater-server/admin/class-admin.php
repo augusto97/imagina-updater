@@ -1073,7 +1073,8 @@ jQuery(document).ready(function($) {
     public function render_activations_page() {
         global $wpdb;
 
-        // Filtrar por API key si se especifica
+        // Filtrar por API key si se especifica.
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only navigation filter; the mutation handler (deactivate_activation) validates its own nonce.
         $api_key_id = isset($_GET['api_key_id']) ? intval(wp_unslash($_GET['api_key_id'])) : null;
 
         // Construir query con prepared statements

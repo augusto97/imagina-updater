@@ -36,13 +36,12 @@ imagina-updater-license-extension-5.3.0.zip: OK
 
 ## Estado del corte
 
-Esta versión refleja el estado del repositorio **al cierre de la Fase 0** (rama `chore/remove-legacy-sdk`):
+Esta versión refleja el estado del repositorio **post Fase 0 (mergeada a main) + Fase 1.1 en `fix/critical-issues`**:
 
-- Eliminado el SDK legacy `imagina-license-sdk/` de la raíz del repo.
-- Documentación útil del SDK legacy rescatada a `imagina-updater-license-extension/docs/`.
-- `diagnostico-licencias.php`: chequeo post-upload migrado al marcador `IMAGINA LICENSE PROTECTION` del injector v4 (antes buscaba un path de SDK obsoleto y siempre fallaba).
-- `imagina-updater-license-extension/includes/license-sdk/loader.php`: limpiado el comentario PHPDoc obsoleto que mostraba un ejemplo de integración manual ya inexistente. Sin cambios funcionales.
-- Funcionalmente los 3 plugins se mantienen idénticos a su versión previa (Fase 0 fue exclusivamente limpieza; los dos fixes adicionales solo afectan al script de diagnóstico standalone y a un PHPDoc de un loader que no es cargado por código activo).
+- Fase 0: eliminado el SDK legacy `imagina-license-sdk/` de la raíz del repo. Documentación útil rescatada a `imagina-updater-license-extension/docs/`. Cleanups derivados en `diagnostico-licencias.php` y en el header PHPDoc del antiguo `loader.php`.
+- Fase 1.1: eliminado `imagina-updater-license-extension/includes/license-sdk/` completo (4 archivos huérfanos: `loader.php`, `class-crypto.php`, `class-license-validator.php`, `class-heartbeat.php`). Resuelve el riesgo latente de `Cannot redeclare class Imagina_License_Crypto`.
+- Sección 6 de `diagnostico-licencias.php` reescrita: ahora chequea los archivos clave del sistema de protección actual (injector, generator, crypto-server, license-api) y emite advertencia si reaparece el directorio legacy.
+- Funcionalmente los 3 plugins en producción se mantienen idénticos: el código eliminado en 1.1 nunca era cargado por ningún path activo (verificado exhaustivamente antes de borrar).
 
 ## Versionado
 

@@ -7,6 +7,13 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// phpcs:disable WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+// Justificación (Fase 2): este archivo opera sobre tablas custom propias del
+// plugin. Las queries directas son intencionales (no hay caché de objetos
+// compartido que invalidar para datos de baja cardinalidad), y los nombres
+// de tabla se construyen con $wpdb->prefix concatenado a constantes
+// literales, nunca a partir de input de usuario.
+
 class Imagina_Updater_Server_Admin {
 
     /**
@@ -1066,7 +1073,8 @@ jQuery(document).ready(function($) {
     public function render_activations_page() {
         global $wpdb;
 
-        // Filtrar por API key si se especifica
+        // Filtrar por API key si se especifica.
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only navigation filter; the mutation handler (deactivate_activation) validates its own nonce.
         $api_key_id = isset($_GET['api_key_id']) ? intval(wp_unslash($_GET['api_key_id'])) : null;
 
         // Construir query con prepared statements

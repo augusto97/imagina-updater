@@ -449,53 +449,57 @@ Las llamadas a `isset()` / `empty()` puramente existenciales se dejaron sin toca
 
 ---
 
-### Fase 2 — PHPCS sweep (warnings sistemáticos)
+### Fase 2 — PHPCS sweep (warnings sistemáticos) — RESUELTO
+
+> **Estado**: ✅ resuelto en `chore/phpcs-sweep`. Ver "Cambios realizados" más abajo.
 
 **Rama**: `chore/phpcs-sweep`
 
-**Objetivo**: resolver el resto de warnings de PHPCS que no entraron en Fase 1.
+**Objetivo original**: resolver el resto de warnings de PHPCS que no entraron en Fase 1.
 
-**Categorías**:
+#### 2.1 `WordPress.DB.DirectDatabaseQuery.NoCaching` + 2.2 `WordPress.DB.PreparedSQL.InterpolatedNotPrepared` — RESUELTO
 
-#### 2.1 `WordPress.DB.DirectDatabaseQuery.NoCaching`
+**Razonamiento del approach elegido**: la guía original sugería anotar cada query individualmente con `phpcs:ignore`. El audit del CSV (`imagina-updater-server-imagina-updater-server-php-20260121-162424.csv`) reveló ~190 sitios afectados a través de 12 archivos, todos con la misma justificación (tablas custom propias del plugin, nombres de tabla siempre derivados de `$wpdb->prefix` + constante literal). Anotar 190 veces es ruido en code review sin valor extra.
 
-Las queries directas con `$wpdb->get_results/get_var/get_row` se quejan de no usar caché. **No vamos a cachear todo** porque para tablas custom de baja cardinalidad no aporta. Acción:
+**Approach aplicado**: cabecera `phpcs:disable` a nivel de archivo en los 12 archivos que usan `$wpdb`, con la justificación una sola vez:
 
-1. En cada query, añadir el comentario phpcs:
-   ```php
-   // phpcs:ignore WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom table requires direct query
-   ```
-2. Para queries de **listados grandes** (logs, downloads, activations en admin) sí vale la pena un caché de 60s con `wp_cache_get`/`wp_cache_set`. Aplicar selectivamente.
-
-#### 2.2 `WordPress.DB.PreparedSQL.InterpolatedNotPrepared`
-
-Tablas interpoladas. Como `$wpdb->prefix . 'literal'` es seguro, añadir comentarios:
 ```php
-// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix is safe
-$results = $wpdb->get_results($wpdb->prepare(
-    "SELECT * FROM {$table_name} WHERE id = %d",
-    $id
-));
+// phpcs:disable WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+// Justificación (Fase 2): este archivo opera sobre tablas custom propias del
+// plugin. Las queries directas son intencionales (no hay caché de objetos
+// compartido que invalidar para datos de baja cardinalidad), y los nombres
+// de tabla se construyen con $wpdb->prefix concatenado a constantes
+// literales, nunca a partir de input de usuario.
 ```
 
-#### 2.3 `WordPress.Security.NonceVerification.Recommended`
+Archivos cubiertos (12):
 
-Algunos `$_GET['action']` se procesan sin verificar nonce. Esto es legítimo cuando es display-only (rendering, no acción). Patrón:
-```php
-// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only navigation, no action performed
-$action = isset($_GET['action']) ? sanitize_key(wp_unslash($_GET['action'])) : '';
-```
+- Server: `includes/class-database.php`, `includes/class-plugin-manager.php`, `includes/class-plugin-groups.php`, `includes/class-api-keys.php`, `includes/class-activations.php`, `admin/class-admin.php`, `api/class-rest-api.php`.
+- License-extension: `includes/class-database.php`, `includes/class-license-api.php`, `includes/class-admin.php`, `includes/class-sdk-injector.php`.
+- Client: `includes/class-updater.php`.
 
-Para acciones GET que **sí ejecutan algo** (eliminar, regenerar API key, desactivar activation), validar el nonce:
-```php
-if (!isset($_GET['_wpnonce']) || !wp_verify_nonce($_GET['_wpnonce'], 'iaud_action_' . $id)) {
-    wp_die(esc_html__('Acción no autorizada', 'imagina-updater-server'));
-}
-```
+#### 2.3 `WordPress.Security.NonceVerification.Recommended` — RESUELTO
+
+Las 6 advertencias del CSV (líneas 1005-1006 y 1048 originales del server admin) corresponden a lecturas read-only de navegación en `render_plugin_groups_page` y `render_activations_page`. Estas no requieren nonce (son filtros para el render, no mutaciones — los handlers de mutación validan su propio nonce).
+
+**Acción ejecutada**:
+
+- `render_plugin_groups_page` y reads equivalentes en `render_license_keys_page` (license-extension) ya recibieron el `phpcs:ignore WordPress.Security.NonceVerification.Recommended` durante Fase 1.4.
+- `render_activations_page` cerrado en este commit con la misma convención: `// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only navigation filter; the mutation handler (deactivate_activation) validates its own nonce.`
+
+#### Cambios adicionales (fuera del plan original) — REPORTADOS, NO EJECUTADOS
+
+- **Caché selectivo en endpoints de listado grandes** (logs, downloads, activations): el plan sugería `wp_cache_get`/`wp_cache_set` 60s "selectivamente". No ejecutado en Fase 2 — requiere análisis de patrones de acceso reales y puede solaparse con Fase 3 (robustez). Pendiente para Fase 2.x o Fase 3.
+- **`class-protection-generator.php` líneas 364-367**: dos lecturas `$_POST['ilp_action']` / `$_POST['ilp_plugin']` dentro de un heredoc `<<<'PHPCODE'`. Es el template del código de protección que se inyecta en plugins premium del cliente, no código del propio servidor. El linter no escanea heredocs en single-quote, así que no genera warnings PHPCS, pero el código generado SÍ ejecuta sin `wp_unslash` ni nonce check. Hardening pendiente para una fase futura porque:
+  1. Tocar el generator implica re-inyectar todos los plugins premium ya distribuidos (carga operativa).
+  2. Puede intersectar con CLAUDE.md §4 regla crítica 9 (no cambiar firmas HMAC ni algoritmo de tokens sin migración planificada).
+- **Otras categorías visibles en el CSV original** que NO están en el alcance de Fase 2 (`PluginCheck.Security.DirectDB.UnescapedDBParameter`, `WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound`, `WordPress.PHP.DevelopmentFunctions.error_log_*`, `WordPress.Security.ValidatedSanitizedInput.MissingUnslash`/`InputNotSanitized`/`InputNotValidated`): se dejan para una Fase 2.x o se reasignan al plan según prioridad.
 
 **Verificación de Fase 2**:
-- PHPCS limpio con set WordPress-Extra (cero errors, warnings ignorados con `// phpcs:ignore` justificados).
-- Snapshot del CSV inicial (`imagina-updater-server-imagina-updater-server-php-20260121-162424.csv`) vs CSV final adjunto al PR.
+
+- `php -l` ejecutado sobre los 12 archivos modificados: sin errores de sintaxis.
+- Re-correr Plugin Check (CSV) tras estos cambios para confirmar que los warnings cubiertos se silencian — pendiente del usuario (no tengo phpcs/Plugin Check instalado en este entorno).
+- Snapshot del CSV inicial vs final adjuntable al PR cuando se mergee.
 
 ---
 

@@ -772,11 +772,18 @@ class Imagina_Updater_Server_REST_API {
             ob_end_clean();
         }
 
-        // Usar WP_Filesystem para leer el archivo
-        global $wp_filesystem;
-        if (empty($wp_filesystem)) {
-            require_once ABSPATH . '/wp-admin/includes/file.php';
-            WP_Filesystem();
+        // Fase 3.3: streaming en chunks de 8 KB en lugar de cargar el ZIP
+        // entero a memoria con WP_Filesystem::get_contents(). Para plugins
+        // grandes (>50 MB) la carga total dispara el memory_limit. fopen()
+        // directo es necesario aquí porque WP_Filesystem no expone una
+        // primitiva de streaming/iteración por chunks.
+        $handle = @fopen($plugin->file_path, 'rb');
+        if ($handle === false) {
+            return new WP_Error(
+                'file_open_failed',
+                __('No se pudo abrir el archivo del plugin', 'imagina-updater-server'),
+                array('status' => 500)
+            );
         }
 
         // Enviar archivo
@@ -787,8 +794,12 @@ class Imagina_Updater_Server_REST_API {
         header('Pragma: no-cache');
         header('Expires: 0');
 
-        // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Binary file content for download
-        echo $wp_filesystem->get_contents($plugin->file_path);
+        while (!feof($handle)) {
+            // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Binary file content for download.
+            echo fread($handle, 8192);
+            flush();
+        }
+        fclose($handle);
         exit;
     }
 

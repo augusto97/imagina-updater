@@ -36,13 +36,15 @@ imagina-updater-license-extension-5.3.0.zip: OK
 
 ## Estado del corte
 
-Esta versión refleja el estado del repositorio **post Fase 0 (mergeada a main) + Fase 1 completa en `fix/critical-issues`**:
+Esta versión refleja el estado del repositorio **post Fase 0 + Fase 1 (ambas mergeadas a main) + Fase 2 en `chore/phpcs-sweep`**:
 
 - Fase 0: eliminado el SDK legacy `imagina-license-sdk/` de la raíz del repo. Documentación útil rescatada a `imagina-updater-license-extension/docs/`. Cleanups derivados en `diagnostico-licencias.php` y en el header PHPDoc del antiguo `loader.php`.
 - Fase 1.1: eliminado `imagina-updater-license-extension/includes/license-sdk/` completo (4 archivos huérfanos). Resuelve el riesgo latente de `Cannot redeclare class Imagina_License_Crypto`. Sección 6 del diagnóstico reescrita.
 - Fase 1.2: cliente sincronizado (header + constante) a `1.0.2`. Server y license-extension verificados consistentes.
 - Fase 1.3: hardening de `$_FILES['plugin_file']` en el handler de upload del servidor (validación de `is_array`, `is_uploaded_file` en capa admin, `wp_unslash` en claves user-controlled).
 - Fase 1.4: sweep de `wp_unslash()` en todos los reads `$_GET`/`$_POST` en admin de los 3 plugins; `phpcs:ignore NonceVerification.Recommended` en lecturas read-only de navegación.
+- Fase 2.1 + 2.2: cabecera `phpcs:disable WordPress.DB.DirectDatabaseQuery.{NoCaching,DirectQuery}, WordPress.DB.PreparedSQL.InterpolatedNotPrepared` con justificación, a nivel de archivo, en los 12 archivos que usan `$wpdb` (en lugar de ~190 anotaciones inline).
+- Fase 2.3: cierre de la última lectura `$_GET` read-only en `render_activations_page` con `phpcs:ignore NonceVerification.Recommended`.
 
 ## Versionado
 

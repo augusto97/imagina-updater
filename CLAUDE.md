@@ -349,6 +349,17 @@ Scope sugerido: `server`, `client`, `license-extension`, `admin-ui`, `claude`, `
 - Subir un plugin marcado Premium y verificar que la inyección sigue funcionando.
 - Activar un sitio cliente y verificar el flujo completo.
 
+**Cambios adicionales realizados durante esta fase (fuera del plan original)**
+
+> Registro histórico de cambios que no estaban en el plan inicial pero se ejecutaron antes de cerrar la fase, con autorización explícita del usuario.
+
+- **Fix `diagnostico-licencias.php` sección 7**: el chequeo `strpos($filename, 'imagina-license-sdk/loader.php')` siempre daba "❌ SDK NO encontrado" porque el injector v4 (`Imagina_License_SDK_Injector`) inyecta la protección **inline** en el archivo principal del plugin y ya no copia archivos SDK al ZIP. Se reemplazó por una búsqueda de la constante `PROTECTION_MARKER` (`'IMAGINA LICENSE PROTECTION'`) en cualquier archivo `.php` del ZIP. Resultado: el diagnóstico ahora reporta correctamente si la inyección funcionó.
+- **Limpieza del comentario obsoleto en `imagina-updater-license-extension/includes/license-sdk/loader.php` línea 8**: el ejemplo `require_once plugin_dir_path( __FILE__ ) . 'vendor/imagina-license-sdk/loader.php';` referenciaba un path inexistente y un patrón de uso (integración manual con vendor/) que el sistema actual ya no usa. Se sustituyó por una nota que explica el estado actual y remite a la Fase 1.1 para la decisión definitiva sobre `includes/license-sdk/`.
+
+**Pendientes derivados, NO ejecutados (siguen en su fase)**:
+
+- La sección 6 del diagnóstico ("ARCHIVOS DEL SDK EN LA EXTENSIÓN") sigue listando como "requeridos" `loader.php`, `class-crypto.php`, `class-license-validator.php`, `class-heartbeat.php` dentro de `includes/license-sdk/`. Esos archivos existen pero **no son cargados por código activo** (verificado con `grep -rn "require.*license-sdk"`). La revisión y posible reescritura de esa sección depende de la decisión final de Fase 1.1 sobre qué hacer con `includes/license-sdk/`.
+
 ---
 
 ### Fase 1 — Correcciones críticas (riesgo de fatal o vulnerabilidad)

@@ -205,20 +205,28 @@ if ($table_exists) {
             if ($zip->open($last_plugin->file_path) === true) {
                 echo "✅ ZIP válido\n";
 
-                // Buscar SDK en el ZIP
-                $has_sdk = false;
+                // Buscar marcador de protección inyectada (injector v4: el código se
+                // inyecta inline en el archivo principal del plugin, no como archivos
+                // SDK separados; el marcador se define en
+                // Imagina_License_SDK_Injector::PROTECTION_MARKER).
+                $has_protection = false;
+                $protection_marker = 'IMAGINA LICENSE PROTECTION';
                 for ($i = 0; $i < $zip->numFiles; $i++) {
                     $filename = $zip->getNameIndex($i);
-                    if (strpos($filename, 'imagina-license-sdk/loader.php') !== false) {
-                        $has_sdk = true;
-                        echo "✅ SDK encontrado en ZIP: $filename\n";
+                    if (substr($filename, -4) !== '.php') {
+                        continue;
+                    }
+                    $content = $zip->getFromIndex($i);
+                    if ($content !== false && strpos($content, $protection_marker) !== false) {
+                        $has_protection = true;
+                        echo "✅ Protección inyectada encontrada en: $filename\n";
                         break;
                     }
                 }
 
-                if (!$has_sdk) {
-                    echo "❌ SDK NO encontrado en el ZIP\n";
-                    echo "   Esto significa que la inyección NO funcionó\n";
+                if (!$has_protection) {
+                    echo "❌ Protección NO encontrada en el ZIP\n";
+                    echo "   Esto significa que la inyección NO funcionó (o el plugin no es premium)\n";
                 }
 
                 $zip->close();

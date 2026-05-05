@@ -228,7 +228,7 @@ class Imagina_License_Admin {
      */
     public static function process_uploaded_file($file_path, $plugin_data) {
         // Verificar si se marcó como premium en el formulario
-        $is_premium = isset($_POST['is_premium']) && $_POST['is_premium'] == 1;
+        $is_premium = isset($_POST['is_premium']) && wp_unslash($_POST['is_premium']) == 1;
 
         if (!$is_premium) {
             return;
@@ -271,7 +271,7 @@ class Imagina_License_Admin {
         $table = $wpdb->prefix . 'imagina_updater_plugins';
 
         // Determinar si es premium
-        $is_premium = isset($_POST['is_premium']) && $_POST['is_premium'] == 1 ? 1 : 0;
+        $is_premium = isset($_POST['is_premium']) && wp_unslash($_POST['is_premium']) == 1 ? 1 : 0;
 
         // Verificar si el plugin ya era premium (actualización)
         $existing_premium = $wpdb->get_var($wpdb->prepare(
@@ -330,12 +330,12 @@ class Imagina_License_Admin {
         }
 
         // Toggle premium status
-        if (isset($_POST['imagina_license_action']) && $_POST['imagina_license_action'] === 'toggle_premium') {
+        if (isset($_POST['imagina_license_action']) && wp_unslash($_POST['imagina_license_action']) === 'toggle_premium') {
             self::handle_toggle_premium();
         }
 
         // Inyectar protección manualmente
-        if (isset($_POST['imagina_license_action']) && $_POST['imagina_license_action'] === 'inject_protection') {
+        if (isset($_POST['imagina_license_action']) && wp_unslash($_POST['imagina_license_action']) === 'inject_protection') {
             self::handle_inject_protection();
         }
 
@@ -351,7 +351,7 @@ class Imagina_License_Admin {
             return;
         }
 
-        $plugin_id = intval($_POST['imagina_license_plugin_id']);
+        $plugin_id = intval(wp_unslash($_POST['imagina_license_plugin_id']));
 
         if (!check_admin_referer('imagina_license_inject_protection_' . $plugin_id)) {
             return;
@@ -419,7 +419,7 @@ class Imagina_License_Admin {
             return;
         }
 
-        $plugin_id = intval($_POST['imagina_license_plugin_id']);
+        $plugin_id = intval(wp_unslash($_POST['imagina_license_plugin_id']));
 
         if (!check_admin_referer('imagina_license_toggle_premium_' . $plugin_id)) {
             return;
@@ -663,9 +663,12 @@ class Imagina_License_Admin {
         $table_licenses = $wpdb->prefix . 'imagina_license_keys';
         $table_plugins = $wpdb->prefix . 'imagina_updater_plugins';
 
-        // Filtros
-        $plugin_filter = isset($_GET['plugin_id']) ? intval($_GET['plugin_id']) : 0;
-        $status_filter = isset($_GET['status']) ? sanitize_key($_GET['status']) : '';
+        // Filtros (read-only navigation; no action performed here, los handlers
+        // de mutación validan su propio nonce).
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $plugin_filter = isset($_GET['plugin_id']) ? intval(wp_unslash($_GET['plugin_id'])) : 0;
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $status_filter = isset($_GET['status']) ? sanitize_key(wp_unslash($_GET['status'])) : '';
 
         // Construir query
         $where = array('1=1');
@@ -702,8 +705,10 @@ class Imagina_License_Admin {
 
         // Modal de edición (si hay ID)
         $edit_license = null;
-        if (isset($_GET['edit']) && intval($_GET['edit']) > 0) {
-            $edit_license = Imagina_License_Database::get_license_by_id(intval($_GET['edit']));
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only navigation.
+        $edit_id = isset($_GET['edit']) ? intval(wp_unslash($_GET['edit'])) : 0;
+        if ($edit_id > 0) {
+            $edit_license = Imagina_License_Database::get_license_by_id($edit_id);
         }
 
         ?>
@@ -995,8 +1000,10 @@ class Imagina_License_Admin {
 
             <?php
             // Modal de ver detalles de licencia
-            if (isset($_GET['view']) && intval($_GET['view']) > 0) {
-                $view_license = Imagina_License_Database::get_license_by_id(intval($_GET['view']));
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only navigation.
+            $view_id = isset($_GET['view']) ? intval(wp_unslash($_GET['view'])) : 0;
+            if ($view_id > 0) {
+                $view_license = Imagina_License_Database::get_license_by_id($view_id);
                 if ($view_license) {
                     $activations = Imagina_License_Database::get_license_activations($view_license->id);
                     ?>
@@ -1088,7 +1095,7 @@ class Imagina_License_Admin {
             return;
         }
 
-        $action = sanitize_key($_POST['imagina_license_action']);
+        $action = sanitize_key(wp_unslash($_POST['imagina_license_action']));
 
         switch ($action) {
             case 'create_license':
@@ -1097,13 +1104,13 @@ class Imagina_License_Admin {
                 }
 
                 $data = array(
-                    'plugin_id' => intval($_POST['plugin_id']),
-                    'customer_email' => sanitize_email($_POST['customer_email']),
-                    'customer_name' => sanitize_text_field($_POST['customer_name']),
-                    'max_activations' => max(1, intval($_POST['max_activations'])),
-                    'expires_at' => !empty($_POST['expires_at']) ? sanitize_text_field($_POST['expires_at']) . ' 23:59:59' : null,
-                    'order_id' => sanitize_text_field($_POST['order_id']),
-                    'notes' => sanitize_textarea_field($_POST['notes']),
+                    'plugin_id' => intval(wp_unslash($_POST['plugin_id'])),
+                    'customer_email' => sanitize_email(wp_unslash($_POST['customer_email'])),
+                    'customer_name' => sanitize_text_field(wp_unslash($_POST['customer_name'])),
+                    'max_activations' => max(1, intval(wp_unslash($_POST['max_activations']))),
+                    'expires_at' => !empty($_POST['expires_at']) ? sanitize_text_field(wp_unslash($_POST['expires_at'])) . ' 23:59:59' : null,
+                    'order_id' => sanitize_text_field(wp_unslash($_POST['order_id'])),
+                    'notes' => sanitize_textarea_field(wp_unslash($_POST['notes'])),
                 );
 
                 $license_id = Imagina_License_Database::create_license($data);
@@ -1123,22 +1130,22 @@ class Imagina_License_Admin {
                 global $wpdb;
                 $table = $wpdb->prefix . 'imagina_license_keys';
 
-                $license_id = intval($_POST['license_id']);
+                $license_id = intval(wp_unslash($_POST['license_id']));
 
                 $update_data = array(
-                    'customer_email' => sanitize_email($_POST['customer_email']),
-                    'customer_name' => sanitize_text_field($_POST['customer_name']),
-                    'max_activations' => max(1, intval($_POST['max_activations'])),
-                    'expires_at' => !empty($_POST['expires_at']) ? sanitize_text_field($_POST['expires_at']) . ' 23:59:59' : null,
-                    'status' => sanitize_key($_POST['status']),
-                    'order_id' => sanitize_text_field($_POST['order_id']),
-                    'notes' => sanitize_textarea_field($_POST['notes']),
+                    'customer_email' => sanitize_email(wp_unslash($_POST['customer_email'])),
+                    'customer_name' => sanitize_text_field(wp_unslash($_POST['customer_name'])),
+                    'max_activations' => max(1, intval(wp_unslash($_POST['max_activations']))),
+                    'expires_at' => !empty($_POST['expires_at']) ? sanitize_text_field(wp_unslash($_POST['expires_at'])) . ' 23:59:59' : null,
+                    'status' => sanitize_key(wp_unslash($_POST['status'])),
+                    'order_id' => sanitize_text_field(wp_unslash($_POST['order_id'])),
+                    'notes' => sanitize_textarea_field(wp_unslash($_POST['notes'])),
                 );
                 $format = array('%s', '%s', '%d', '%s', '%s', '%s', '%s');
 
                 // Permitir cambiar plugin_id si se envía (licencias huérfanas)
                 if (!empty($_POST['plugin_id'])) {
-                    $update_data['plugin_id'] = intval($_POST['plugin_id']);
+                    $update_data['plugin_id'] = intval(wp_unslash($_POST['plugin_id']));
                     $format[] = '%d';
                 }
 
@@ -1159,7 +1166,7 @@ class Imagina_License_Admin {
                 }
 
                 global $wpdb;
-                $license_id = intval($_POST['license_id']);
+                $license_id = intval(wp_unslash($_POST['license_id']));
 
                 // Eliminar activaciones asociadas
                 $wpdb->delete(
@@ -1188,7 +1195,7 @@ class Imagina_License_Admin {
                 }
 
                 global $wpdb;
-                $license_id = intval($_POST['license_id']);
+                $license_id = intval(wp_unslash($_POST['license_id']));
                 $new_key = Imagina_License_Database::generate_license_key();
 
                 $result = $wpdb->update(
@@ -1213,8 +1220,8 @@ class Imagina_License_Admin {
 
                 global $wpdb;
                 $table = $wpdb->prefix . 'imagina_license_activations';
-                $activation_id = intval($_POST['activation_id']);
-                $license_id = intval($_POST['license_id']);
+                $activation_id = intval(wp_unslash($_POST['activation_id']));
+                $license_id = intval(wp_unslash($_POST['license_id']));
 
                 $wpdb->update(
                     $table,

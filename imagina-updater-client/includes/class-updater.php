@@ -855,19 +855,15 @@ class Imagina_Updater_Client_Updater {
 
         $slug_lower = strtolower($slug);
 
-        // Búsqueda directa en índice (O(1) en lugar de O(n))
+        // Búsqueda directa en índice (O(1) en lugar de O(n)).
+        // Fase 3.1: se eliminó el fallback de coincidencia parcial
+        // (`$indexed_slug startswith $slug_lower . '-'`). Ese fallback hacía
+        // match por prefijo (`"plugin"` coincidía con `"plugin-pro"`),
+        // generando ambigüedades cuando dos plugins comparten prefijo.
+        // Si en algún caso real hace falta resolver una ambigüedad, debe
+        // hacerse explícito en el servidor vía `slug_override`, no en el
+        // cliente con suposiciones.
         $found = isset($this->plugin_index[$slug_lower]) ? $this->plugin_index[$slug_lower] : false;
-
-        // Si no se encontró, intentar coincidencia parcial como fallback
-        if (!$found) {
-            foreach ($this->plugin_index as $indexed_slug => $plugin_file) {
-                // Coincidencia parcial: slug-* (ej: "plugin" coincide con "plugin-pro")
-                if (strpos($indexed_slug, $slug_lower . '-') === 0) {
-                    $found = $plugin_file;
-                    break;
-                }
-            }
-        }
 
         // Cachear resultado (positivo o negativo)
         $this->plugin_file_cache[$slug] = $found;

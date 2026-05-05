@@ -104,23 +104,23 @@ class Imagina_Updater_Client_Admin {
 
         // Guardar configuración
         if (isset($_POST['imagina_save_config']) && check_admin_referer('imagina_save_config')) {
-            $server_url = esc_url_raw($_POST['server_url']);
-            $enable_logging = isset($_POST['enable_logging']) ? true : false;
-            $log_level = isset($_POST['log_level']) ? sanitize_text_field($_POST['log_level']) : 'INFO';
+            $server_url     = isset($_POST['server_url']) ? esc_url_raw(wp_unslash($_POST['server_url'])) : '';
+            $enable_logging = isset($_POST['enable_logging']);
+            $log_level      = isset($_POST['log_level']) ? sanitize_text_field(wp_unslash($_POST['log_level'])) : 'INFO';
 
             // Obtener configuración actual
             $current_config = imagina_updater_client()->get_config();
-            $has_api_key = !empty($current_config['api_key']);
-            $change_api_key = isset($_POST['change_api_key']) && $_POST['change_api_key'] === '1';
+            $has_api_key    = !empty($current_config['api_key']);
+            $change_api_key = isset($_POST['change_api_key']) && wp_unslash($_POST['change_api_key']) === '1';
 
             // Determinar qué API Key usar
             $activation_token = isset($current_config['activation_token']) ? $current_config['activation_token'] : '';
-            $api_key = '';
+            $api_key          = '';
 
             // Caso 1: Primera vez (no hay API key) O usuario marcó cambiar API key
             if (!$has_api_key || $change_api_key) {
                 // Obtener API key del formulario
-                $api_key = isset($_POST['api_key']) ? sanitize_text_field($_POST['api_key']) : '';
+                $api_key = isset($_POST['api_key']) ? sanitize_text_field(wp_unslash($_POST['api_key'])) : '';
 
                 if (empty($api_key)) {
                     add_settings_error('imagina_updater_client', 'missing_api_key', __('Debes ingresar una API Key', 'imagina-updater-client'), 'error');
@@ -181,7 +181,7 @@ class Imagina_Updater_Client_Admin {
         }
 
         // Desactivar licencia
-        if (isset($_GET['action']) && $_GET['action'] === 'deactivate_license' && check_admin_referer('deactivate_license')) {
+        if (isset($_GET['action']) && wp_unslash($_GET['action']) === 'deactivate_license' && check_admin_referer('deactivate_license')) {
             // Primero intentar desactivar en el servidor
             $api_client = imagina_updater_client()->get_api_client();
             if ($api_client) {
@@ -208,12 +208,13 @@ class Imagina_Updater_Client_Admin {
         }
 
         // Instalar plugin desde servidor (GET con nonce en URL)
-        if (isset($_GET['action']) && $_GET['action'] === 'install_plugin' && isset($_GET['plugin_slug'])) {
-            $plugin_slug = sanitize_text_field($_GET['plugin_slug']);
+        if (isset($_GET['action']) && wp_unslash($_GET['action']) === 'install_plugin' && isset($_GET['plugin_slug'])) {
+            $plugin_slug = sanitize_text_field(wp_unslash($_GET['plugin_slug']));
 
             // Verificar nonce específico del plugin
-            if (!wp_verify_nonce($_GET['_wpnonce'], 'imagina_install_plugin_' . $plugin_slug)) {
-                wp_die(__('Error de seguridad: Nonce inválido', 'imagina-updater-client'));
+            $nonce = isset($_GET['_wpnonce']) ? sanitize_text_field(wp_unslash($_GET['_wpnonce'])) : '';
+            if (!wp_verify_nonce($nonce, 'imagina_install_plugin_' . $plugin_slug)) {
+                wp_die(esc_html__('Error de seguridad: Nonce inválido', 'imagina-updater-client'));
             }
 
             if (empty($plugin_slug)) {
@@ -244,7 +245,7 @@ class Imagina_Updater_Client_Admin {
         if (isset($_POST['imagina_save_plugins']) && check_admin_referer('imagina_save_plugins')) {
             // Obtener selección del formulario
             $enabled_plugins = isset($_POST['enabled_plugins']) && is_array($_POST['enabled_plugins'])
-                ? array_map('sanitize_text_field', $_POST['enabled_plugins'])
+                ? array_map('sanitize_text_field', wp_unslash($_POST['enabled_plugins']))
                 : array();
 
             // Guardar configuración
@@ -261,7 +262,7 @@ class Imagina_Updater_Client_Admin {
         // Guardar modo de visualización
         if (isset($_POST['imagina_save_display_mode']) && check_admin_referer('imagina_save_display_mode')) {
             $display_mode = isset($_POST['plugin_display_mode'])
-                ? sanitize_text_field($_POST['plugin_display_mode'])
+                ? sanitize_text_field(wp_unslash($_POST['plugin_display_mode']))
                 : 'installed_only';
 
             // Validar que sea un valor permitido

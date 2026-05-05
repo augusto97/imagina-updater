@@ -40,7 +40,9 @@ Esta versión refleja el estado del repositorio **al cierre de la Fase 0** (rama
 
 - Eliminado el SDK legacy `imagina-license-sdk/` de la raíz del repo.
 - Documentación útil del SDK legacy rescatada a `imagina-updater-license-extension/docs/`.
-- Las funcionalidades de los 3 plugins se mantienen 100 % intactas (la fase 0 era exclusivamente limpieza del repo, no tocó código activo de los plugins).
+- `diagnostico-licencias.php`: chequeo post-upload migrado al marcador `IMAGINA LICENSE PROTECTION` del injector v4 (antes buscaba un path de SDK obsoleto y siempre fallaba).
+- `imagina-updater-license-extension/includes/license-sdk/loader.php`: limpiado el comentario PHPDoc obsoleto que mostraba un ejemplo de integración manual ya inexistente. Sin cambios funcionales.
+- Funcionalmente los 3 plugins se mantienen idénticos a su versión previa (Fase 0 fue exclusivamente limpieza; los dos fixes adicionales solo afectan al script de diagnóstico standalone y a un PHPDoc de un loader que no es cargado por código activo).
 
 ## Versionado
 

@@ -3,7 +3,7 @@
  * Plugin Name: Imagina Updater Client
  * Plugin URI: https://imaginawp.com/actualizador-de-plugins/
  * Description: Cliente para recibir actualizaciones de plugins desde un servidor central Imagina Updater
- * Version: 1.0.0
+ * Version: 1.0.2
  * Author: Imagina WP
  * Author URI: https://imaginawp.com
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Constantes del plugin
-define('IMAGINA_UPDATER_CLIENT_VERSION', '1.0.1');
+define('IMAGINA_UPDATER_CLIENT_VERSION', '1.0.2');
 define('IMAGINA_UPDATER_CLIENT_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('IMAGINA_UPDATER_CLIENT_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('IMAGINA_UPDATER_CLIENT_PLUGIN_FILE', __FILE__);

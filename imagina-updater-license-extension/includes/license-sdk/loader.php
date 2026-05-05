@@ -2,10 +2,16 @@
 /**
  * Imagina License SDK - Loader
  *
- * Punto de entrada del SDK. Este archivo debe ser incluido en los plugins premium.
+ * Loader del SDK interno usado históricamente por la extensión de licencias.
  *
- * Uso:
- * require_once plugin_dir_path( __FILE__ ) . 'vendor/imagina-license-sdk/loader.php';
+ * Estado actual: este archivo se mantiene en includes/license-sdk/ por
+ * compatibilidad histórica. El sistema actual NO lo carga manualmente: la
+ * protección se inyecta inline en el archivo principal del plugin premium
+ * mediante Imagina_License_SDK_Injector + Imagina_License_Protection_Generator.
+ *
+ * La revisión definitiva de qué archivos de includes/license-sdk/ siguen en
+ * uso (y la posible deduplicación de Imagina_License_Crypto) está pendiente
+ * de la Fase 1.1 del plan de trabajo (ver CLAUDE.md).
  *
  * @package Imagina_License_SDK
  * @version 1.0.0

@@ -1,0 +1,846 @@
+# CLAUDE.md — Imagina Updater
+
+> Este documento es la guía de trabajo para Claude Code sobre el repositorio `imagina-updater`. Léelo completo antes de cualquier intervención. Cuando trabajes en una fase específica, vuelve a la sección correspondiente.
+
+---
+
+## 0. Cómo usar este documento
+
+- **Antes de tocar código**: lee las secciones 1, 2, 3 y 4. Sin excepciones.
+- **Cuando vayas a trabajar en una fase**: lee la sección correspondiente del **Plan de trabajo (sección 6)** y vuelve a las **Reglas críticas (sección 4)**.
+- **Si una indicación de este documento entra en conflicto con una petición puntual del usuario**: detente, expón el conflicto y espera confirmación. No improvises.
+- **Idioma**: comentarios de código y mensajes de UI en español; nombres de variables, clases y archivos en inglés. Mensajes de commit en inglés (Conventional Commits).
+
+---
+
+## 1. Contexto del proyecto
+
+Imagina Updater es un ecosistema de WordPress para distribuir plugins propios desde un servidor central a múltiples sitios cliente, con licenciamiento integrado.
+
+### 1.1 Componentes del repositorio (estado objetivo, después de la Fase 0)
+
+```
+imagina-updater/
+├── imagina-updater-server/              ← Plugin SERVIDOR
+├── imagina-updater-client/              ← Plugin CLIENTE
+├── imagina-updater-license-extension/   ← Extensión de LICENCIAS (v5.3.0+)
+├── diagnostico-licencias.php            ← Script de diagnóstico
+└── CLAUDE.md                            ← Este documento
+```
+
+> ⚠️ **Importante**: la carpeta `imagina-license-sdk/` debe ELIMINARSE en la Fase 0. Si la ves, no construyas nada sobre ella.
+
+### 1.2 Responsabilidades
+
+| Componente | Responsabilidad |
+|---|---|
+| `imagina-updater-server` | API REST, gestión de plugins, API keys, activaciones, grupos, logs |
+| `imagina-updater-client` | Conectarse al servidor, integrar con sistema nativo de updates de WP, gestor de licencias para plugins premium |
+| `imagina-updater-license-extension` | Marca plugins como Premium, inyecta código de protección al subir el ZIP, gestiona License Keys y activations de licencias |
+
+### 1.3 Modelo de autenticación de DOS NIVELES
+
+Esto es fundamental, **no se debe romper bajo ningún concepto**:
+
+1. **API Key (`ius_…`)** — formato: `ius_` + 60 caracteres hex. Se usa SOLO para:
+   - Endpoint `/activate` (intercambia API key por activation_token)
+   - Endpoint `/validate` (validar que la API key sigue activa)
+
+2. **Activation Token (`iat_…`)** — formato: `iat_` + 60 caracteres hex. Se usa para TODO lo demás:
+   - `/plugins`, `/plugin/{slug}`, `/check-updates`, `/download/{slug}`, `/deactivate-self`
+   - Siempre acompañado del header **`X-Site-Domain`** (debe coincidir con el dominio registrado al activar; si no, 403)
+
+### 1.4 Tablas de base de datos
+
+Servidor:
+- `wp_imagina_updater_api_keys`
+- `wp_imagina_updater_plugins` (incluye `slug_override` y, si la extensión está activa, `is_premium`)
+- `wp_imagina_updater_versions`
+- `wp_imagina_updater_downloads`
+- `wp_imagina_updater_plugin_groups`
+- `wp_imagina_updater_plugin_group_items`
+- `wp_imagina_updater_activations`
+
+License extension:
+- `wp_imagina_license_keys`
+- `wp_imagina_license_activations`
+
+### 1.5 Hooks extensibles del servidor (NO romper)
+
+```
+imagina_updater_after_upload_form
+imagina_updater_after_move_plugin_file   ← aquí se inyecta protección
+imagina_updater_after_upload_plugin
+imagina_updater_plugins_table_header
+imagina_updater_plugins_table_row
+```
+
+### 1.6 Flujos críticos a respetar
+
+**Activación de un sitio:**
+```
+Cliente → POST /activate {api_key, site_domain}
+       ← {activation_token: iat_…, activations_used, max_activations}
+       Cliente guarda token; desde ahora usa Bearer iat_… + X-Site-Domain
+```
+
+**Check de updates:**
+```
+Transient cache (12h) → si miss → POST /check-updates con activation_token
+                    → set_transient resultado
+                    → WP transient `update_plugins` se modifica
+                    → WP descarga vía http_request_args (que inyecta auth headers)
+```
+
+**Upload con protección:**
+```
+Admin sube ZIP → upload_plugin() valida MIME, extract_plugin_info
+              → wp_filesystem copia a uploads/imagina-updater-plugins/
+              → do_action('imagina_updater_after_move_plugin_file')
+                   ↓ (si is_premium)
+                   SDK_Injector: extract → inject → rezip → backup
+              → $wpdb->insert/update con TRANSACTION
+              → do_action('imagina_updater_after_upload_plugin')
+```
+
+---
+
+## 2. Stack tecnológico
+
+### 2.1 Backend (PHP/WordPress) — existente, a refactorizar gradualmente
+
+- **WordPress** 5.8+
+- **PHP** 7.4+ (compatible con shared hosting; nada que requiera extensiones raras)
+- **Arquitectura objetivo**: clases con namespaces y autoload PSR-4 (Fase 4)
+- **Persistencia**: tablas MySQL custom con `dbDelta`. **No abusar de `wp_options` ni meta tables** para datos masivos
+- **REST**: `register_rest_route` nativo, permission callbacks con capabilities y nonces
+- **Tareas en background**: Action Scheduler cuando aplique (heartbeat, limpiezas)
+- **Hooks**: usar los de WP/WooCommerce en lugar de modificar core
+- **Compatibilidad**: shared hosting, OpenLiteSpeed (cuando haya `.htaccess` involucrado)
+
+### 2.2 Frontend (admin SPA) — nuevo, para el rediseño (Fase 5)
+
+- **React** 18
+- **TypeScript** (strict mode)
+- **Vite** como bundler
+- **Tailwind CSS** con prefijo `iaud-` (de "imagina-updater") para evitar colisiones con WP admin y otros plugins
+- **shadcn/ui** sobre Tailwind, con prefijo aplicado en la config
+- **TanStack Table** v8 para todas las tablas de datos (plugins, api keys, activations, logs)
+- **Lucide React** para iconos
+- **i18n**: `wp_set_script_translations` con dominio `imagina-updater-server` (servidor) e `imagina-updater-client` (cliente)
+- **Estado**: hooks nativos de React + `@tanstack/react-query` para fetching de la REST API. Nada de Redux ni Zustand salvo justificación explícita
+
+### 2.3 Calidad y rendimiento
+
+- **Bundle objetivo**: < 250 KB gzip por pantalla (split por ruta)
+- **Code splitting**: una entry por sección admin (dashboard, plugins, api-keys, activations, logs, settings, plugin-groups)
+- **Encolado condicional**: el bundle SOLO se carga en las pantallas del plugin. Nunca en todo `wp-admin`
+- **Sin frameworks pesados** adicionales (no Material UI, no Ant Design, no Chakra, no Mantine)
+- **Sin dependencias del servidor** (Node solo en build; en producción es CSS/JS estático)
+
+---
+
+## 3. Convenciones de código
+
+### 3.1 PHP
+
+**Seguridad** (no negociable):
+- Toda entrada `$_GET`/`$_POST`/`$_REQUEST`/`$_COOKIE`/`$_SERVER` se procesa con `wp_unslash()` ANTES de sanitizar
+- Sanitización por tipo: `sanitize_text_field`, `sanitize_key`, `absint`, `esc_url_raw`, `sanitize_email`, `sanitize_textarea_field`
+- Toda salida HTML escapada: `esc_html`, `esc_attr`, `esc_url`, `wp_kses_post` cuando aplique
+- Toda query SQL con `$wpdb->prepare()`. Los nombres de tabla pueden interpolarse pero deben venir SIEMPRE de `$wpdb->prefix . 'string_literal_constante'`, nunca de input
+- Nonces obligatorios en formularios admin (`wp_nonce_field` + `check_admin_referer`) y en endpoints REST (`X-WP-Nonce` + `wp_verify_nonce`)
+- Capabilities: `manage_options` por defecto en admin; los endpoints REST deben tener su propio permission_callback
+
+**Estructura**:
+- Una clase por archivo, archivos prefijados `class-`
+- Nombres de clase con prefijo del componente: `Imagina_Updater_Server_*`, `Imagina_Updater_Client_*`, `Imagina_License_*`
+- Métodos `private` salvo que la API pública lo requiera
+- Constantes en MAYÚSCULAS dentro de clases
+
+**Headers de archivos PHP** (todos):
+```php
+<?php
+/**
+ * Breve descripción de qué hace este archivo.
+ *
+ * @package Imagina_Updater_Server
+ */
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+```
+
+### 3.2 Frontend
+
+**Estructura de carpetas** (por plugin que tenga admin SPA):
+
+```
+imagina-updater-server/
+├── assets/
+│   ├── admin/                    ← código fuente
+│   │   ├── src/
+│   │   │   ├── main.tsx          ← entry global (si aplica)
+│   │   │   ├── pages/
+│   │   │   │   ├── Dashboard/
+│   │   │   │   ├── Plugins/
+│   │   │   │   ├── ApiKeys/
+│   │   │   │   ├── PluginGroups/
+│   │   │   │   ├── Activations/
+│   │   │   │   ├── Logs/
+│   │   │   │   └── Settings/
+│   │   │   ├── components/       ← compartidos
+│   │   │   │   └── ui/           ← shadcn components
+│   │   │   ├── hooks/
+│   │   │   ├── lib/              ← api client, utils, i18n
+│   │   │   ├── types/
+│   │   │   └── styles/
+│   │   │       └── globals.css   ← Tailwind base + variables
+│   │   ├── tailwind.config.ts
+│   │   ├── vite.config.ts
+│   │   ├── tsconfig.json
+│   │   └── package.json
+│   └── dist/                     ← build output (gitignored o no, decisión del equipo)
+└── admin/
+    └── views/
+        ├── dashboard.php         ← contenedor mínimo: <div id="iaud-dashboard"></div>
+        ├── plugins.php
+        └── …
+```
+
+**Naming**:
+- Componentes: `PascalCase.tsx`
+- Hooks: `useFooBar.ts`
+- Utils: `kebab-case.ts`
+- Tipos: `kebab-case.types.ts` o exportados desde `types/index.ts`
+
+**Tailwind con prefijo**:
+- Toda clase utility: `iaud-flex iaud-gap-4 iaud-p-6`
+- Clases de shadcn ya vienen con el prefijo aplicado por la config
+- Ver `tailwind.config.ts`: `prefix: 'iaud-'`
+
+**Carga de bundle (PHP)**:
+```php
+public function enqueue_scripts($hook) {
+    // Solo cargar en pantallas del plugin
+    if (strpos($hook, 'imagina-updater') === false) {
+        return;
+    }
+
+    $asset_file = include IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'assets/dist/page-name.asset.php';
+
+    wp_enqueue_script(
+        'iaud-page-name',
+        IMAGINA_UPDATER_SERVER_PLUGIN_URL . 'assets/dist/page-name.js',
+        $asset_file['dependencies'],
+        $asset_file['version'],
+        true
+    );
+
+    wp_enqueue_style(
+        'iaud-page-name',
+        IMAGINA_UPDATER_SERVER_PLUGIN_URL . 'assets/dist/page-name.css',
+        [],
+        $asset_file['version']
+    );
+
+    wp_set_script_translations('iaud-page-name', 'imagina-updater-server');
+
+    // Inyectar config inicial (URL del REST, nonce, datos del usuario, etc.)
+    wp_localize_script('iaud-page-name', 'iaudConfig', [
+        'apiUrl' => esc_url_raw(rest_url('imagina-updater/v1/')),
+        'adminUrl' => esc_url_raw(rest_url('imagina-updater/admin/v1/')),
+        'nonce' => wp_create_nonce('wp_rest'),
+        'currentUser' => wp_get_current_user()->display_name,
+    ]);
+}
+```
+
+### 3.3 Commits
+
+Conventional Commits, en inglés:
+
+```
+feat(server): add custom admin REST namespace
+fix(license-extension): prevent Imagina_License_Crypto duplicate declaration
+chore(client): align plugin header version with constant
+refactor(server): wrap admin actions with wp_unslash before sanitization
+docs(claude): add Phase 5 design tokens
+```
+
+Tipos válidos: `feat`, `fix`, `chore`, `refactor`, `docs`, `style`, `test`, `perf`, `build`.
+
+Scope sugerido: `server`, `client`, `license-extension`, `admin-ui`, `claude`, `repo`.
+
+---
+
+## 4. Reglas críticas — NO HACER
+
+> Estas reglas existen porque romperlas causa fallos en producción, rompe sitios cliente o introduce vulnerabilidades. Si dudas, pregunta al usuario antes de proceder.
+
+1. **NO modificar el modelo de doble token** (API key vs activation_token). Cualquier cambio en `/activate`, validación de tokens o headers `X-Site-Domain` requiere aprobación explícita.
+2. **NO eliminar ni renombrar los hooks** listados en sección 1.5. La extensión de licencias depende de ellos.
+3. **NO cargar el bundle de React en todo `wp-admin`**. Solo en las pantallas del plugin. Verificar con `$hook` siempre.
+4. **NO usar `wp_options` para datos masivos** (logs, activaciones, descargas). Esos van a tablas custom.
+5. **NO romper retrocompatibilidad de la REST API** (`/imagina-updater/v1/`). Sitios cliente en producción dependen de los endpoints actuales. Si necesitas cambiar la firma, crea `v2` y deja `v1` funcionando.
+6. **NO inyectar dependencias frontend pesadas**. Si hay duda sobre añadir una librería, justificarlo en el PR. El budget es estricto.
+7. **NO usar `eval()`, `create_function()`, `extract()` con input externo**, ni `unserialize()` sobre datos no confiables.
+8. **NO commitear archivos de build (`assets/dist/`) sin acuerdo explícito** — decidir en Fase 5 si se gitignoran o no según workflow del equipo.
+9. **NO cambiar las firmas HMAC ni el algoritmo de tokens** sin migración planificada. Sitios cliente con tokens viejos se romperían.
+10. **NO desactivar las verificaciones de integridad** del código inyectado por la extensión de licencias.
+11. **NO meter UI en archivos PHP** una vez migrada una pantalla a React. El PHP queda solo como contenedor mínimo (`<div id="iaud-…"></div>`) y el enqueue del bundle.
+12. **NO añadir polyfills viejos** ni soporte para IE/navegadores legacy. WP admin moderno = navegadores actuales.
+
+---
+
+## 5. Decisiones por confirmar (antes de empezar Fase 5)
+
+> Estas decisiones impactan el rediseño visual y deben quedar resueltas antes de empezar a construir componentes. Si Claude Code llega a esta fase sin que estén definidas, debe preguntar al usuario.
+
+- [ ] **Paleta corporativa de Imagina** — ¿hay colores fijos (primario, secundario, acentos)? ¿Hay logo SVG/PNG disponible?
+- [ ] **Modo oscuro** — ¿soportar `dark:` desde el día 1 o dejarlo para una iteración posterior?
+- [ ] **Densidad de UI** — compacta (estilo Linear, Vercel, Stripe Dashboard) vs aireada (estilo Notion, Airtable). Recomendación inicial: **compacta** para admin de WP, mejor uso del espacio.
+- [ ] **Referencias visuales** — ¿hay 1-2 dashboards de referencia que el equipo quiera emular?
+- [ ] **Tipografía** — Inter por defecto (recomendación). ¿Otra preferencia?
+- [ ] **Branding del prefijo** — confirmar `iaud-` o cambiar (ej: `imupd-`, `iup-`).
+- [ ] **Ubicación de `assets/dist/`** — ¿gitignored o commiteado? Recomendación: commiteado para releases, gitignored en desarrollo. Definir en `.gitignore`.
+- [ ] **Cliente también** — ¿el rediseño aplica también al admin de `imagina-updater-client`? Recomendación: **sí, pero después** del servidor (Fase 5.B).
+
+---
+
+## 6. Plan de trabajo
+
+> El trabajo se divide en fases. **No avanzar a la siguiente fase sin merge de la anterior y verificación manual del usuario.** Cada fase tiene una rama dedicada que se mergea a `main` (o `develop` si el equipo lo prefiere) al cierre.
+
+### Fase 0 — Limpieza: eliminar `imagina-license-sdk/`
+
+**Rama**: `chore/remove-legacy-sdk`
+
+**Objetivo**: eliminar el SDK legacy v1.0/v4.0 que está deprecado y crea ambigüedad arquitectónica. Rescatar documentación útil antes de borrar.
+
+**Razonamiento**: el SDK legacy:
+- Está acoplado 100% a WordPress (usa `ABSPATH`, `wp_die`, etc.) → no sirve para apps no-WP
+- Su clase `Imagina_License_Crypto` choca con la del license-extension → riesgo activo de fatal error
+- Sus endpoints (`/license/verify`, etc.) no son los que usa el sistema actual
+- Para apps no-WP en el futuro se construirá un SDK nuevo desde cero (probablemente PHP plano + cliente Node/Python), no se rescata el actual
+
+**Pasos**:
+
+1. Crear rama `chore/remove-legacy-sdk`
+2. Antes de borrar, **rescatar documentación útil**:
+   - De `imagina-license-sdk/docs/SECURITY.md` → mover las secciones que describen las 7 capas de seguridad a `imagina-updater-license-extension/docs/SECURITY.md` (crear si no existe). Adaptar el lenguaje al sistema actual (auto-inyección, no integración manual).
+   - De `imagina-license-sdk/docs/API.md` → revisar y mover lo que aplique al sistema actual a `imagina-updater-license-extension/docs/API.md`. Descartar lo que sea solo del SDK manual.
+   - De `imagina-license-sdk/docs/INTEGRATION.md` → descartar (el sistema actual no requiere integración manual).
+   - `QUICK_START.md`, `LEEME-PRIMERO.txt`, `ESTRUCTURA.txt`, `install.sh`, `instalar-facil.sh` → descartar.
+3. Eliminar `imagina-license-sdk/` por completo
+4. Buscar referencias en el resto del repo:
+   ```bash
+   grep -r "imagina-license-sdk" .
+   grep -r "imagina_license_sdk" .
+   ```
+   Si aparecen referencias en código activo (no esperado), reportar al usuario antes de tocar.
+5. Verificar que `diagnostico-licencias.php` no referencie archivos del SDK legacy. Si lo hace, ajustarlo o quitar la sección correspondiente.
+6. Commit: `chore(repo): remove legacy imagina-license-sdk`
+7. Abrir PR con descripción explicando la decisión y enlazando este documento.
+
+**Verificación post-merge**:
+- Activar y desactivar los tres plugins (server, client, license-extension) en una WP local. No debe haber errores PHP.
+- Subir un plugin marcado Premium y verificar que la inyección sigue funcionando.
+- Activar un sitio cliente y verificar el flujo completo.
+
+---
+
+### Fase 1 — Correcciones críticas (riesgo de fatal o vulnerabilidad)
+
+**Rama**: `fix/critical-issues`
+
+**Objetivo**: resolver los 4 issues que pueden causar fatal errors, vulnerabilidades reales o comportamiento incorrecto en producción.
+
+#### 1.1 Clase `Imagina_License_Crypto` declarada en dos archivos
+
+**Síntoma**: si por error se cargan ambos archivos (`imagina-updater-license-extension/includes/class-license-crypto-server.php` Y `imagina-updater-license-extension/includes/license-sdk/class-crypto.php`), PHP lanza `Cannot redeclare class`.
+
+**Acción**:
+1. Después de la Fase 0, la carpeta `imagina-license-sdk/` ya no existe — pero `imagina-updater-license-extension/includes/license-sdk/` SÍ existe (es código que usa el plugin instalado en clientes premium). Verificar primero qué archivos de `license-sdk/` están realmente en uso por la extensión actual.
+2. Si `class-crypto.php` dentro de `license-sdk/` está duplicando `Imagina_License_Crypto`, renombrar la clase del SDK interno a `Imagina_License_Crypto_SDK` o eliminarlo si no se usa.
+3. Añadir guarda `if (!class_exists('Imagina_License_Crypto'))` antes de cada declaración de la clase.
+4. Test: forzar la carga de ambos en una WP de prueba y verificar que no rompe.
+
+#### 1.2 Versión desincronizada en cliente
+
+**Síntoma**: el header del plugin dice `Version: 1.0.0` pero la constante `IMAGINA_UPDATER_CLIENT_VERSION` está en `'1.0.1'`. Esto rompe assumptions en cualquier código que compare `get_plugin_data()` vs la constante (incluyendo el sistema de updates de WP).
+
+**Acción**:
+1. Decidir cuál es la versión correcta (probablemente `1.0.1`, ya que la constante es lo más reciente).
+2. Sincronizar el header del plugin: `Version: 1.0.1`.
+3. Bump opcional a `1.0.2` para marcar este fix.
+4. Hacer lo mismo en `imagina-updater-server.php` si tiene desincronización similar (verificar).
+
+#### 1.3 `$_FILES['plugin_file']` sin sanitizar
+
+**Síntoma**: en `admin/class-admin.php` línea ~600 del servidor, se accede a `$_FILES['plugin_file']` sin pasar por `wp_unslash()` ni validación previa.
+
+**Acción**:
+1. Localizar todas las ocurrencias de `$_FILES['plugin_file']` y `$_FILES['…']` en el repo.
+2. Aplicar el patrón:
+   ```php
+   if (!isset($_FILES['plugin_file']) || !is_array($_FILES['plugin_file'])) {
+       wp_die(esc_html__('Archivo inválido', 'imagina-updater-server'));
+   }
+   $file = $_FILES['plugin_file'];
+   // Validar 'tmp_name' con is_uploaded_file()
+   // Validar 'error' === UPLOAD_ERR_OK
+   // Validar MIME con finfo
+   // Solo entonces procesar
+   ```
+3. Mantener las validaciones de MIME y `is_uploaded_file()` que ya existen.
+
+#### 1.4 `wp_unslash()` faltante en inputs
+
+**Síntoma**: PHPCS reporta varios `$_GET['action']`, `$_POST['…']` sin `wp_unslash()` previo a sanitización (líneas 1005, 1006, 1048 de `admin/class-admin.php` del servidor, entre otras).
+
+**Acción**:
+1. Sweep en todo el código admin de los tres plugins:
+   ```bash
+   grep -rn '\$_\(GET\|POST\|REQUEST\|COOKIE\)' --include="*.php" .
+   ```
+2. Para cada acceso, aplicar el patrón:
+   ```php
+   $action = isset($_GET['action']) ? sanitize_key(wp_unslash($_GET['action'])) : '';
+   ```
+3. **No tocar** `$_SERVER['REQUEST_METHOD']`, `$_SERVER['CONTENT_LENGTH']`, etc. (no necesitan unslash).
+4. Para `$_SERVER['HTTP_X_FORWARDED_FOR']` y similares, aplicar `wp_unslash()` por seguridad aunque sean menos críticos.
+
+**Verificación de Fase 1**:
+- Correr PHPCS con WordPress-Extra y validar que los issues críticos están resueltos.
+- Tests manuales: subir plugin, crear API key, activar sitio, descargar plugin.
+
+---
+
+### Fase 2 — PHPCS sweep (warnings sistemáticos)
+
+**Rama**: `chore/phpcs-sweep`
+
+**Objetivo**: resolver el resto de warnings de PHPCS que no entraron en Fase 1.
+
+**Categorías**:
+
+#### 2.1 `WordPress.DB.DirectDatabaseQuery.NoCaching`
+
+Las queries directas con `$wpdb->get_results/get_var/get_row` se quejan de no usar caché. **No vamos a cachear todo** porque para tablas custom de baja cardinalidad no aporta. Acción:
+
+1. En cada query, añadir el comentario phpcs:
+   ```php
+   // phpcs:ignore WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom table requires direct query
+   ```
+2. Para queries de **listados grandes** (logs, downloads, activations en admin) sí vale la pena un caché de 60s con `wp_cache_get`/`wp_cache_set`. Aplicar selectivamente.
+
+#### 2.2 `WordPress.DB.PreparedSQL.InterpolatedNotPrepared`
+
+Tablas interpoladas. Como `$wpdb->prefix . 'literal'` es seguro, añadir comentarios:
+```php
+// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix is safe
+$results = $wpdb->get_results($wpdb->prepare(
+    "SELECT * FROM {$table_name} WHERE id = %d",
+    $id
+));
+```
+
+#### 2.3 `WordPress.Security.NonceVerification.Recommended`
+
+Algunos `$_GET['action']` se procesan sin verificar nonce. Esto es legítimo cuando es display-only (rendering, no acción). Patrón:
+```php
+// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only navigation, no action performed
+$action = isset($_GET['action']) ? sanitize_key(wp_unslash($_GET['action'])) : '';
+```
+
+Para acciones GET que **sí ejecutan algo** (eliminar, regenerar API key, desactivar activation), validar el nonce:
+```php
+if (!isset($_GET['_wpnonce']) || !wp_verify_nonce($_GET['_wpnonce'], 'iaud_action_' . $id)) {
+    wp_die(esc_html__('Acción no autorizada', 'imagina-updater-server'));
+}
+```
+
+**Verificación de Fase 2**:
+- PHPCS limpio con set WordPress-Extra (cero errors, warnings ignorados con `// phpcs:ignore` justificados).
+- Snapshot del CSV inicial (`imagina-updater-server-imagina-updater-server-php-20260121-162424.csv`) vs CSV final adjunto al PR.
+
+---
+
+### Fase 3 — Robustez
+
+**Rama**: `refactor/robustness`
+
+**Objetivo**: resolver problemas que no rompen hoy pero pueden romper bajo carga o en edge cases.
+
+#### 3.1 `find_plugin_file` con matching parcial peligroso
+
+**Síntoma**: en `imagina-updater-client/includes/class-updater.php`, el fallback hace match por prefijo: `"plugin"` matchea `"plugin-pro"`. Riesgo: dos plugins instalados, mismatch de slug.
+
+**Acción**:
+1. Eliminar el fallback de matching parcial (`strpos($indexed_slug, $slug_lower . '-') === 0`).
+2. Si no hay match exacto, devolver `false`.
+3. Si en algún caso de uso real hace falta resolver ambiguity, hacerlo explícito en el servidor (vía `slug_override`), no en el cliente con guesses.
+
+#### 3.2 Cache de errores 5min retrasa recuperación
+
+**Síntoma**: cuando hay error en `check-updates`, el cliente cachea respuesta vacía 5 minutos. Si el admin reactiva una API key, el cliente tarda hasta 5 min en notarlo.
+
+**Acción**:
+1. Reducir el cache de error a 60 segundos.
+2. Añadir un botón "Reintentar conexión" en la UI (Fase 5) que limpie el cache de error vía AJAX.
+3. Limpiar el cache de error automáticamente cuando el usuario edite la configuración del cliente.
+
+#### 3.3 Descarga de ZIP sin streaming (riesgo OOM)
+
+**Síntoma**: en `class-rest-api.php` del servidor, `download_plugin` hace `echo $wp_filesystem->get_contents($plugin->file_path)`. Para ZIPs grandes (50+ MB), carga todo a memoria.
+
+**Acción**:
+1. Reemplazar por streaming con `readfile()` o lectura por chunks:
+   ```php
+   $handle = fopen($plugin->file_path, 'rb');
+   if ($handle === false) {
+       wp_die('Error al abrir archivo', '', ['response' => 500]);
+   }
+   while (!feof($handle)) {
+       echo fread($handle, 8192);
+       flush();
+   }
+   fclose($handle);
+   exit;
+   ```
+2. Verificar que `WP_Filesystem` permite este patrón o si hay que ir a `fopen` directo.
+3. Mantener los headers de respuesta y `ob_end_clean()` previos.
+
+#### 3.4 `clear_rate_limits` con `DELETE LIKE` pesado
+
+**Síntoma**: el método borra de `wp_options` con `LIKE '_transient_imagina_updater_rate_%'`. En sitios con muchísimos transients esto es lento.
+
+**Acción**:
+1. Indexar la operación con `wp_cache_flush_group()` si la instalación usa object cache.
+2. Para fallback sin object cache, mantener el `DELETE LIKE` pero envolverlo en chequeo: solo permitir su ejecución desde admin con `manage_options` y rate-limitear el propio acceso al método (no más de 1 vez por minuto).
+3. Documentar que es operación de emergencia, no rutinaria.
+
+**Verificación de Fase 3**:
+- Test de carga: descargar un ZIP de 100 MB y verificar uso de memoria PHP.
+- Test funcional: cambiar API key, validar que el cache de error se invalida.
+
+---
+
+### Fase 4 — Arquitectónico
+
+**Rama**: `refactor/architecture`
+
+**Objetivo**: mejoras estructurales de fondo. Esta fase es opcional y puede dividirse en sub-fases.
+
+#### 4.1 Migración a namespaces PSR-4
+
+**Acción**:
+1. Crear `composer.json` en cada plugin con autoload PSR-4:
+   ```json
+   {
+     "autoload": {
+       "psr-4": {
+         "ImaginaWP\\UpdaterServer\\": "src/"
+       }
+     }
+   }
+   ```
+2. Mover clases de `includes/class-*.php` a `src/` con namespaces:
+   - `Imagina_Updater_Server_API_Keys` → `ImaginaWP\UpdaterServer\ApiKeys`
+   - `Imagina_Updater_Server_Activations` → `ImaginaWP\UpdaterServer\Activations`
+   - etc.
+3. Mantener archivos legacy con `class_alias` para retrocompatibilidad si hay extensiones de terceros.
+4. Generar autoloader con `composer dump-autoload -o`.
+5. Cargar autoloader en el archivo principal del plugin.
+
+#### 4.2 Documentar hooks (filter/action reference)
+
+Crear `imagina-updater-server/docs/HOOKS.md` con todos los hooks expuestos, parámetros y ejemplos. La license-extension depende de ellos y futuras extensiones también.
+
+#### 4.3 Mejorar rollback de inyección de código en ZIPs
+
+**Síntoma**: en `class-sdk-injector.php`, si la inyección falla a mitad, el ZIP puede quedar corrupto. Hay backup pero el flow de restore no es atómico.
+
+**Acción**:
+1. Refactorizar `inject_sdk_if_needed()` para usar el patrón two-phase commit:
+   - Fase 1: extraer, modificar, re-zippear a archivo temporal con sufijo `.new`
+   - Fase 2: si todo OK, `rename($temp, $original)` (atómico en ext4/xfs)
+   - Si falla, eliminar el `.new` y dejar el original intacto
+2. Eliminar el sistema de `.backup` actual una vez el nuevo flujo esté validado.
+
+#### 4.4 Action Scheduler para heartbeat
+
+Reemplazar `wp_schedule_event` del heartbeat por Action Scheduler (más robusto, mejor logging, retry automático).
+
+**Verificación de Fase 4**:
+- PSR-4 cargando sin errores. Tests funcionales completos.
+- Hooks documentados con ejemplos compilables.
+- Inyección con simulación de fallo: ZIP original siempre intacto.
+
+---
+
+### Fase 5 — Rediseño del admin (servidor primero)
+
+**Rama base**: `feat/admin-redesign`. Sub-ramas por pantalla: `feat/admin-dashboard`, `feat/admin-api-keys`, etc.
+
+**Pre-requisitos**:
+- Decisiones de la sección 5 resueltas (paleta, modo oscuro, densidad, referencias)
+- Fase 0 mergeada
+- Idealmente Fase 1 mergeada también (para empezar sobre código limpio)
+
+#### 5.0 Setup técnico
+
+**Pasos**:
+
+1. Crear `imagina-updater-server/assets/admin/` con esta estructura:
+   ```
+   assets/admin/
+   ├── package.json
+   ├── tsconfig.json
+   ├── vite.config.ts
+   ├── tailwind.config.ts
+   ├── postcss.config.js
+   ├── components.json          ← shadcn config
+   ├── src/
+   │   ├── pages/
+   │   ├── components/
+   │   ├── hooks/
+   │   ├── lib/
+   │   ├── types/
+   │   └── styles/
+   └── .gitignore
+   ```
+
+2. **`package.json`** dependencias mínimas:
+   ```json
+   {
+     "name": "imagina-updater-server-admin",
+     "private": true,
+     "type": "module",
+     "scripts": {
+       "dev": "vite",
+       "build": "tsc -b && vite build",
+       "lint": "eslint . --ext ts,tsx",
+       "type-check": "tsc --noEmit"
+     },
+     "dependencies": {
+       "@tanstack/react-query": "^5.x",
+       "@tanstack/react-table": "^8.x",
+       "lucide-react": "^0.x",
+       "react": "^18.x",
+       "react-dom": "^18.x",
+       "tailwindcss": "^3.x",
+       "tailwind-merge": "^2.x",
+       "clsx": "^2.x"
+     },
+     "devDependencies": {
+       "@types/react": "^18.x",
+       "@types/react-dom": "^18.x",
+       "@vitejs/plugin-react": "^4.x",
+       "@wordpress/dependency-extraction-webpack-plugin": "^5.x",
+       "autoprefixer": "^10.x",
+       "postcss": "^8.x",
+       "typescript": "^5.x",
+       "vite": "^5.x"
+     }
+   }
+   ```
+
+3. **`vite.config.ts`** con multi-entry y plugin para que externalice `@wordpress/*` y `react`:
+   - Entries: `dashboard`, `plugins`, `api-keys`, `plugin-groups`, `activations`, `logs`, `settings`
+   - Output: `../dist/` (relativo a `assets/admin/`, así sale en `assets/dist/`)
+   - Generar archivos `*.asset.php` con dependencies para `wp_enqueue_script`
+
+4. **`tailwind.config.ts`** con prefijo `iaud-`:
+   ```ts
+   export default {
+     prefix: 'iaud-',
+     content: ['./src/**/*.{ts,tsx}'],
+     theme: { extend: { /* design tokens */ } },
+     plugins: [],
+     corePlugins: { preflight: false }, // muy importante: NO resetear estilos globales del admin de WP
+   }
+   ```
+
+5. **shadcn/ui setup** con `components.json` apuntando al prefijo y a `src/components/ui/`. Instalar componentes incrementalmente, no de golpe.
+
+6. **`globals.css`** con:
+   - `@tailwind base; @tailwind components; @tailwind utilities;`
+   - Variables CSS de shadcn dentro de `.iaud-app` (scope), NO en `:root` (no contaminar el admin de WP)
+   - Reset SOLO dentro del scope `.iaud-app`
+
+7. **REST namespace separado para el admin**: crear `/imagina-updater/admin/v1/` para los endpoints que solo usa la SPA. Permission callback: `current_user_can('manage_options')` + nonce. La API pública `/imagina-updater/v1/` se mantiene intacta.
+
+#### 5.1 Página: Dashboard
+
+**Contenido**:
+- 4 KPI cards: Total Plugins, Total API Keys activas, Activaciones activas, Descargas últimas 24h
+- Gráfico de descargas últimos 30 días (recharts si entra en budget; si no, una tabla simple es suficiente)
+- Tabla "Últimas descargas" (10 más recientes)
+- Tabla "Top plugins por descargas" (5 más descargados)
+- Quick actions: "Subir plugin", "Crear API key"
+
+**Endpoints nuevos (admin/v1)**:
+- `GET /admin/v1/dashboard/stats`
+- `GET /admin/v1/dashboard/recent-downloads`
+- `GET /admin/v1/dashboard/top-plugins`
+
+#### 5.2 Página: API Keys
+
+**Contenido**:
+- TanStack Table con: nombre, URL, tipo de acceso, activaciones (used/max), creada, último uso, estado, acciones
+- Filtros: estado (active/inactive), tipo de acceso, búsqueda por nombre
+- Drawer/Sheet de "Crear API Key" con formulario completo (nombre, URL, tipo de acceso, plugins/grupos, max_activations)
+- Drawer de "Editar API Key" (mismo form, con datos cargados)
+- Modal de confirmación al regenerar/desactivar
+- Banner destacado al crear: muestra la API key una vez con botón "Copiar"
+
+**Endpoints nuevos**:
+- `GET /admin/v1/api-keys` (con paginación)
+- `POST /admin/v1/api-keys`
+- `PUT /admin/v1/api-keys/{id}`
+- `DELETE /admin/v1/api-keys/{id}`
+- `POST /admin/v1/api-keys/{id}/regenerate`
+- `POST /admin/v1/api-keys/{id}/toggle-active`
+
+#### 5.3 Página: Plugins
+
+**Contenido**:
+- Tabla de plugins con: nombre, slug (mostrar `slug_override` si existe), versión actual, premium badge, grupos, descargas totales, última subida, acciones
+- Botón "Subir plugin" abre Drawer con uploader (drag-and-drop), checkbox "Es premium", textarea changelog, multi-select de grupos
+- Acciones por plugin: Ver versiones, Editar (slug_override, grupos, premium toggle, descripción), Eliminar, Re-inyectar protección
+- Indicador de progreso para uploads grandes
+
+**Endpoints nuevos**:
+- `GET /admin/v1/plugins`
+- `POST /admin/v1/plugins/upload` (multipart)
+- `PUT /admin/v1/plugins/{id}`
+- `DELETE /admin/v1/plugins/{id}`
+- `POST /admin/v1/plugins/{id}/toggle-premium`
+- `POST /admin/v1/plugins/{id}/reinject-protection`
+- `GET /admin/v1/plugins/{id}/versions`
+
+#### 5.4 Página: Plugin Groups
+
+**Contenido**:
+- Tabla de grupos con: nombre, descripción, plugins incluidos (count), creado, acciones
+- Drawer de crear/editar con multi-select de plugins (con búsqueda)
+- Acciones: editar, eliminar (con confirmación si tiene API keys vinculadas)
+
+**Endpoints nuevos**:
+- CRUD `/admin/v1/plugin-groups`
+
+#### 5.5 Página: Activations
+
+**Contenido**:
+- Tabla de activaciones con: dominio, API key (link), token (mascarado), activada, última verificación, estado, acciones
+- Filtros: API key (dropdown), estado, búsqueda por dominio
+- Acciones: desactivar (con confirmación)
+
+**Endpoints nuevos**:
+- `GET /admin/v1/activations`
+- `POST /admin/v1/activations/{id}/deactivate`
+
+#### 5.6 Página: Logs
+
+**Contenido**:
+- Visor de logs con virtual scroll (TanStack Virtual o similar)
+- Filtros por nivel (DEBUG, INFO, WARNING, ERROR)
+- Búsqueda por texto
+- Botón "Limpiar logs"
+- Botón "Descargar logs"
+
+**Endpoints nuevos**:
+- `GET /admin/v1/logs?level=&search=&page=`
+- `DELETE /admin/v1/logs`
+- `GET /admin/v1/logs/download`
+
+#### 5.7 Página: Configuración
+
+**Contenido**:
+- Tabs: General, Logging, Mantenimiento (DB migrations, clear caches)
+- Forms standard de settings con validación
+
+**Endpoints nuevos**:
+- `GET /admin/v1/settings`
+- `PUT /admin/v1/settings`
+- `POST /admin/v1/maintenance/run-migrations`
+- `POST /admin/v1/maintenance/clear-rate-limits`
+
+#### 5.B Cliente — Rediseño posterior
+
+Una vez completadas 5.1-5.7 y mergeadas, replicar el approach en el cliente. Pantallas:
+- Dashboard (estado de conexión, próximas verificaciones)
+- Configuración (URL servidor, API key, modo de visualización)
+- Plugins disponibles (lista del servidor con instalación/habilitación)
+
+**Verificación de Fase 5** (por pantalla):
+- Bundle size < 250 KB gzip
+- Lighthouse accessibility > 95
+- Funcional: paridad completa con la pantalla PHP que reemplaza
+- Sin estilos del bundle leakeando al resto de `wp-admin`
+- i18n cargando strings en es_ES y en_US
+
+---
+
+## 7. Workflow para Claude Code
+
+### 7.1 Antes de cada cambio
+1. Leer secciones 1, 2, 3, 4 si es la primera intervención del día.
+2. Identificar la fase del trabajo en sección 6.
+3. Confirmar al usuario qué archivos vas a tocar y qué efectos colaterales hay.
+4. Crear rama si no existe.
+
+### 7.2 Durante el cambio
+1. Cambios pequeños y atómicos. Un commit = una idea.
+2. Si descubres un bug que no estaba en el plan, **reportarlo y preguntar**, no arreglarlo on-the-fly.
+3. Tests manuales después de cada cambio significativo (ver verificaciones de cada fase).
+
+### 7.3 Después del cambio
+1. PHPCS limpio en los archivos tocados.
+2. Si tocaste frontend: type-check, build sin errores, bundle size dentro del budget.
+3. PR con descripción clara, referencia a la fase, screenshots si es UI.
+
+### 7.4 Cómo testear cada cambio (resumen)
+- **Backend PHP**: WP local (Local by Flywheel, Lando, Studio o similar). Tener los 3 plugins activos.
+- **REST API**: Postman/Bruno con las dos auth (API key e iat).
+- **Frontend**: `npm run dev` en `assets/admin/`, acceder a la pantalla del plugin con el bundle de dev cargado.
+- **Sistema completo**: 2 instalaciones de WP locales, una como servidor y otra como cliente, simular el flujo completo.
+
+### 7.5 Rollback
+- Cada fase es una rama. Si algo se rompe en producción, revert del merge commit.
+- Backups automáticos: la inyección de protección hace backup del ZIP original, mantener ese mecanismo.
+- BD: las migraciones deben ser idempotentes y, cuando añadan columnas, usar `IF NOT EXISTS` o verificar con `SHOW COLUMNS`.
+
+---
+
+## 8. Glosario rápido
+
+| Término | Significado |
+|---|---|
+| **API Key** | Token `ius_…` que el admin entrega al cliente. Solo activa sitios. |
+| **Activation Token** | Token `iat_…` que el servidor devuelve al activar. Se usa para todas las llamadas REST después de activar. |
+| **Slug override** | Slug alternativo para un plugin, sobrescribe el auto-generado. Útil cuando el SDK injector renombra. |
+| **Heartbeat** | Verificación periódica (12h) que ejecuta WP-Cron para revalidar licencias. |
+| **Grace period** | Tiempo (7 días en license-extension) que un sitio puede operar sin conexión al servidor antes de que su licencia se invalide. |
+| **Premium plugin** | Plugin marcado `is_premium=1`. La extensión inyecta protección al subirlo. |
+| **Protection code** | Código PHP único por plugin (`ILP_<hash>`) que verifica licencia al cargar el plugin. |
+| **iaud-** | Prefijo de Tailwind para evitar colisiones con WP admin y otros plugins. |
+
+---
+
+## 9. Contacto y dudas
+
+Si Claude Code encuentra una situación no cubierta por este documento:
+1. **Detente**.
+2. Resume la situación en chat con el usuario.
+3. Propón 2-3 opciones de resolución con pros/contras.
+4. Espera confirmación antes de proceder.
+
+No improvises sobre arquitectura, seguridad ni convenciones. La consistencia importa más que la velocidad.
+
+---
+
+**Última actualización**: este documento se actualiza al cierre de cada fase. La versión actual cubre Fases 0-5. Cuando se abran nuevas fases (Fase 6+: SDK no-WP, multisite admin, etc.) se añadirán secciones aquí.

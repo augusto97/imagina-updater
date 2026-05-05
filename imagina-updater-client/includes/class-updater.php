@@ -179,8 +179,12 @@ class Imagina_Updater_Client_Updater {
             $updates = $this->api_client->check_updates($plugins_to_check);
 
             if (is_wp_error($updates)) {
-                // En caso de error, cachear respuesta vacía por 5 minutos
-                set_transient($cache_key, array(), 5 * MINUTE_IN_SECONDS);
+                // Fase 3.2: cachear respuesta vacía solo 60s (antes: 5 min). Si
+                // el admin reactiva la API key o cambia la config, no debe
+                // esperar 5 minutos a que el cliente vuelva a intentarlo. La
+                // configuración del cliente además invalida estas cachés
+                // explícitamente vía clear_update_caches().
+                set_transient($cache_key, array(), MINUTE_IN_SECONDS);
                 return $transient;
             }
 

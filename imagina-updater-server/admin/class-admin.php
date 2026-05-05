@@ -346,10 +346,10 @@ jQuery(document).ready(function($) {
         if (isset($_POST['imagina_create_api_key']) && check_admin_referer('imagina_create_api_key')) {
             $site_name = isset($_POST['site_name']) ? sanitize_text_field(wp_unslash($_POST['site_name'])) : '';
             $site_url = '-'; // Ya no se usa site_url, solo site_name (cliente/descripción)
-            $max_activations = isset($_POST['max_activations']) ? max(0, intval($_POST['max_activations'])) : 1;
+            $max_activations = isset($_POST['max_activations']) ? max(0, intval(wp_unslash($_POST['max_activations']))) : 1;
             $access_type = isset($_POST['access_type']) ? sanitize_text_field(wp_unslash($_POST['access_type'])) : 'all';
-            $allowed_plugins = isset($_POST['allowed_plugins']) ? array_map('intval', $_POST['allowed_plugins']) : array();
-            $allowed_groups = isset($_POST['allowed_groups']) ? array_map('intval', $_POST['allowed_groups']) : array();
+            $allowed_plugins = isset($_POST['allowed_plugins']) ? array_map('intval', (array) wp_unslash($_POST['allowed_plugins'])) : array();
+            $allowed_groups = isset($_POST['allowed_groups']) ? array_map('intval', (array) wp_unslash($_POST['allowed_groups'])) : array();
 
             $result = Imagina_Updater_Server_API_Keys::create($site_name, $site_url, $access_type, $allowed_plugins, $allowed_groups, $max_activations);
 
@@ -377,8 +377,8 @@ jQuery(document).ready(function($) {
         }
 
         // Eliminar API Key
-        if (isset($_GET['action']) && $_GET['action'] === 'delete_api_key' && isset($_GET['id']) && check_admin_referer('delete_api_key_' . intval($_GET['id']))) {
-            $id = intval($_GET['id']);
+        if (isset($_GET['action']) && wp_unslash($_GET['action']) === 'delete_api_key' && isset($_GET['id']) && check_admin_referer('delete_api_key_' . intval(wp_unslash($_GET['id'])))) {
+            $id = intval(wp_unslash($_GET['id']));
             Imagina_Updater_Server_API_Keys::delete($id);
             imagina_updater_server_log('API Key eliminada: ID ' . $id, 'info');
             set_transient('imagina_updater_api_deleted', true, 30);
@@ -394,8 +394,8 @@ jQuery(document).ready(function($) {
         }
 
         // Activar/Desactivar API Key
-        if (isset($_GET['action']) && $_GET['action'] === 'toggle_api_key' && isset($_GET['id']) && check_admin_referer('toggle_api_key_' . intval($_GET['id']))) {
-            $id = intval($_GET['id']);
+        if (isset($_GET['action']) && wp_unslash($_GET['action']) === 'toggle_api_key' && isset($_GET['id']) && check_admin_referer('toggle_api_key_' . intval(wp_unslash($_GET['id'])))) {
+            $id = intval(wp_unslash($_GET['id']));
             $key = Imagina_Updater_Server_API_Keys::get_by_id($id);
             if ($key) {
                 $new_status = !$key->is_active;
@@ -415,8 +415,8 @@ jQuery(document).ready(function($) {
         }
 
         // Regenerar API Key
-        if (isset($_GET['action']) && $_GET['action'] === 'regenerate_api_key' && isset($_GET['id']) && check_admin_referer('regenerate_api_key_' . intval($_GET['id']))) {
-            $id = intval($_GET['id']);
+        if (isset($_GET['action']) && wp_unslash($_GET['action']) === 'regenerate_api_key' && isset($_GET['id']) && check_admin_referer('regenerate_api_key_' . intval(wp_unslash($_GET['id'])))) {
+            $id = intval(wp_unslash($_GET['id']));
             $result = Imagina_Updater_Server_API_Keys::regenerate_key($id);
 
             if (is_wp_error($result)) {
@@ -440,7 +440,7 @@ jQuery(document).ready(function($) {
 
         // Actualizar información del sitio (nombre y URL)
         if (isset($_POST['imagina_update_site_info']) && check_admin_referer('imagina_update_site_info')) {
-            $api_key_id = isset($_POST['api_key_id']) ? intval($_POST['api_key_id']) : 0;
+            $api_key_id = isset($_POST['api_key_id']) ? intval(wp_unslash($_POST['api_key_id'])) : 0;
             $site_name = isset($_POST['site_name']) ? sanitize_text_field(wp_unslash($_POST['site_name'])) : '';
             $site_url = isset($_POST['site_url']) ? esc_url_raw(wp_unslash($_POST['site_url'])) : '';
 
@@ -466,10 +466,10 @@ jQuery(document).ready(function($) {
 
         // Actualizar permisos de API Key
         if (isset($_POST['imagina_update_api_permissions']) && check_admin_referer('imagina_update_api_permissions')) {
-            $api_key_id = isset($_POST['api_key_id']) ? intval($_POST['api_key_id']) : 0;
+            $api_key_id = isset($_POST['api_key_id']) ? intval(wp_unslash($_POST['api_key_id'])) : 0;
             $access_type = isset($_POST['access_type']) ? sanitize_text_field(wp_unslash($_POST['access_type'])) : 'all';
-            $allowed_plugins = isset($_POST['allowed_plugins']) ? array_map('intval', $_POST['allowed_plugins']) : array();
-            $allowed_groups = isset($_POST['allowed_groups']) ? array_map('intval', $_POST['allowed_groups']) : array();
+            $allowed_plugins = isset($_POST['allowed_plugins']) ? array_map('intval', (array) wp_unslash($_POST['allowed_plugins'])) : array();
+            $allowed_groups = isset($_POST['allowed_groups']) ? array_map('intval', (array) wp_unslash($_POST['allowed_groups'])) : array();
 
             $result = Imagina_Updater_Server_API_Keys::update_permissions($api_key_id, $access_type, $allowed_plugins, $allowed_groups);
 
@@ -486,8 +486,8 @@ jQuery(document).ready(function($) {
         }
 
         // Desactivar activación de sitio
-        if (isset($_GET['action']) && $_GET['action'] === 'deactivate_activation' && isset($_GET['id']) && check_admin_referer('deactivate_activation_' . intval($_GET['id']))) {
-            $activation_id = intval($_GET['id']);
+        if (isset($_GET['action']) && wp_unslash($_GET['action']) === 'deactivate_activation' && isset($_GET['id']) && check_admin_referer('deactivate_activation_' . intval(wp_unslash($_GET['id'])))) {
+            $activation_id = intval(wp_unslash($_GET['id']));
             $result = Imagina_Updater_Server_Activations::deactivate_site($activation_id);
 
             if ($result) {
@@ -501,7 +501,7 @@ jQuery(document).ready(function($) {
             // Redirigir a la página de activaciones
             $redirect_url = admin_url('admin.php?page=imagina-updater-activations');
             if (isset($_GET['api_key_id'])) {
-                $redirect_url = add_query_arg('api_key_id', intval($_GET['api_key_id']), $redirect_url);
+                $redirect_url = add_query_arg('api_key_id', intval(wp_unslash($_GET['api_key_id'])), $redirect_url);
             }
 
             wp_safe_redirect($redirect_url);
@@ -558,33 +558,40 @@ jQuery(document).ready(function($) {
                 return;
             }
 
-            // Verificar que se subió un archivo
-            if (!isset($_FILES['plugin_file']) || $_FILES['plugin_file']['error'] !== UPLOAD_ERR_OK) {
-                $error_message = '';
+            // Validar estructura de $_FILES antes de tocar ninguna clave (Fase 1.3).
+            if (!isset($_FILES['plugin_file']) || !is_array($_FILES['plugin_file'])) {
+                $error_message = __('No se seleccionó ningún archivo', 'imagina-updater-server');
+                imagina_updater_server_log('Error al subir archivo: ' . $error_message, 'error');
+                add_settings_error('imagina_updater', 'upload_error', $error_message, 'error');
+                return;
+            }
 
-                if (!isset($_FILES['plugin_file'])) {
-                    $error_message = __('No se seleccionó ningún archivo', 'imagina-updater-server');
-                } else {
-                    // Mensajes de error más descriptivos
-                    switch ($_FILES['plugin_file']['error']) {
-                        case UPLOAD_ERR_INI_SIZE:
-                        case UPLOAD_ERR_FORM_SIZE:
-                            $error_message = __('El archivo es demasiado grande. Tamaño máximo: ', 'imagina-updater-server') . ini_get('upload_max_filesize');
-                            break;
-                        case UPLOAD_ERR_PARTIAL:
-                            $error_message = __('El archivo se subió parcialmente. Intenta de nuevo.', 'imagina-updater-server');
-                            break;
-                        case UPLOAD_ERR_NO_FILE:
-                            $error_message = __('No se seleccionó ningún archivo', 'imagina-updater-server');
-                            break;
-                        case UPLOAD_ERR_NO_TMP_DIR:
-                        case UPLOAD_ERR_CANT_WRITE:
-                        case UPLOAD_ERR_EXTENSION:
-                            $error_message = __('Error del servidor al procesar el archivo. Contacta al administrador.', 'imagina-updater-server');
-                            break;
-                        default:
-                            $error_message = __('Error desconocido al subir el archivo', 'imagina-updater-server');
-                    }
+            // Copia local sanitizada del array $_FILES['plugin_file']. No se llama
+            // a wp_unslash() sobre el array completo: cada clave se trata según su
+            // tipo (error: int de PHP; tmp_name: ruta del servidor; name: string de
+            // usuario que sí requiere unslash + sanitize_file_name).
+            $plugin_file = $_FILES['plugin_file'];
+            $upload_error = isset($plugin_file['error']) ? (int) $plugin_file['error'] : UPLOAD_ERR_NO_FILE;
+
+            if ($upload_error !== UPLOAD_ERR_OK) {
+                switch ($upload_error) {
+                    case UPLOAD_ERR_INI_SIZE:
+                    case UPLOAD_ERR_FORM_SIZE:
+                        $error_message = __('El archivo es demasiado grande. Tamaño máximo: ', 'imagina-updater-server') . ini_get('upload_max_filesize');
+                        break;
+                    case UPLOAD_ERR_PARTIAL:
+                        $error_message = __('El archivo se subió parcialmente. Intenta de nuevo.', 'imagina-updater-server');
+                        break;
+                    case UPLOAD_ERR_NO_FILE:
+                        $error_message = __('No se seleccionó ningún archivo', 'imagina-updater-server');
+                        break;
+                    case UPLOAD_ERR_NO_TMP_DIR:
+                    case UPLOAD_ERR_CANT_WRITE:
+                    case UPLOAD_ERR_EXTENSION:
+                        $error_message = __('Error del servidor al procesar el archivo. Contacta al administrador.', 'imagina-updater-server');
+                        break;
+                    default:
+                        $error_message = __('Error desconocido al subir el archivo', 'imagina-updater-server');
                 }
 
                 imagina_updater_server_log('Error al subir archivo: ' . $error_message, 'error');
@@ -592,13 +599,25 @@ jQuery(document).ready(function($) {
                 return;
             }
 
-            $changelog = isset($_POST['changelog']) ? sanitize_textarea_field(wp_unslash($_POST['changelog'])) : '';
-            $plugin_groups = isset($_POST['plugin_groups']) ? array_map('intval', $_POST['plugin_groups']) : array();
-            $force_replace = isset($_POST['force_replace']) && $_POST['force_replace'] === '1';
+            // Validación temprana del archivo subido. Imagina_Updater_Server_Plugin_Manager::upload_plugin
+            // vuelve a verificar is_uploaded_file y MIME, pero hacerlo aquí evita
+            // procesar request bodies maliciosos antes de llegar al manager.
+            if (empty($plugin_file['tmp_name']) || !is_uploaded_file($plugin_file['tmp_name'])) {
+                $error_message = __('Archivo subido inválido o ausente', 'imagina-updater-server');
+                imagina_updater_server_log('Error al subir archivo: ' . $error_message, 'error');
+                add_settings_error('imagina_updater', 'upload_error', $error_message, 'error');
+                return;
+            }
 
-            $plugin_filename = isset($_FILES['plugin_file']['name']) ? sanitize_file_name($_FILES['plugin_file']['name']) : '';
+            $changelog     = isset($_POST['changelog']) ? sanitize_textarea_field(wp_unslash($_POST['changelog'])) : '';
+            $plugin_groups = isset($_POST['plugin_groups']) && is_array($_POST['plugin_groups'])
+                ? array_map('intval', wp_unslash($_POST['plugin_groups']))
+                : array();
+            $force_replace = isset($_POST['force_replace']) && wp_unslash($_POST['force_replace']) === '1';
+
+            $plugin_filename = isset($plugin_file['name']) ? sanitize_file_name(wp_unslash($plugin_file['name'])) : '';
             imagina_updater_server_log('Iniciando subida de plugin: ' . $plugin_filename . ($force_replace ? ' (forzar reemplazo)' : ''), 'info');
-            $result = Imagina_Updater_Server_Plugin_Manager::upload_plugin($_FILES['plugin_file'], $changelog, $force_replace);
+            $result = Imagina_Updater_Server_Plugin_Manager::upload_plugin($plugin_file, $changelog, $force_replace);
 
             if (is_wp_error($result)) {
                 imagina_updater_server_log('Error al subir plugin: ' . $result->get_error_message(), 'error');
@@ -637,8 +656,8 @@ jQuery(document).ready(function($) {
         }
 
         // Eliminar plugin
-        if (isset($_GET['action']) && $_GET['action'] === 'delete_plugin' && isset($_GET['id']) && check_admin_referer('delete_plugin_' . intval($_GET['id']))) {
-            $id = intval($_GET['id']);
+        if (isset($_GET['action']) && wp_unslash($_GET['action']) === 'delete_plugin' && isset($_GET['id']) && check_admin_referer('delete_plugin_' . intval(wp_unslash($_GET['id'])))) {
+            $id = intval(wp_unslash($_GET['id']));
             $result = Imagina_Updater_Server_Plugin_Manager::delete_plugin($id);
 
             if (is_wp_error($result)) {
@@ -665,7 +684,7 @@ jQuery(document).ready(function($) {
         }
 
         // Descargar plugin directamente (sin REST API)
-        if (isset($_GET['action']) && $_GET['action'] === 'download_plugin' && isset($_GET['slug'])) {
+        if (isset($_GET['action']) && wp_unslash($_GET['action']) === 'download_plugin' && isset($_GET['slug'])) {
             $slug = sanitize_text_field(wp_unslash($_GET['slug']));
 
             // Verificar nonce
@@ -720,7 +739,7 @@ jQuery(document).ready(function($) {
 
         // Actualizar slug del plugin
         if (isset($_POST['imagina_update_slug'])) {
-            $plugin_id = isset($_POST['plugin_id']) ? intval($_POST['plugin_id']) : 0;
+            $plugin_id = isset($_POST['plugin_id']) ? intval(wp_unslash($_POST['plugin_id'])) : 0;
 
             if (check_admin_referer('update_slug_' . $plugin_id)) {
                 $new_slug = isset($_POST['new_slug']) ? sanitize_title(wp_unslash($_POST['new_slug'])) : '';
@@ -764,7 +783,7 @@ jQuery(document).ready(function($) {
         if (isset($_POST['imagina_create_group']) && check_admin_referer('imagina_create_group')) {
             $name = isset($_POST['group_name']) ? sanitize_text_field(wp_unslash($_POST['group_name'])) : '';
             $description = isset($_POST['group_description']) ? sanitize_textarea_field(wp_unslash($_POST['group_description'])) : '';
-            $plugin_ids = isset($_POST['plugin_ids']) ? array_map('intval', $_POST['plugin_ids']) : array();
+            $plugin_ids = isset($_POST['plugin_ids']) ? array_map('intval', (array) wp_unslash($_POST['plugin_ids'])) : array();
 
             $result = Imagina_Updater_Server_Plugin_Groups::create_group($name, $description, $plugin_ids);
 
@@ -782,10 +801,10 @@ jQuery(document).ready(function($) {
 
         // Actualizar grupo de plugins
         if (isset($_POST['imagina_update_group']) && check_admin_referer('imagina_update_group')) {
-            $group_id = isset($_POST['group_id']) ? intval($_POST['group_id']) : 0;
+            $group_id = isset($_POST['group_id']) ? intval(wp_unslash($_POST['group_id'])) : 0;
             $name = isset($_POST['group_name']) ? sanitize_text_field(wp_unslash($_POST['group_name'])) : '';
             $description = isset($_POST['group_description']) ? sanitize_textarea_field(wp_unslash($_POST['group_description'])) : '';
-            $plugin_ids = isset($_POST['plugin_ids']) ? array_map('intval', $_POST['plugin_ids']) : array();
+            $plugin_ids = isset($_POST['plugin_ids']) ? array_map('intval', (array) wp_unslash($_POST['plugin_ids'])) : array();
 
             $result = Imagina_Updater_Server_Plugin_Groups::update_group($group_id, $name, $description, $plugin_ids);
 
@@ -802,8 +821,8 @@ jQuery(document).ready(function($) {
         }
 
         // Eliminar grupo de plugins
-        if (isset($_GET['action']) && $_GET['action'] === 'delete_group' && isset($_GET['group_id']) && check_admin_referer('delete_group_' . intval($_GET['group_id']))) {
-            $group_id = intval($_GET['group_id']);
+        if (isset($_GET['action']) && wp_unslash($_GET['action']) === 'delete_group' && isset($_GET['group_id']) && check_admin_referer('delete_group_' . intval(wp_unslash($_GET['group_id'])))) {
+            $group_id = intval(wp_unslash($_GET['group_id']));
             $result = Imagina_Updater_Server_Plugin_Groups::delete_group($group_id);
 
             if (is_wp_error($result)) {
@@ -877,7 +896,7 @@ jQuery(document).ready(function($) {
         }
 
         // Descargar logs
-        if (isset($_GET['action']) && $_GET['action'] === 'download_log' && check_admin_referer('download_log')) {
+        if (isset($_GET['action']) && wp_unslash($_GET['action']) === 'download_log' && check_admin_referer('download_log')) {
             $this->download_log();
         }
     }
@@ -1003,8 +1022,10 @@ jQuery(document).ready(function($) {
      * Renderizar página de grupos de plugins
      */
     public function render_plugin_groups_page() {
-        $action = isset($_GET['action']) ? $_GET['action'] : '';
-        $group_id = isset($_GET['group_id']) ? intval($_GET['group_id']) : 0;
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only navigation, no action performed.
+        $action = isset($_GET['action']) ? sanitize_key(wp_unslash($_GET['action'])) : '';
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only navigation, no action performed.
+        $group_id = isset($_GET['group_id']) ? intval(wp_unslash($_GET['group_id'])) : 0;
 
         // Si estamos editando o creando, cargar datos necesarios
         $editing_group = null;
@@ -1046,7 +1067,7 @@ jQuery(document).ready(function($) {
         global $wpdb;
 
         // Filtrar por API key si se especifica
-        $api_key_id = isset($_GET['api_key_id']) ? intval($_GET['api_key_id']) : null;
+        $api_key_id = isset($_GET['api_key_id']) ? intval(wp_unslash($_GET['api_key_id'])) : null;
 
         // Construir query con prepared statements
         if ($api_key_id) {

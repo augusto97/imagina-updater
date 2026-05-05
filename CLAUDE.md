@@ -368,64 +368,84 @@ Scope sugerido: `server`, `client`, `license-extension`, `admin-ui`, `claude`, `
 
 **Objetivo**: resolver los 4 issues que pueden causar fatal errors, vulnerabilidades reales o comportamiento incorrecto en producción.
 
-#### 1.1 Clase `Imagina_License_Crypto` declarada en dos archivos
+#### 1.1 Clase `Imagina_License_Crypto` declarada en dos archivos — RESUELTO
 
-**Síntoma**: si por error se cargan ambos archivos (`imagina-updater-license-extension/includes/class-license-crypto-server.php` Y `imagina-updater-license-extension/includes/license-sdk/class-crypto.php`), PHP lanza `Cannot redeclare class`.
+> **Estado**: ✅ resuelto en la rama `fix/critical-issues` (ver "Cambios realizados" más abajo en esta misma sub-sección).
 
-**Acción**:
-1. Después de la Fase 0, la carpeta `imagina-license-sdk/` ya no existe — pero `imagina-updater-license-extension/includes/license-sdk/` SÍ existe (es código que usa el plugin instalado en clientes premium). Verificar primero qué archivos de `license-sdk/` están realmente en uso por la extensión actual.
-2. Si `class-crypto.php` dentro de `license-sdk/` está duplicando `Imagina_License_Crypto`, renombrar la clase del SDK interno a `Imagina_License_Crypto_SDK` o eliminarlo si no se usa.
-3. Añadir guarda `if (!class_exists('Imagina_License_Crypto'))` antes de cada declaración de la clase.
-4. Test: forzar la carga de ambos en una WP de prueba y verificar que no rompe.
+**Síntoma original**: si por error se cargaban ambos archivos (`imagina-updater-license-extension/includes/class-license-crypto-server.php` Y `imagina-updater-license-extension/includes/license-sdk/class-crypto.php`), PHP lanzaba `Cannot redeclare class`.
 
-#### 1.2 Versión desincronizada en cliente
+**Verificación realizada antes de actuar**:
 
-**Síntoma**: el header del plugin dice `Version: 1.0.0` pero la constante `IMAGINA_UPDATER_CLIENT_VERSION` está en `'1.0.1'`. Esto rompe assumptions en cualquier código que compare `get_plugin_data()` vs la constante (incluyendo el sistema de updates de WP).
+Se buscó en todo el repositorio cualquier `require/include` a archivos de `includes/license-sdk/`, autoloaders que los referenciaran, usos de las constantes `IMAGINA_LICENSE_SDK_*`, usos de `Imagina_License_SDK::`, `Imagina_License_Validator`, `Imagina_License_Heartbeat`, y se inspeccionó el método `rezip_plugin()` del injector v4. Resultados:
 
-**Acción**:
-1. Decidir cuál es la versión correcta (probablemente `1.0.1`, ya que la constante es lo más reciente).
-2. Sincronizar el header del plugin: `Version: 1.0.1`.
-3. Bump opcional a `1.0.2` para marcar este fix.
-4. Hacer lo mismo en `imagina-updater-server.php` si tiene desincronización similar (verificar).
+- 0 cargas activas de cualquier archivo de `includes/license-sdk/`.
+- 0 referencias a las constantes / clases del SDK manual fuera del propio directorio.
+- El injector v4 (`Imagina_License_SDK_Injector::rezip_plugin`) **no copia ningún archivo del SDK al ZIP** del plugin premium — solo re-empaqueta lo extraído más la inyección inline en el archivo principal.
+- El `spl_autoload_register` que vivía en `license-sdk/loader.php` nunca se registraba porque `loader.php` no era cargado por nada.
 
-#### 1.3 `$_FILES['plugin_file']` sin sanitizar
+Conclusión: el directorio `includes/license-sdk/` era **código completamente huérfano**, vestigio de versiones anteriores del injector que sí copiaban el SDK al ZIP. La afirmación previa en este documento de que "es código que usa el plugin instalado en clientes premium" era **inexacta** para el modelo del injector v4 (corregida ahora).
 
-**Síntoma**: en `admin/class-admin.php` línea ~600 del servidor, se accede a `$_FILES['plugin_file']` sin pasar por `wp_unslash()` ni validación previa.
+**Acción ejecutada** (autorizada por el usuario tras presentarle 4 alternativas):
 
-**Acción**:
-1. Localizar todas las ocurrencias de `$_FILES['plugin_file']` y `$_FILES['…']` en el repo.
-2. Aplicar el patrón:
-   ```php
-   if (!isset($_FILES['plugin_file']) || !is_array($_FILES['plugin_file'])) {
-       wp_die(esc_html__('Archivo inválido', 'imagina-updater-server'));
-   }
-   $file = $_FILES['plugin_file'];
-   // Validar 'tmp_name' con is_uploaded_file()
-   // Validar 'error' === UPLOAD_ERR_OK
-   // Validar MIME con finfo
-   // Solo entonces procesar
-   ```
-3. Mantener las validaciones de MIME y `is_uploaded_file()` que ya existen.
+1. Eliminado `imagina-updater-license-extension/includes/license-sdk/` completo (4 archivos: `loader.php`, `class-crypto.php`, `class-license-validator.php`, `class-heartbeat.php`).
+2. Actualizada la sección 6 de `diagnostico-licencias.php` que listaba esos archivos como "requeridos": ahora chequea los archivos clave del sistema de protección actual (`class-sdk-injector.php`, `class-protection-generator.php`, `class-license-crypto-server.php`, `class-license-api.php`) y emite advertencia si vuelve a aparecer el directorio legacy.
+3. Corregida la afirmación inexacta de este mismo documento sobre `includes/license-sdk/`.
+4. NO se añadieron guardas `class_exists` defensivas porque, eliminado el duplicado, el riesgo desaparece. Si reaparece (regresión, instalación legacy), el diagnóstico lo detecta.
 
-#### 1.4 `wp_unslash()` faltante en inputs
+**Verificación post-cambio**:
 
-**Síntoma**: PHPCS reporta varios `$_GET['action']`, `$_POST['…']` sin `wp_unslash()` previo a sanitización (líneas 1005, 1006, 1048 de `admin/class-admin.php` del servidor, entre otras).
+- `grep -rn "license-sdk\|Imagina_License_Validator\|Imagina_License_Heartbeat\|IMAGINA_LICENSE_SDK_LOADED" --include="*.php" .` → 0 referencias huérfanas; las que quedan son intencionadas (clase `Imagina_License_SDK_Injector` activa, tags `@package` de PHPDoc, comentarios del propio fix).
+- Probar en WP local: activar/desactivar los 3 plugins y subir un plugin marcado Premium para confirmar que la inyección sigue funcionando (verificación post-merge pendiente del usuario).
 
-**Acción**:
-1. Sweep en todo el código admin de los tres plugins:
-   ```bash
-   grep -rn '\$_\(GET\|POST\|REQUEST\|COOKIE\)' --include="*.php" .
-   ```
-2. Para cada acceso, aplicar el patrón:
-   ```php
-   $action = isset($_GET['action']) ? sanitize_key(wp_unslash($_GET['action'])) : '';
-   ```
-3. **No tocar** `$_SERVER['REQUEST_METHOD']`, `$_SERVER['CONTENT_LENGTH']`, etc. (no necesitan unslash).
-4. Para `$_SERVER['HTTP_X_FORWARDED_FOR']` y similares, aplicar `wp_unslash()` por seguridad aunque sean menos críticos.
+#### 1.2 Versión desincronizada en cliente — RESUELTO
 
-**Verificación de Fase 1**:
-- Correr PHPCS con WordPress-Extra y validar que los issues críticos están resueltos.
-- Tests manuales: subir plugin, crear API key, activar sitio, descargar plugin.
+> **Estado**: ✅ resuelto en `fix/critical-issues`.
+
+**Síntoma original**: el header del plugin decía `Version: 1.0.0` pero la constante `IMAGINA_UPDATER_CLIENT_VERSION` estaba en `'1.0.1'`. Esto rompe assumptions en cualquier código que compare `get_plugin_data()` vs la constante (incluyendo el sistema de updates de WP).
+
+**Acción ejecutada**:
+
+1. Server (`imagina-updater-server.php`) y license-extension (`imagina-updater-license-extension.php`) verificados consistentes (`1.0.0` ↔ `1.0.0`, `5.3.0` ↔ `5.3.0`). Sin cambios.
+2. Cliente: header y constante sincronizados a `1.0.2` (se tomó la rama "bump opcional para marcar este fix" de las dos descritas en el plan).
+
+#### 1.3 `$_FILES['plugin_file']` sin sanitizar — RESUELTO
+
+> **Estado**: ✅ resuelto en `fix/critical-issues`.
+
+**Síntoma original**: en `admin/class-admin.php` del servidor (rama `imagina_upload_plugin`), se accedía a `$_FILES['plugin_file']` sin validar `is_array`, leyendo la clave `name` sin `wp_unslash`, y sin verificar `is_uploaded_file()` en la capa de admin (solo dentro de `Imagina_Updater_Server_Plugin_Manager::upload_plugin`).
+
+**Acción ejecutada** (en `admin/class-admin.php`, rama `imagina_upload_plugin`):
+
+1. `is_array($_FILES['plugin_file'])` se valida ANTES de tocar cualquier clave.
+2. Bind a una copia local `$plugin_file` para no repetir la indexación; `error` se lee como `(int)` para comparación segura.
+3. `is_uploaded_file($plugin_file['tmp_name'])` se verifica también en la capa de admin (defense in depth; el plugin manager mantiene su propia comprobación).
+4. Cada clave de usuario se trata según su tipo:
+   - `name` → `sanitize_file_name(wp_unslash(...))`.
+   - `error` → `(int)` cast (no requiere unslash; es constante de PHP).
+   - `tmp_name` → solo `is_uploaded_file()` (path del servidor, no input directo).
+5. Se añadieron comentarios explicando por qué NO se llama a `wp_unslash()` sobre el array completo `$_FILES['plugin_file']`.
+6. Inputs hermanos del mismo handler (`changelog`, `plugin_groups`, `force_replace`) actualizados al mismo estándar.
+
+#### 1.4 `wp_unslash()` faltante en inputs — RESUELTO
+
+> **Estado**: ✅ resuelto en `fix/critical-issues` con tres commits atómicos (uno por plugin).
+
+**Síntoma original**: PHPCS reportaba varios `$_GET['action']`, `$_POST['…']` sin `wp_unslash()` previo a sanitización en los admin de los tres plugins.
+
+**Acción ejecutada** (`admin/class-admin.php` de cada plugin):
+
+- **Server**: `intval(wp_unslash($_GET['id'|'group_id'|'api_key_id']))`, `intval(wp_unslash($_POST['api_key_id'|'plugin_id'|'group_id'|'max_activations']))`, `array_map('intval', (array) wp_unslash($_POST['allowed_plugins'|'allowed_groups'|'plugin_ids']))`, todos los `$_GET['action'] === 'literal'` envueltos con `wp_unslash`. `render_plugin_groups_page` lee `$_GET['action']` y `$_GET['group_id']` con `sanitize_key(wp_unslash(...))` / `intval(wp_unslash(...))` y comentario `phpcs:ignore NonceVerification.Recommended` (read-only, los handlers de mutación validan su propio nonce).
+- **Client**: `imagina_save_config` (server_url, log_level, change_api_key, api_key), handlers `deactivate_license` e `install_plugin` (incluye extracción local del nonce `$_GET['_wpnonce']` con sanitize + unslash y `wp_die` con `esc_html__`), `imagina_save_plugins` (`array_map('sanitize_text_field', wp_unslash(...))` sobre `enabled_plugins`), `imagina_save_display_mode` (`plugin_display_mode`).
+- **License-extension**: `intval(wp_unslash(...))` en todos los `imagina_license_plugin_id`, `license_id`, `plugin_id`, `activation_id`, `max_activations`. `sanitize_email/text_field/textarea_field/key(wp_unslash(...))` en `customer_email`, `customer_name`, `expires_at`, `order_id`, `notes`, `status`, `imagina_license_action`. Comparaciones `$_POST['is_premium'] == 1` y `$_POST['imagina_license_action'] === '...'` envueltas con `wp_unslash`. `render_license_keys_page` con read-only nav (`plugin_filter`, `status_filter`, `edit_id`, `view_id`) hoisted a locales con `intval(wp_unslash(...))` y `phpcs:ignore NonceVerification.Recommended`.
+
+Las llamadas a `isset()` / `empty()` puramente existenciales se dejaron sin tocar (no leen el valor).
+
+`php -l` ejecutado sobre los tres archivos: sin errores de sintaxis.
+
+**Verificación de Fase 1** (toda la fase, pendiente del usuario antes del merge):
+
+- Correr PHPCS con WordPress-Extra y validar que los issues críticos están resueltos (Fase 2 hará el sweep general).
+- Tests manuales: subir plugin (incluyendo Premium para verificar inyección), crear API key, activar sitio cliente, descargar plugin, crear/editar/eliminar license key.
 
 ---
 

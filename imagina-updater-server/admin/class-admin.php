@@ -558,33 +558,40 @@ jQuery(document).ready(function($) {
                 return;
             }
 
-            // Verificar que se subió un archivo
-            if (!isset($_FILES['plugin_file']) || $_FILES['plugin_file']['error'] !== UPLOAD_ERR_OK) {
-                $error_message = '';
+            // Validar estructura de $_FILES antes de tocar ninguna clave (Fase 1.3).
+            if (!isset($_FILES['plugin_file']) || !is_array($_FILES['plugin_file'])) {
+                $error_message = __('No se seleccionó ningún archivo', 'imagina-updater-server');
+                imagina_updater_server_log('Error al subir archivo: ' . $error_message, 'error');
+                add_settings_error('imagina_updater', 'upload_error', $error_message, 'error');
+                return;
+            }
 
-                if (!isset($_FILES['plugin_file'])) {
-                    $error_message = __('No se seleccionó ningún archivo', 'imagina-updater-server');
-                } else {
-                    // Mensajes de error más descriptivos
-                    switch ($_FILES['plugin_file']['error']) {
-                        case UPLOAD_ERR_INI_SIZE:
-                        case UPLOAD_ERR_FORM_SIZE:
-                            $error_message = __('El archivo es demasiado grande. Tamaño máximo: ', 'imagina-updater-server') . ini_get('upload_max_filesize');
-                            break;
-                        case UPLOAD_ERR_PARTIAL:
-                            $error_message = __('El archivo se subió parcialmente. Intenta de nuevo.', 'imagina-updater-server');
-                            break;
-                        case UPLOAD_ERR_NO_FILE:
-                            $error_message = __('No se seleccionó ningún archivo', 'imagina-updater-server');
-                            break;
-                        case UPLOAD_ERR_NO_TMP_DIR:
-                        case UPLOAD_ERR_CANT_WRITE:
-                        case UPLOAD_ERR_EXTENSION:
-                            $error_message = __('Error del servidor al procesar el archivo. Contacta al administrador.', 'imagina-updater-server');
-                            break;
-                        default:
-                            $error_message = __('Error desconocido al subir el archivo', 'imagina-updater-server');
-                    }
+            // Copia local sanitizada del array $_FILES['plugin_file']. No se llama
+            // a wp_unslash() sobre el array completo: cada clave se trata según su
+            // tipo (error: int de PHP; tmp_name: ruta del servidor; name: string de
+            // usuario que sí requiere unslash + sanitize_file_name).
+            $plugin_file = $_FILES['plugin_file'];
+            $upload_error = isset($plugin_file['error']) ? (int) $plugin_file['error'] : UPLOAD_ERR_NO_FILE;
+
+            if ($upload_error !== UPLOAD_ERR_OK) {
+                switch ($upload_error) {
+                    case UPLOAD_ERR_INI_SIZE:
+                    case UPLOAD_ERR_FORM_SIZE:
+                        $error_message = __('El archivo es demasiado grande. Tamaño máximo: ', 'imagina-updater-server') . ini_get('upload_max_filesize');
+                        break;
+                    case UPLOAD_ERR_PARTIAL:
+                        $error_message = __('El archivo se subió parcialmente. Intenta de nuevo.', 'imagina-updater-server');
+                        break;
+                    case UPLOAD_ERR_NO_FILE:
+                        $error_message = __('No se seleccionó ningún archivo', 'imagina-updater-server');
+                        break;
+                    case UPLOAD_ERR_NO_TMP_DIR:
+                    case UPLOAD_ERR_CANT_WRITE:
+                    case UPLOAD_ERR_EXTENSION:
+                        $error_message = __('Error del servidor al procesar el archivo. Contacta al administrador.', 'imagina-updater-server');
+                        break;
+                    default:
+                        $error_message = __('Error desconocido al subir el archivo', 'imagina-updater-server');
                 }
 
                 imagina_updater_server_log('Error al subir archivo: ' . $error_message, 'error');
@@ -592,13 +599,25 @@ jQuery(document).ready(function($) {
                 return;
             }
 
-            $changelog = isset($_POST['changelog']) ? sanitize_textarea_field(wp_unslash($_POST['changelog'])) : '';
-            $plugin_groups = isset($_POST['plugin_groups']) ? array_map('intval', $_POST['plugin_groups']) : array();
-            $force_replace = isset($_POST['force_replace']) && $_POST['force_replace'] === '1';
+            // Validación temprana del archivo subido. Imagina_Updater_Server_Plugin_Manager::upload_plugin
+            // vuelve a verificar is_uploaded_file y MIME, pero hacerlo aquí evita
+            // procesar request bodies maliciosos antes de llegar al manager.
+            if (empty($plugin_file['tmp_name']) || !is_uploaded_file($plugin_file['tmp_name'])) {
+                $error_message = __('Archivo subido inválido o ausente', 'imagina-updater-server');
+                imagina_updater_server_log('Error al subir archivo: ' . $error_message, 'error');
+                add_settings_error('imagina_updater', 'upload_error', $error_message, 'error');
+                return;
+            }
 
-            $plugin_filename = isset($_FILES['plugin_file']['name']) ? sanitize_file_name($_FILES['plugin_file']['name']) : '';
+            $changelog     = isset($_POST['changelog']) ? sanitize_textarea_field(wp_unslash($_POST['changelog'])) : '';
+            $plugin_groups = isset($_POST['plugin_groups']) && is_array($_POST['plugin_groups'])
+                ? array_map('intval', wp_unslash($_POST['plugin_groups']))
+                : array();
+            $force_replace = isset($_POST['force_replace']) && wp_unslash($_POST['force_replace']) === '1';
+
+            $plugin_filename = isset($plugin_file['name']) ? sanitize_file_name(wp_unslash($plugin_file['name'])) : '';
             imagina_updater_server_log('Iniciando subida de plugin: ' . $plugin_filename . ($force_replace ? ' (forzar reemplazo)' : ''), 'info');
-            $result = Imagina_Updater_Server_Plugin_Manager::upload_plugin($_FILES['plugin_file'], $changelog, $force_replace);
+            $result = Imagina_Updater_Server_Plugin_Manager::upload_plugin($plugin_file, $changelog, $force_replace);
 
             if (is_wp_error($result)) {
                 imagina_updater_server_log('Error al subir plugin: ' . $result->get_error_message(), 'error');

@@ -368,15 +368,34 @@ Scope sugerido: `server`, `client`, `license-extension`, `admin-ui`, `claude`, `
 
 **Objetivo**: resolver los 4 issues que pueden causar fatal errors, vulnerabilidades reales o comportamiento incorrecto en producción.
 
-#### 1.1 Clase `Imagina_License_Crypto` declarada en dos archivos
+#### 1.1 Clase `Imagina_License_Crypto` declarada en dos archivos — RESUELTO
 
-**Síntoma**: si por error se cargan ambos archivos (`imagina-updater-license-extension/includes/class-license-crypto-server.php` Y `imagina-updater-license-extension/includes/license-sdk/class-crypto.php`), PHP lanza `Cannot redeclare class`.
+> **Estado**: ✅ resuelto en la rama `fix/critical-issues` (ver "Cambios realizados" más abajo en esta misma sub-sección).
 
-**Acción**:
-1. Después de la Fase 0, la carpeta `imagina-license-sdk/` ya no existe — pero `imagina-updater-license-extension/includes/license-sdk/` SÍ existe (es código que usa el plugin instalado en clientes premium). Verificar primero qué archivos de `license-sdk/` están realmente en uso por la extensión actual.
-2. Si `class-crypto.php` dentro de `license-sdk/` está duplicando `Imagina_License_Crypto`, renombrar la clase del SDK interno a `Imagina_License_Crypto_SDK` o eliminarlo si no se usa.
-3. Añadir guarda `if (!class_exists('Imagina_License_Crypto'))` antes de cada declaración de la clase.
-4. Test: forzar la carga de ambos en una WP de prueba y verificar que no rompe.
+**Síntoma original**: si por error se cargaban ambos archivos (`imagina-updater-license-extension/includes/class-license-crypto-server.php` Y `imagina-updater-license-extension/includes/license-sdk/class-crypto.php`), PHP lanzaba `Cannot redeclare class`.
+
+**Verificación realizada antes de actuar**:
+
+Se buscó en todo el repositorio cualquier `require/include` a archivos de `includes/license-sdk/`, autoloaders que los referenciaran, usos de las constantes `IMAGINA_LICENSE_SDK_*`, usos de `Imagina_License_SDK::`, `Imagina_License_Validator`, `Imagina_License_Heartbeat`, y se inspeccionó el método `rezip_plugin()` del injector v4. Resultados:
+
+- 0 cargas activas de cualquier archivo de `includes/license-sdk/`.
+- 0 referencias a las constantes / clases del SDK manual fuera del propio directorio.
+- El injector v4 (`Imagina_License_SDK_Injector::rezip_plugin`) **no copia ningún archivo del SDK al ZIP** del plugin premium — solo re-empaqueta lo extraído más la inyección inline en el archivo principal.
+- El `spl_autoload_register` que vivía en `license-sdk/loader.php` nunca se registraba porque `loader.php` no era cargado por nada.
+
+Conclusión: el directorio `includes/license-sdk/` era **código completamente huérfano**, vestigio de versiones anteriores del injector que sí copiaban el SDK al ZIP. La afirmación previa en este documento de que "es código que usa el plugin instalado en clientes premium" era **inexacta** para el modelo del injector v4 (corregida ahora).
+
+**Acción ejecutada** (autorizada por el usuario tras presentarle 4 alternativas):
+
+1. Eliminado `imagina-updater-license-extension/includes/license-sdk/` completo (4 archivos: `loader.php`, `class-crypto.php`, `class-license-validator.php`, `class-heartbeat.php`).
+2. Actualizada la sección 6 de `diagnostico-licencias.php` que listaba esos archivos como "requeridos": ahora chequea los archivos clave del sistema de protección actual (`class-sdk-injector.php`, `class-protection-generator.php`, `class-license-crypto-server.php`, `class-license-api.php`) y emite advertencia si vuelve a aparecer el directorio legacy.
+3. Corregida la afirmación inexacta de este mismo documento sobre `includes/license-sdk/`.
+4. NO se añadieron guardas `class_exists` defensivas porque, eliminado el duplicado, el riesgo desaparece. Si reaparece (regresión, instalación legacy), el diagnóstico lo detecta.
+
+**Verificación post-cambio**:
+
+- `grep -rn "license-sdk\|Imagina_License_Validator\|Imagina_License_Heartbeat\|IMAGINA_LICENSE_SDK_LOADED" --include="*.php" .` → 0 referencias huérfanas; las que quedan son intencionadas (clase `Imagina_License_SDK_Injector` activa, tags `@package` de PHPDoc, comentarios del propio fix).
+- Probar en WP local: activar/desactivar los 3 plugins y subir un plugin marcado Premium para confirmar que la inyección sigue funcionando (verificación post-merge pendiente del usuario).
 
 #### 1.2 Versión desincronizada en cliente
 

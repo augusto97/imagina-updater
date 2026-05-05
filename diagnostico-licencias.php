@@ -158,26 +158,38 @@ foreach ($hooks_to_check as $hook) {
 
 echo "\n";
 
-// 6. Verificar archivos del SDK
-echo "6. ARCHIVOS DEL SDK EN LA EXTENSIÓN:\n";
-echo "-------------------------------------\n";
+// 6. Verificar archivos clave del sistema de protección
+echo "6. ARCHIVOS CLAVE DEL SISTEMA DE PROTECCIÓN:\n";
+echo "---------------------------------------------\n";
 
-$plugin_dir = WP_PLUGIN_DIR . '/imagina-updater-license-extension/includes/license-sdk/';
+$extension_dir = WP_PLUGIN_DIR . '/imagina-updater-license-extension/includes/';
 
-if (is_dir($plugin_dir)) {
-    echo "✅ Directorio existe: $plugin_dir\n";
+// El injector v4 inyecta la protección inline desde estos archivos.
+// Ya no se usa includes/license-sdk/ (eliminado en Fase 1.1).
+$required_files = array(
+    'class-sdk-injector.php'         => 'Inyector de protección',
+    'class-protection-generator.php' => 'Generador del código inyectado',
+    'class-license-crypto-server.php' => 'Criptografía y firma HMAC',
+    'class-license-api.php'           => 'API REST de licencias',
+);
 
-    $required_files = array('loader.php', 'class-crypto.php', 'class-license-validator.php', 'class-heartbeat.php');
-
-    foreach ($required_files as $file) {
-        if (file_exists($plugin_dir . $file)) {
-            echo "  ✅ $file\n";
-        } else {
-            echo "  ❌ $file - FALTA\n";
-        }
+foreach ($required_files as $file => $description) {
+    if (file_exists($extension_dir . $file)) {
+        echo "  ✅ $file ($description)\n";
+    } else {
+        echo "  ❌ $file ($description) - FALTA\n";
     }
-} else {
-    echo "❌ Directorio NO existe: $plugin_dir\n";
+}
+
+// El directorio includes/license-sdk/ se eliminó en Fase 1.1 por estar huérfano.
+// Si vuelve a aparecer (regresión o instalación antigua), reportarlo: la
+// Imagina_License_Crypto que define duplica la del archivo activo y puede
+// disparar 'Cannot redeclare class' si su loader llega a cargarse.
+$legacy_sdk_dir = $extension_dir . 'license-sdk/';
+if (is_dir($legacy_sdk_dir)) {
+    echo "\n⚠️  ADVERTENCIA: Directorio legacy detectado: $legacy_sdk_dir\n";
+    echo "   Debió eliminarse en Fase 1.1. Su clase Imagina_License_Crypto duplica\n";
+    echo "   la de class-license-crypto-server.php y puede causar fatal errors.\n";
 }
 
 echo "\n";

@@ -181,8 +181,20 @@ class Imagina_Updater_Server_REST_API {
     }
 
     /**
-     * Limpiar rate limits manualmente (utilidad para emergencias o debugging)
-     * Se puede llamar desde el admin o mediante WP-CLI
+     * Limpiar rate limits manualmente (utilidad para emergencias o debugging).
+     *
+     * Operación de EMERGENCIA: el barrido global con DELETE LIKE puede ser
+     * costoso en sitios con miles de transients en wp_options. Las invocaciones
+     * sin parámetros están protegidas con (a) capability manage_options y (b)
+     * un throttle propio de 60s (ver Fase 3.4 en CLAUDE.md).
+     *
+     * Las invocaciones con $api_key + $site_domain o $ip son baratas (un solo
+     * delete_transient con clave conocida) y no se throttlean.
+     *
+     * @param string|null $api_key
+     * @param string|null $ip
+     * @param string|null $site_domain
+     * @return bool true si se procesó; false si se rechazó por capability o throttle.
      */
     public static function clear_rate_limits($api_key = null, $ip = null, $site_domain = null) {
         global $wpdb;
@@ -191,19 +203,49 @@ class Imagina_Updater_Server_REST_API {
             // Limpiar rate limit específico de un sitio
             delete_transient('imagina_updater_rate_site_' . md5($api_key . '_' . $site_domain));
             imagina_updater_server_log('Rate limit limpiado para sitio: ' . $site_domain, 'info');
+            return true;
         }
 
         if ($ip) {
             delete_transient('imagina_updater_rate_ip_' . md5($ip));
             imagina_updater_server_log('Rate limit limpiado para IP: ' . $ip, 'info');
+            return true;
         }
 
-        // Si no se especifica nada, limpiar TODOS los rate limits
-        if (!$api_key && !$ip && !$site_domain) {
-            $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_imagina_updater_rate_%'");
-            $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_imagina_updater_rate_%'");
-            imagina_updater_server_log('Todos los rate limits limpiados manualmente', 'info');
+        // Sin parámetros: barrido global. Aplica las dos guardas extra.
+        if (!current_user_can('manage_options')) {
+            imagina_updater_server_log('Intento no autorizado de limpiar rate limits globalmente', 'warning');
+            return false;
         }
+
+        // Throttle de 60s para evitar que un admin (o un bug) lo dispare en bucle.
+        $throttle_key = 'imagina_updater_clear_rate_limits_throttle';
+        if (get_transient($throttle_key) !== false) {
+            imagina_updater_server_log('clear_rate_limits global rechazado: ya se ejecutó en los últimos 60s', 'warning');
+            return false;
+        }
+        set_transient($throttle_key, 1, MINUTE_IN_SECONDS);
+
+        // Si hay object cache externo (Redis, Memcached), un flush por grupo es
+        // mucho más barato que el DELETE LIKE. Solo se hace si la instalación
+        // soporta wp_cache_flush_group (WordPress 6.1+ con backend compatible).
+        $object_cache_handled = false;
+        if (function_exists('wp_cache_supports') && wp_cache_supports('flush_group') && function_exists('wp_cache_flush_group')) {
+            wp_cache_flush_group('transient');
+            $object_cache_handled = true;
+        }
+
+        // Fallback: barrido directo en wp_options. Esto es lo costoso en sitios
+        // sin object cache; documentado como operación de emergencia.
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_imagina_updater_rate_%'");
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_imagina_updater_rate_%'");
+
+        imagina_updater_server_log(
+            'Todos los rate limits limpiados manualmente'
+            . ($object_cache_handled ? ' (object cache flush + DELETE LIKE)' : ' (DELETE LIKE)'),
+            'info'
+        );
+        return true;
     }
 
     /**

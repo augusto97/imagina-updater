@@ -36,19 +36,13 @@ imagina-updater-license-extension-5.3.0.zip: OK
 
 ## Estado del corte
 
-Esta versión refleja el estado del repositorio **post Fase 0/1/2 (todas mergeadas a main) + Fase 3 en `refactor/robustness`**:
+Esta versión refleja el estado del repositorio **post Fase 0/1/2/3 (todas mergeadas a main) + Fase 4 en `refactor/architecture`**:
 
-- Fase 0: eliminado el SDK legacy `imagina-license-sdk/` de la raíz del repo. Documentación útil rescatada a `imagina-updater-license-extension/docs/`. Cleanups derivados en `diagnostico-licencias.php` y en el header PHPDoc del antiguo `loader.php`.
-- Fase 1.1: eliminado `imagina-updater-license-extension/includes/license-sdk/` completo (4 archivos huérfanos). Resuelve el riesgo latente de `Cannot redeclare class Imagina_License_Crypto`. Sección 6 del diagnóstico reescrita.
-- Fase 1.2: cliente sincronizado (header + constante) a `1.0.2`. Server y license-extension verificados consistentes.
-- Fase 1.3: hardening de `$_FILES['plugin_file']` en el handler de upload del servidor (validación de `is_array`, `is_uploaded_file` en capa admin, `wp_unslash` en claves user-controlled).
-- Fase 1.4: sweep de `wp_unslash()` en todos los reads `$_GET`/`$_POST` en admin de los 3 plugins; `phpcs:ignore NonceVerification.Recommended` en lecturas read-only de navegación.
-- Fase 2.1 + 2.2: cabecera `phpcs:disable WordPress.DB.DirectDatabaseQuery.{NoCaching,DirectQuery}, WordPress.DB.PreparedSQL.InterpolatedNotPrepared` con justificación, a nivel de archivo, en los 12 archivos que usan `$wpdb` (en lugar de ~190 anotaciones inline).
-- Fase 2.3: cierre de la última lectura `$_GET` read-only en `render_activations_page` con `phpcs:ignore NonceVerification.Recommended`.
-- Fase 3.1: eliminado el fallback de match parcial en `find_plugin_file()` (cliente). Sin match exacto → `false`. Adiós a colisiones tipo `"plugin"` matcheando `"plugin-pro"`.
-- Fase 3.2: TTL del cache de error en `check_updates()` reducido de 5 min a 60 s. El auto-clear ya estaba cableado vía `clear_update_caches()` desde los handlers de admin que mutan config.
-- Fase 3.3: `download_plugin()` (servidor) ahora hace streaming en chunks de 8 KB con `fopen`+`fread`+`flush` en lugar de cargar el ZIP entero a memoria. Memoria constante (~8 KB) independientemente del tamaño.
-- Fase 3.4: `clear_rate_limits()` global ahora exige `manage_options` + throttle de 60 s. Si `wp_cache_supports('flush_group')`, hace `wp_cache_flush_group('transient')` antes del `DELETE LIKE` (O(1) con object cache).
+- Fase 0–3: ver historial en `CLAUDE.md` (cleanup SDK legacy, fixes críticos, sweep PHPCS, robustez en streaming/cache/rate-limit).
+- Fase 4.1 (parcial): añadido `composer.json` con `autoload.classmap` en cada uno de los 3 plugins. Sin renombres de clases ni cambios runtime; los entry points siguen cargando con `require_once`. La migración completa a `src/` con namespaces queda diferida hasta una sesión con WP local para validar end-to-end.
+- Fase 4.2: añadido `imagina-updater-server/docs/HOOKS.md` con los 6 hooks `do_action` que expone el servidor (parámetros, ejemplos, consumidores). Cliente y license-extension no exponen hooks propios.
+- Fase 4.3: `Imagina_License_SDK_Injector::rezip_plugin` reescrito a two-phase commit: ZIP nuevo se construye en `.new`, `rename()` atómico al final. Si falla a mitad (open/addFile/close/rename), el ZIP original queda intacto. Eliminado el sistema de `.backup` previo.
+- Fase 4.4: diferida (Action Scheduler añadiría dependencia externa; decisión pendiente).
 
 ## Versionado
 

@@ -567,56 +567,92 @@ Las 6 advertencias del CSV (líneas 1005-1006 y 1048 originales del server admin
 
 ---
 
-### Fase 4 — Arquitectónico
+### Fase 4 — Arquitectónico — PARCIALMENTE RESUELTA
+
+> **Estado**: 4.2 ✅ y 4.3 ✅ resueltos en `refactor/architecture`. 4.1 ⚠️ hecha solo a medias (composer.json sin migración de namespaces). 4.4 ⏸️ diferida (añade dependencia externa).
 
 **Rama**: `refactor/architecture`
 
-**Objetivo**: mejoras estructurales de fondo. Esta fase es opcional y puede dividirse en sub-fases.
+**Objetivo original**: mejoras estructurales de fondo. Esta fase es opcional y puede dividirse en sub-fases.
 
-#### 4.1 Migración a namespaces PSR-4
+#### 4.1 Migración a namespaces PSR-4 — PARCIAL
 
-**Acción**:
-1. Crear `composer.json` en cada plugin con autoload PSR-4:
-   ```json
-   {
-     "autoload": {
-       "psr-4": {
-         "ImaginaWP\\UpdaterServer\\": "src/"
-       }
-     }
-   }
-   ```
-2. Mover clases de `includes/class-*.php` a `src/` con namespaces:
-   - `Imagina_Updater_Server_API_Keys` → `ImaginaWP\UpdaterServer\ApiKeys`
-   - `Imagina_Updater_Server_Activations` → `ImaginaWP\UpdaterServer\Activations`
-   - etc.
-3. Mantener archivos legacy con `class_alias` para retrocompatibilidad si hay extensiones de terceros.
-4. Generar autoloader con `composer dump-autoload -o`.
-5. Cargar autoloader en el archivo principal del plugin.
+> **Estado**: ⚠️ solo se añadió `composer.json` con classmap autoload en los 3 plugins. La migración de archivos a `src/` con namespaces y `class_alias` queda diferida hasta que haya WP local para validar end-to-end.
 
-#### 4.2 Documentar hooks (filter/action reference)
+**Acción ejecutada**:
 
-Crear `imagina-updater-server/docs/HOOKS.md` con todos los hooks expuestos, parámetros y ejemplos. La license-extension depende de ellos y futuras extensiones también.
+- Creado `imagina-updater-server/composer.json`, `imagina-updater-client/composer.json`, `imagina-updater-license-extension/composer.json` con:
+  - Metadata estándar (name, description, license, php constraint).
+  - `autoload.classmap` apuntando a las carpetas existentes (`includes/`, `admin/`, `api/`).
+  - Sin renombres de clases, sin movimientos de archivos, sin cambios en los entry points.
+- El loader actual (`require_once includes/class-*.php` en el archivo principal) se mantiene intacto. Los plugins distribuidos sin `vendor/` siguen funcionando exactamente igual.
 
-#### 4.3 Mejorar rollback de inyección de código en ZIPs
+**Lo que esto habilita**:
 
-**Síntoma**: en `class-sdk-injector.php`, si la inyección falla a mitad, el ZIP puede quedar corrupto. Hay backup pero el flow de restore no es atómico.
+- Tooling de análisis estático (PHPStan, Psalm) y dependencias dev vía `composer install`.
+- Declaración de intención: este proyecto se gestiona como un proyecto PHP moderno, no como un conjunto suelto de archivos.
+- Base preparada para la migración completa de namespaces.
 
-**Acción**:
-1. Refactorizar `inject_sdk_if_needed()` para usar el patrón two-phase commit:
-   - Fase 1: extraer, modificar, re-zippear a archivo temporal con sufijo `.new`
-   - Fase 2: si todo OK, `rename($temp, $original)` (atómico en ext4/xfs)
-   - Si falla, eliminar el `.new` y dejar el original intacto
-2. Eliminar el sistema de `.backup` actual una vez el nuevo flujo esté validado.
+**Lo que NO se hizo (deferred)**:
 
-#### 4.4 Action Scheduler para heartbeat
+- Mover `includes/class-*.php` a `src/` con namespaces (`ImaginaWP\UpdaterServer\`, `ImaginaWP\UpdaterClient\`, `ImaginaWP\LicenseExtension\`).
+- Renombrar clases (`Imagina_Updater_Server_API_Keys` → `ImaginaWP\UpdaterServer\ApiKeys`, etc.).
+- Añadir `class_alias` para retrocompatibilidad.
+- Cargar el autoloader de Composer en runtime desde los archivos principales.
 
-Reemplazar `wp_schedule_event` del heartbeat por Action Scheduler (más robusto, mejor logging, retry automático).
+**Razonamiento**: una migración de namespaces sobre ~25 archivos de clase sin un entorno WP local para smoke-test arriesga rupturas sutiles (autoloader edge cases, `instanceof` checks, datos serializados en BD que referencian clases por nombre antiguo) que solo aparecerían en producción. Mejor diferirlo a una sesión con la verificación en vivo disponible.
+
+#### 4.2 Documentar hooks (filter/action reference) — RESUELTO
+
+**Acción ejecutada**: creado `imagina-updater-server/docs/HOOKS.md` con los 6 hooks que expone el servidor (todos `do_action`; 0 `apply_filters`):
+
+- `imagina_updater_after_upload_form`
+- `imagina_updater_after_move_plugin_file` ← punto de inyección de protección
+- `imagina_updater_after_upload_plugin`
+- `imagina_updater_plugins_column_toggles`
+- `imagina_updater_plugins_table_header`
+- `imagina_updater_plugins_table_row` (recibe `$plugin`)
+
+Cada entrada documenta cuándo se dispara, parámetros (con tipos y mutabilidad), origen (archivo + línea), consumidores actuales (license-extension), ejemplo de uso, y best practices (capabilities, performance, two-phase commit).
+
+El cliente y la license-extension **no exponen hooks propios** (auditado con `grep "do_action\|apply_filters"`), así que no se creó HOOKS.md para ellos. Si en el futuro empiezan a exponer hooks, se añadirá uno por plugin siguiendo el mismo template.
+
+#### 4.3 Mejorar rollback de inyección de código en ZIPs — RESUELTO
+
+**Síntoma original**: el flujo de `rezip_plugin()` hacía `copy(original, .backup) → unlink(original) → ZipArchive::CREATE → addFile loop → close → unlink(.backup)`. Entre el `unlink(original)` y un `close()` exitoso había una ventana donde un crash de PHP corrompía el plugin. Además se ignoraba el valor de retorno de `$zip->close()` y `addFile()`.
+
+**Acción ejecutada** (`Imagina_License_SDK_Injector::rezip_plugin`):
+
+1. El nuevo ZIP se construye en `$output_zip . '.new'` — el original NO se toca.
+2. Si `ZipArchive::open`, `addFile` o `close` fallan: borrar `.new`, devolver error con mensaje específico. Original intacto.
+3. En éxito: `rename(.new, original)` — atómico en filesystems POSIX (ext4/xfs/btrfs cuando ambas rutas comparten mountpoint, que es siempre el caso aquí).
+4. Si `rename` falla (raro: cross-filesystem, permisos): borrar `.new`, devolver error. Original intacto.
+5. Eliminado el sistema de `.backup` por innecesario con este flujo.
+6. Añadido `ZipArchive::OVERWRITE` para que un `.new` huérfano de un intento previo se reemplace, y `unlink` preventivo de `.new` al inicio.
+7. Valor de retorno de `addFile` y `close` ahora se chequea.
+
+Ambos call sites (`inject_sdk_if_needed` línea ~128 y `remove_protection` línea ~612) van por este private method, así que ambos heredan el comportamiento.
+
+#### 4.4 Action Scheduler para heartbeat — DIFERIDA
+
+Reemplazar `wp_schedule_event` del heartbeat por Action Scheduler. Diferida explícitamente al inicio de la fase porque añade dependencia externa (la librería de Action Scheduler, normalmente embebida en WooCommerce). Pendiente para una sub-fase futura cuando se decida si:
+
+- Embeber Action Scheduler como dependencia composer.
+- O depender de la presencia de WooCommerce.
+- O quedarse con `wp_schedule_event` y añadir lógica propia de retry.
 
 **Verificación de Fase 4**:
-- PSR-4 cargando sin errores. Tests funcionales completos.
-- Hooks documentados con ejemplos compilables.
-- Inyección con simulación de fallo: ZIP original siempre intacto.
+
+- 4.1 (parcial): `composer.json` válido en los 3 plugins; `composer install` opcional para tooling. Sin cambios runtime.
+- 4.2: `HOOKS.md` revisable manualmente; los ejemplos son copy-paste compilables.
+- 4.3 pendiente del usuario en WP local: simular fallo durante inyección (p.ej. permisos read-only en uploads/, espacio en disco saturado) y confirmar que el ZIP original sigue intacto y descargable.
+
+**Cambios adicionales realizados durante esta fase**: ninguno fuera del plan.
+
+**Pendientes derivados**:
+
+- Migración completa de PSR-4 (parte de 4.1 que quedó fuera).
+- Decisión sobre 4.4 (Action Scheduler vs wp_schedule_event con retry propio).
 
 ---
 

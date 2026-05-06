@@ -503,63 +503,67 @@ Las 6 advertencias del CSV (líneas 1005-1006 y 1048 originales del server admin
 
 ---
 
-### Fase 3 — Robustez
+### Fase 3 — Robustez — RESUELTO
+
+> **Estado**: ✅ resuelto en `refactor/robustness` (4 commits atómicos, uno por sub-issue).
 
 **Rama**: `refactor/robustness`
 
-**Objetivo**: resolver problemas que no rompen hoy pero pueden romper bajo carga o en edge cases.
+**Objetivo original**: resolver problemas que no rompen hoy pero pueden romper bajo carga o en edge cases.
 
-#### 3.1 `find_plugin_file` con matching parcial peligroso
+#### 3.1 `find_plugin_file` con matching parcial peligroso — RESUELTO
 
-**Síntoma**: en `imagina-updater-client/includes/class-updater.php`, el fallback hace match por prefijo: `"plugin"` matchea `"plugin-pro"`. Riesgo: dos plugins instalados, mismatch de slug.
+**Síntoma original**: en `imagina-updater-client/includes/class-updater.php` (`find_plugin_file`), el fallback hacía match por prefijo (`strpos($indexed_slug, $slug_lower . '-') === 0`): `"plugin"` matcheaba `"plugin-pro"`. Riesgo: dos plugins con prefijo común, mismatch silencioso.
 
-**Acción**:
-1. Eliminar el fallback de matching parcial (`strpos($indexed_slug, $slug_lower . '-') === 0`).
-2. Si no hay match exacto, devolver `false`.
-3. Si en algún caso de uso real hace falta resolver ambiguity, hacerlo explícito en el servidor (vía `slug_override`), no en el cliente con guesses.
+**Acción ejecutada**:
 
-#### 3.2 Cache de errores 5min retrasa recuperación
+- Eliminado el bloque del fallback completo. Si no hay match exacto en `$this->plugin_index`, `find_plugin_file()` ahora devuelve `false`.
+- Comentario en el código apunta al `slug_override` del servidor como mecanismo correcto para resolver ambigüedades reales.
 
-**Síntoma**: cuando hay error en `check-updates`, el cliente cachea respuesta vacía 5 minutos. Si el admin reactiva una API key, el cliente tarda hasta 5 min en notarlo.
+#### 3.2 Cache de errores 5min retrasa recuperación — RESUELTO
 
-**Acción**:
-1. Reducir el cache de error a 60 segundos.
-2. Añadir un botón "Reintentar conexión" en la UI (Fase 5) que limpie el cache de error vía AJAX.
-3. Limpiar el cache de error automáticamente cuando el usuario edite la configuración del cliente.
+**Síntoma original**: cuando `check_updates()` fallaba, el cliente cacheaba respuesta vacía 5 minutos. Si el admin reactivaba una API key o corregía la URL, el cliente tardaba hasta 5 min en darse cuenta.
 
-#### 3.3 Descarga de ZIP sin streaming (riesgo OOM)
+**Acción ejecutada** (`imagina-updater-client/includes/class-updater.php` ~línea 183):
 
-**Síntoma**: en `class-rest-api.php` del servidor, `download_plugin` hace `echo $wp_filesystem->get_contents($plugin->file_path)`. Para ZIPs grandes (50+ MB), carga todo a memoria.
+- TTL del cache de error reducido de `5 * MINUTE_IN_SECONDS` a `MINUTE_IN_SECONDS` (60 s).
+- **Auto-clear ya estaba en su sitio**: cada handler de admin que muta config (`save_config`, `deactivate_license`, `save_plugins`, `save_display_mode`) llama a `imagina_updater_client()->clear_update_caches()`, que borra todos los `_transient_imagina_updater_*` (incluyendo `imagina_updater_check_*`). No hizo falta cableado adicional.
+- El **botón "Reintentar conexión"** del plan se reasigna a Fase 5 (rediseño del admin); requiere endpoint AJAX nuevo y UI.
 
-**Acción**:
-1. Reemplazar por streaming con `readfile()` o lectura por chunks:
-   ```php
-   $handle = fopen($plugin->file_path, 'rb');
-   if ($handle === false) {
-       wp_die('Error al abrir archivo', '', ['response' => 500]);
-   }
-   while (!feof($handle)) {
-       echo fread($handle, 8192);
-       flush();
-   }
-   fclose($handle);
-   exit;
-   ```
-2. Verificar que `WP_Filesystem` permite este patrón o si hay que ir a `fopen` directo.
-3. Mantener los headers de respuesta y `ob_end_clean()` previos.
+#### 3.3 Descarga de ZIP sin streaming (riesgo OOM) — RESUELTO
 
-#### 3.4 `clear_rate_limits` con `DELETE LIKE` pesado
+**Síntoma original**: en `imagina-updater-server/api/class-rest-api.php`, `download_plugin()` hacía `echo $wp_filesystem->get_contents($plugin->file_path)`, cargando el ZIP entero a memoria. Para ZIPs grandes (>50 MB) excedía el `memory_limit` típico de shared hosting.
 
-**Síntoma**: el método borra de `wp_options` con `LIKE '_transient_imagina_updater_rate_%'`. En sitios con muchísimos transients esto es lento.
+**Acción ejecutada**:
 
-**Acción**:
-1. Indexar la operación con `wp_cache_flush_group()` si la instalación usa object cache.
-2. Para fallback sin object cache, mantener el `DELETE LIKE` pero envolverlo en chequeo: solo permitir su ejecución desde admin con `manage_options` y rate-limitear el propio acceso al método (no más de 1 vez por minuto).
-3. Documentar que es operación de emergencia, no rutinaria.
+- Reemplazado por streaming con `fopen()` + `fread()` 8 KB + `flush()` + `fclose()`. Memoria constante (~8 KB) independientemente del tamaño del ZIP.
+- WP_Filesystem no expone primitiva de streaming, así que `fopen()` directo es la herramienta correcta aquí.
+- Si `fopen()` falla, retorna `WP_Error` 500 en lugar de servir un body vacío silenciosamente.
+- Headers (`Content-Type`, `Content-Disposition`, `Content-Length`, no-cache) preservados intactos.
+- `ob_end_clean()` previo preservado.
+
+#### 3.4 `clear_rate_limits` con `DELETE LIKE` pesado — RESUELTO
+
+**Síntoma original**: el barrido global con `DELETE FROM wp_options WHERE option_name LIKE '_transient_imagina_updater_rate_%'` (×2, valor + timeout) era costoso en sitios con muchos transients y no estaba protegido contra invocaciones repetidas.
+
+**Acción ejecutada** (`Imagina_Updater_Server_REST_API::clear_rate_limits`):
+
+- Invocaciones con `$api_key + $site_domain` o con `$ip` siguen baratas (un solo `delete_transient` con clave conocida); no se throttlean.
+- Invocaciones globales (sin parámetros) ahora requieren:
+  1. `current_user_can('manage_options')` — si falla, log warning + `return false`.
+  2. Throttle de 60 s con transient `imagina_updater_clear_rate_limits_throttle`. Si el barrido se ejecutó hace menos de 60 s, se rechaza con log.
+- Si la instalación soporta `wp_cache_flush_group` (`wp_cache_supports('flush_group')` — WP 6.1+ con backend compatible, ej. Redis Object Cache), se hace `wp_cache_flush_group('transient')` antes del `DELETE LIKE`. Con object cache, O(1) en lugar de O(n).
+- El `DELETE LIKE` se mantiene como fallback defensivo (algunos backends siguen escribiendo a `wp_options`).
+- Función ahora retorna `bool` (true en éxito, false en rechazo). PHPDoc actualizado para marcarla como operación de emergencia.
 
 **Verificación de Fase 3**:
-- Test de carga: descargar un ZIP de 100 MB y verificar uso de memoria PHP.
-- Test funcional: cambiar API key, validar que el cache de error se invalida.
+
+- `php -l` ejecutado sobre los 2 archivos modificados (`imagina-updater-client/includes/class-updater.php`, `imagina-updater-server/api/class-rest-api.php`): sin errores de sintaxis.
+- Pendiente del usuario en WP local:
+  - Test de carga: descargar un ZIP de 100 MB y verificar `memory_get_peak_usage()` ≤ 16 MB en el proceso de descarga.
+  - Test funcional: cambiar API key en el cliente, validar que el siguiente `check_updates()` se reintenta sin esperar 5 minutos.
+  - Test funcional: instalar dos plugins con prefijo común (ej. `acme` y `acme-pro`) y verificar que `find_plugin_file('acme')` devuelve solo el primero.
+  - Test funcional: invocar `clear_rate_limits()` global desde admin dos veces seguidas y confirmar que la segunda devuelve `false` con warning en el log.
 
 ---
 

@@ -179,8 +179,12 @@ class Imagina_Updater_Client_Updater {
             $updates = $this->api_client->check_updates($plugins_to_check);
 
             if (is_wp_error($updates)) {
-                // En caso de error, cachear respuesta vacía por 5 minutos
-                set_transient($cache_key, array(), 5 * MINUTE_IN_SECONDS);
+                // Fase 3.2: cachear respuesta vacía solo 60s (antes: 5 min). Si
+                // el admin reactiva la API key o cambia la config, no debe
+                // esperar 5 minutos a que el cliente vuelva a intentarlo. La
+                // configuración del cliente además invalida estas cachés
+                // explícitamente vía clear_update_caches().
+                set_transient($cache_key, array(), MINUTE_IN_SECONDS);
                 return $transient;
             }
 
@@ -855,19 +859,15 @@ class Imagina_Updater_Client_Updater {
 
         $slug_lower = strtolower($slug);
 
-        // Búsqueda directa en índice (O(1) en lugar de O(n))
+        // Búsqueda directa en índice (O(1) en lugar de O(n)).
+        // Fase 3.1: se eliminó el fallback de coincidencia parcial
+        // (`$indexed_slug startswith $slug_lower . '-'`). Ese fallback hacía
+        // match por prefijo (`"plugin"` coincidía con `"plugin-pro"`),
+        // generando ambigüedades cuando dos plugins comparten prefijo.
+        // Si en algún caso real hace falta resolver una ambigüedad, debe
+        // hacerse explícito en el servidor vía `slug_override`, no en el
+        // cliente con suposiciones.
         $found = isset($this->plugin_index[$slug_lower]) ? $this->plugin_index[$slug_lower] : false;
-
-        // Si no se encontró, intentar coincidencia parcial como fallback
-        if (!$found) {
-            foreach ($this->plugin_index as $indexed_slug => $plugin_file) {
-                // Coincidencia parcial: slug-* (ej: "plugin" coincide con "plugin-pro")
-                if (strpos($indexed_slug, $slug_lower . '-') === 0) {
-                    $found = $plugin_file;
-                    break;
-                }
-            }
-        }
 
         // Cachear resultado (positivo o negativo)
         $this->plugin_file_cache[$slug] = $found;

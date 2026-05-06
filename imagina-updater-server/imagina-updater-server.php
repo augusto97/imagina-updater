@@ -87,6 +87,7 @@ class Imagina_Updater_Server {
         require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'includes/class-plugin-groups.php';
         require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'admin/class-admin.php';
         require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'api/class-rest-api.php';
+        require_once IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'api/class-admin-rest-api.php';
     }
 
     /**
@@ -107,6 +108,7 @@ class Imagina_Updater_Server {
         // Inicializar componentes
         Imagina_Updater_Server_Admin::get_instance();
         Imagina_Updater_Server_REST_API::get_instance();
+        Imagina_Updater_Server_Admin_REST_API::get_instance();
     }
 
     /**

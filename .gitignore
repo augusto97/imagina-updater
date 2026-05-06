@@ -28,6 +28,11 @@ composer.lock
 package-lock.json
 yarn.lock
 
+# Frontend build output (Phase 5: rebuilt with `npm run build` before
+# packaging release ZIPs; never committed to feature branches or main).
+imagina-updater-server/assets/dist/
+imagina-updater-client/assets/dist/
+
 # Temporary files
 *.tmp
 *.temp

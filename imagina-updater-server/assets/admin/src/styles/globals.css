@@ -1,0 +1,90 @@
+/*
+ * Estilos globales del admin SPA del servidor (Imagina Updater).
+ *
+ * Decisiones clave (CLAUDE.md §5):
+ * - Las variables shadcn viven SCOPED en `.iaud-app`, NO en `:root`.
+ *   Esto evita contaminar el resto del wp-admin con tokens nuestros.
+ * - Tailwind preflight está desactivado en `tailwind.config.ts`. El
+ *   reset que sí queremos (box-sizing, font-family) se aplica solo
+ *   dentro de `.iaud-app` y sus descendientes.
+ * - Modo oscuro diferido a Fase 5.B; las variables `.dark` quedan
+ *   declaradas como placeholder para que la activación futura sea
+ *   solo añadir la clase `dark` al contenedor.
+ */
+
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  .iaud-app {
+    /*
+     * Paleta provisional. Color primario expuesto vía variable para
+     * permitir reemplazo de un solo punto cuando llegue la paleta
+     * corporativa de Imagina (CLAUDE.md §5).
+     *
+     * Valores en formato HSL (sin `hsl(...)`) para que Tailwind pueda
+     * componerlos con alpha (`bg-iaud-primary/50`).
+     */
+    --iaud-background: 0 0% 100%;
+    --iaud-foreground: 222 47% 11%;
+
+    --iaud-card: 0 0% 100%;
+    --iaud-card-foreground: 222 47% 11%;
+
+    --iaud-popover: 0 0% 100%;
+    --iaud-popover-foreground: 222 47% 11%;
+
+    --iaud-primary: 221 83% 53%;
+    --iaud-primary-foreground: 210 40% 98%;
+
+    --iaud-secondary: 210 40% 96%;
+    --iaud-secondary-foreground: 222 47% 11%;
+
+    --iaud-muted: 210 40% 96%;
+    --iaud-muted-foreground: 215 16% 47%;
+
+    --iaud-accent: 210 40% 96%;
+    --iaud-accent-foreground: 222 47% 11%;
+
+    --iaud-destructive: 0 84% 60%;
+    --iaud-destructive-foreground: 210 40% 98%;
+
+    --iaud-border: 214 32% 91%;
+    --iaud-input: 214 32% 91%;
+    --iaud-ring: 221 83% 53%;
+
+    --iaud-radius: 0.5rem;
+
+    /* Reset scoped: solo dentro de la SPA, NO global. */
+    box-sizing: border-box;
+    font-family:
+      'Inter',
+      ui-sans-serif,
+      system-ui,
+      sans-serif;
+    font-feature-settings:
+      'cv02',
+      'cv03',
+      'cv04',
+      'cv11';
+    color: hsl(var(--iaud-foreground));
+    background-color: hsl(var(--iaud-background));
+  }
+
+  .iaud-app *,
+  .iaud-app *::before,
+  .iaud-app *::after {
+    box-sizing: border-box;
+  }
+
+  /* Placeholder para Fase 5.B (modo oscuro) — sin valores aún. */
+  .iaud-app.dark {
+    /* TODO Fase 5.B: poblar con tokens dark. */
+  }
+}

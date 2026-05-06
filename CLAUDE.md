@@ -294,18 +294,32 @@ Scope sugerido: `server`, `client`, `license-extension`, `admin-ui`, `claude`, `
 
 ---
 
-## 5. Decisiones por confirmar (antes de empezar Fase 5)
+## 5. Decisiones de Fase 5 — RESUELTAS (defaults adoptados por autorización del usuario)
 
-> Estas decisiones impactan el rediseño visual y deben quedar resueltas antes de empezar a construir componentes. Si Claude Code llega a esta fase sin que estén definidas, debe preguntar al usuario.
+> Estas decisiones quedaron pendientes hasta el inicio de Fase 5. El usuario autorizó proceder con las recomendaciones del documento, así que se fijaron los valores por defecto descritos abajo. **Toda nueva pantalla debe respetar estos valores. Cambiarlos requiere aprobación explícita.**
 
-- [ ] **Paleta corporativa de Imagina** — ¿hay colores fijos (primario, secundario, acentos)? ¿Hay logo SVG/PNG disponible?
-- [ ] **Modo oscuro** — ¿soportar `dark:` desde el día 1 o dejarlo para una iteración posterior?
-- [ ] **Densidad de UI** — compacta (estilo Linear, Vercel, Stripe Dashboard) vs aireada (estilo Notion, Airtable). Recomendación inicial: **compacta** para admin de WP, mejor uso del espacio.
-- [ ] **Referencias visuales** — ¿hay 1-2 dashboards de referencia que el equipo quiera emular?
-- [ ] **Tipografía** — Inter por defecto (recomendación). ¿Otra preferencia?
-- [ ] **Branding del prefijo** — confirmar `iaud-` o cambiar (ej: `imupd-`, `iup-`).
-- [ ] **Ubicación de `assets/dist/`** — ¿gitignored o commiteado? Recomendación: commiteado para releases, gitignored en desarrollo. Definir en `.gitignore`.
-- [ ] **Cliente también** — ¿el rediseño aplica también al admin de `imagina-updater-client`? Recomendación: **sí, pero después** del servidor (Fase 5.B).
+- [x] **Paleta corporativa de Imagina** — sin paleta entregada. Defaults provisionales:
+  - Base neutra: escala `slate` de Tailwind (texto/fondos/borders) — `slate-50` … `slate-950`.
+  - Color primario: variable CSS `--iaud-primary` con valor inicial `oklch(0.55 0.18 250)` (azul). Cuando llegue la paleta real, se cambia el valor de la variable y los acentos heredan automáticamente.
+  - Logo: placeholder textual hasta que se entregue SVG/PNG. Cuando llegue, se coloca en `imagina-updater-server/assets/admin/src/assets/logo.svg`.
+- [x] **Modo oscuro** — NO desde el día 1. Iteración posterior. Razón: `wp-admin` no expone modo oscuro nativo, mezclar light/dark añade casos edge sin retorno hasta tener la SPA estable.
+- [x] **Densidad de UI** — compacta (estilo Linear, Vercel, Stripe Dashboard). Spacing scale ajustado: `p-3` por defecto en cards y filas de tabla; `p-4` solo cuando haya jerarquía visual; `p-6` reservado a drawers y modales.
+- [x] **Referencias visuales** — Linear (interacciones, microcopy, densidad) + Stripe Dashboard (tablas con muchas columnas, formularios). Vercel Dashboard como referencia secundaria para visualización de listados.
+- [x] **Tipografía** — Inter por defecto. Self-hosted vía `@fontsource/inter` (no peticiones a Google Fonts) con weights `400` / `500` / `600` / `700`.
+- [x] **Branding del prefijo** — `iaud-` confirmado. Aplicado vía `prefix: 'iaud-'` en `tailwind.config.ts`. Variables CSS también prefijadas (`--iaud-primary`, `--iaud-bg`, etc.).
+- [x] **Ubicación de `assets/dist/`** — **gitignored** en el repositorio principal (`main` y feature branches). Los builds finales se empaquetan en los ZIPs de la rama `release` (que es huérfana). El flujo de release ejecuta `npm run build` antes de `zip`.
+- [x] **Cliente también** — sí, pero en Fase 5.B (después de mergear el rediseño completo del servidor a `main`). El cliente reusa el mismo stack, mismo prefijo, misma paleta y los componentes shadcn ya construidos en `imagina-updater-server/assets/admin/src/components/ui/`.
+
+**Stack confirmado** (consistente con sección 2.2):
+
+- React 18.3.x, ReactDOM 18.3.x — bundleados (no externalizados a `wp.element`) en la primera iteración. Optimización a externals queda diferida; el budget de 250 KB gzip per page lo permite con holgura.
+- TypeScript 5.6+ en strict mode (`"strict": true, "noUncheckedIndexedAccess": true, "exactOptionalPropertyTypes": true`).
+- Vite 5.4+ con multi-entry (una entry por pantalla admin).
+- Tailwind 3.4+ con `prefix: 'iaud-'` y `corePlugins.preflight: false`.
+- shadcn/ui sobre Tailwind, con componentes copiados a `src/components/ui/` (no `npm install`-ables; el CLI solo genera).
+- TanStack Query 5.x para fetching/caché del REST. TanStack Table 8.x para todas las tablas.
+- Lucide React para iconos.
+- `clsx` + `tailwind-merge` para combinar utility classes condicionalmente (helper `cn()`).
 
 ---
 

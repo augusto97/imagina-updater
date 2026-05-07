@@ -956,15 +956,56 @@ Reemplazar `wp_schedule_event` del heartbeat por Action Scheduler. Diferida expl
 
 **Pendiente para 5.4 (Plugin Groups)**: pantalla mucho más simple. Tabla de grupos, drawer create/edit con `<PluginPicker>` (ya construido). Endpoints: CRUD `/admin/v1/plugin-groups`. La pantalla reusará absolutamente todos los primitives.
 
-#### 5.4 Página: Plugin Groups
+#### 5.4 Página: Plugin Groups — RESUELTA
 
-**Contenido**:
-- Tabla de grupos con: nombre, descripción, plugins incluidos (count), creado, acciones
-- Drawer de crear/editar con multi-select de plugins (con búsqueda)
-- Acciones: editar, eliminar (con confirmación si tiene API keys vinculadas)
+> **Estado**: ✅ resuelta en `feat/admin-plugin-groups` (encadenada sobre `feat/admin-plugins`).
 
-**Endpoints nuevos**:
-- CRUD `/admin/v1/plugin-groups`
+**Acción ejecutada**:
+
+1. **Endpoints CRUD** en `Imagina_Updater_Server_Admin_REST_API`:
+   - `GET /admin/v1/plugin-groups` — modo dual (mismo patrón que `/plugins`):
+     - `?lite=1` → array plano `[{id, name}]` (consumido por los pickers de drawers de API Keys y Plugins; rutas existentes ajustadas para añadir el flag).
+     - sin `lite` → `{ items: [...] }` con `id`, `name`, `description`, `plugin_count`, `linked_api_keys_count`, `created_at`.
+   - `POST /admin/v1/plugin-groups` — body `{ name, description?, plugin_ids? }`.
+   - `PUT /admin/v1/plugin-groups/{id}` — mismo body.
+   - `DELETE /admin/v1/plugin-groups/{id}` — devuelve `{ deleted, id, orphaned_api_keys_count }` para que la SPA pueda comunicar consecuencias.
+2. **Helpers** privados nuevos:
+   - `load_linked_api_keys_count_by_group(int[] $group_ids): array<int, int>` — usa `JSON_CONTAINS(allowed_groups, %s)` sobre `wp_imagina_updater_api_keys`. Cae a 0 silenciosamente si MySQL no expone `JSON_CONTAINS` (versiones <5.7), suprimiendo errores con `$wpdb->suppress_errors()`. La pantalla seguirá funcional sin ese contador.
+   - `load_plugin_group_serialized(int $id)` — recarga un grupo concreto con `plugin_count`, `plugin_ids`, `linked_api_keys_count`.
+   - `parse_plugin_group_payload($request)` — sanitiza body común (name + description + plugin_ids).
+3. **Wiring WP**:
+   - Submenu **"Grupos (nuevo)"** convive con la legacy.
+   - Map de enqueue actualizado: `[hook → 'plugin-groups']`.
+   - `render_spa_plugin_groups_page()` = contenedor mínimo.
+4. **Vite multi-entry** ampliado: `PAGES = ['dashboard', 'api-keys', 'plugins', 'plugin-groups']`. Cuarto bundle activo.
+5. **Pickers actualizados**: `usePluginGroupsLite()` en `pages/api-keys/api.ts` y `pages/plugins/api.ts` ahora consumen `?lite=1`.
+6. **Página Plugin Groups** en `src/pages/plugin-groups/` (5 archivos):
+   - `types.ts` — `PluginGroupRow`, `PluginGroupListResponse`, `PluginGroupFormValues`. `plugin_ids` es opcional (solo viene en el response de mutaciones, no en el listado).
+   - `api.ts` — 4 hooks: `usePluginGroupsList`, `usePluginsLite` (compartido vía mismo queryKey), `useCreatePluginGroup`, `useUpdatePluginGroup`, `useDeletePluginGroup`. Mutaciones invalidan `['plugin-groups']`, `['plugin-groups-lite']`, `['plugins']` (porque la columna "Grupos count" en la tabla de Plugins puede cambiar) y `['api-keys']` cuando se elimina un grupo (las keys vinculadas pierden acceso).
+   - `PluginGroupDrawer.tsx` — drawer create + edit en uno. Reset al abrir/cambiar editing. Reusa `<PluginPicker>` para los plugins. Banner amber-tinted cuando se edita un grupo con API keys vinculadas.
+   - `PluginGroupsPage.tsx` — composición lean: header con CTA, `<DataTable>` de 5 columnas (Nombre + descripción, Plugins count, API keys vinculadas, Creado, Acciones). Acción Eliminar con `window.confirm` que cita el número de API keys afectadas. NO hay tabs ni search por ahora (los listados de grupos suelen ser cortos; si el inventario crece se añade).
+   - `index.tsx` — entry-point con `QueryClientProvider`.
+
+**Decisiones de scope (deliberadas)**:
+
+- **Sin filtros ni paginación** — los grupos se cuentan en decenas, no en miles. Si crece el inventario se añade.
+- **Eliminación NO bloquea por API keys vinculadas** — solo avisa. El usuario decide. Las API keys con grupos huérfanos quedan funcionalmente igual al estado "tipo de acceso = grupos" sin grupos seleccionados (= sin acceso a nada). El admin debe reconfigurar esas keys explícitamente.
+- **`JSON_CONTAINS` con fallback a 0** — preferí compatibilidad ancha sobre exactitud absoluta del contador. En MySQL 5.6 (raro hoy) la columna mostraría `—` siempre. En MySQL 5.7+ / MariaDB 10.2.4+ funciona perfecto.
+- **No bulk actions** — mismo razonamiento que en 5.3.
+- **Sin search** — al ser pocos grupos, scrollear o usar Ctrl+F del navegador suele bastar. Reversible si llega feedback.
+
+**Verificación pendiente del usuario** (en WP local):
+
+- [ ] `cd imagina-updater-server/assets/admin && npm run build` — compila los **cuatro** bundles.
+- [ ] Aparece la submenu "Grupos (nuevo)". Tabla pinta los grupos existentes con `plugin_count` y `linked_api_keys_count` correctos.
+- [ ] Crear grupo: nombre + descripción + selección de plugins → fila aparece + `plugin_count` correcto.
+- [ ] Editar: cambiar nombre/descripción/plugins → fila se refresca. La columna "Grupos count" en la pantalla Plugins refleja el cambio.
+- [ ] Editar un grupo con API keys vinculadas: el banner amber aparece dentro del drawer.
+- [ ] Eliminar: confirm con conteo de API keys → fila desaparece + las keys afectadas siguen visibles en pantalla API Keys (cache `['api-keys']` invalidado).
+- [ ] Picker en API Keys / Plugins → sigue funcionando con `?lite=1`.
+- [ ] En MySQL antiguo sin `JSON_CONTAINS`: `linked_api_keys_count` muestra `—` pero todo lo demás funciona.
+
+**Pendiente para 5.5 (Activations)**: tabla con dropdown de filtro por API key (consumirá `?lite=1` o un nuevo lite endpoint para api-keys), filtro por estado, búsqueda por dominio, acción "desactivar". Reusará todos los primitives.
 
 #### 5.5 Página: Activations
 

@@ -198,9 +198,36 @@ class Imagina_Updater_Server_Admin_REST_API {
             self::NAMESPACE,
             '/plugin-groups',
             array(
-                'methods'             => WP_REST_Server::READABLE,
-                'callback'            => array($this, 'list_plugin_groups_lite'),
-                'permission_callback' => array($this, 'check_admin_permissions'),
+                array(
+                    'methods'             => WP_REST_Server::READABLE,
+                    'callback'            => array($this, 'list_plugin_groups'),
+                    'permission_callback' => array($this, 'check_admin_permissions'),
+                    'args'                => array(
+                        'lite' => array('type' => 'boolean', 'default' => false),
+                    ),
+                ),
+                array(
+                    'methods'             => WP_REST_Server::CREATABLE,
+                    'callback'            => array($this, 'create_plugin_group'),
+                    'permission_callback' => array($this, 'check_admin_permissions'),
+                ),
+            )
+        );
+
+        register_rest_route(
+            self::NAMESPACE,
+            '/plugin-groups/(?P<id>\d+)',
+            array(
+                array(
+                    'methods'             => WP_REST_Server::EDITABLE,
+                    'callback'            => array($this, 'update_plugin_group'),
+                    'permission_callback' => array($this, 'check_admin_permissions'),
+                ),
+                array(
+                    'methods'             => WP_REST_Server::DELETABLE,
+                    'callback'            => array($this, 'delete_plugin_group'),
+                    'permission_callback' => array($this, 'check_admin_permissions'),
+                ),
             )
         );
 
@@ -958,12 +985,21 @@ class Imagina_Updater_Server_Admin_REST_API {
     }
 
     /**
-     * GET /admin/v1/plugin-groups (lite)
+     * GET /admin/v1/plugin-groups
+     *
+     * Modo dual igual que /plugins: `?lite=1` devuelve `[{id, name}]`
+     * (consumido por los pickers de drawers); sin `lite`, lista
+     * completa con descripción, plugin_count y linked_api_keys.
      */
-    public function list_plugin_groups_lite(WP_REST_Request $request) {
-        global $wpdb;
+    public function list_plugin_groups(WP_REST_Request $request) {
+        if ($request->get_param('lite')) {
+            return $this->list_plugin_groups_lite_response();
+        }
+        return $this->list_plugin_groups_full_response();
+    }
 
-        unset($request);
+    private function list_plugin_groups_lite_response() {
+        global $wpdb;
 
         $groups_table = $wpdb->prefix . 'imagina_updater_plugin_groups';
 
@@ -980,6 +1016,253 @@ class Imagina_Updater_Server_Admin_REST_API {
         unset($row);
 
         return rest_ensure_response($rows);
+    }
+
+    private function list_plugin_groups_full_response() {
+        global $wpdb;
+
+        $groups_table = $wpdb->prefix . 'imagina_updater_plugin_groups';
+        $items_table  = $wpdb->prefix . 'imagina_updater_plugin_group_items';
+
+        $rows = $wpdb->get_results(
+            "SELECT g.id, g.name, g.description, g.created_at,
+                    COALESCE(c.cnt, 0) AS plugin_count
+             FROM {$groups_table} g
+             LEFT JOIN (
+                 SELECT group_id, COUNT(*) AS cnt
+                 FROM {$items_table}
+                 GROUP BY group_id
+             ) c ON c.group_id = g.id
+             ORDER BY g.name ASC"
+        );
+        if (!is_array($rows)) {
+            $rows = array();
+        }
+
+        // Bulk: para cada grupo, contar API keys que lo referencian.
+        // Las allowed_groups vive como JSON en api_keys; usamos
+        // JSON_CONTAINS si MySQL ≥ 5.7 / MariaDB ≥ 10.2.4 (común);
+        // si la función no existe, se cae a 0 silenciosamente sin
+        // romper la pantalla.
+        $linked_by_group = $this->load_linked_api_keys_count_by_group(
+            array_map(static function ($r) { return (int) $r->id; }, $rows)
+        );
+
+        $items = array();
+        foreach ($rows as $row) {
+            $gid     = (int) $row->id;
+            $items[] = array(
+                'id'                     => $gid,
+                'name'                   => (string) $row->name,
+                'description'            => $row->description ? (string) $row->description : null,
+                'plugin_count'           => (int) $row->plugin_count,
+                'linked_api_keys_count'  => isset($linked_by_group[$gid]) ? $linked_by_group[$gid] : 0,
+                'created_at'             => (string) $row->created_at,
+            );
+        }
+        return rest_ensure_response(array('items' => $items));
+    }
+
+    /**
+     * @param int[] $group_ids
+     * @return array<int, int>
+     */
+    private function load_linked_api_keys_count_by_group(array $group_ids) {
+        global $wpdb;
+
+        $by_group = array();
+        if (empty($group_ids)) {
+            return $by_group;
+        }
+
+        $api_keys_table = $wpdb->prefix . 'imagina_updater_api_keys';
+
+        // JSON_CONTAINS tira excepción si no existe; suprimimos vía @
+        // y caemos a array vacío. La pantalla seguirá funcional sin
+        // ese contador.
+        $previous = $wpdb->suppress_errors(true);
+        foreach ($group_ids as $gid) {
+            $count = $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT COUNT(*) FROM {$api_keys_table}
+                     WHERE access_type = 'groups'
+                       AND allowed_groups IS NOT NULL
+                       AND JSON_CONTAINS(allowed_groups, %s)",
+                    (string) $gid
+                )
+            );
+            if (null !== $count) {
+                $by_group[$gid] = (int) $count;
+            }
+        }
+        $wpdb->suppress_errors($previous);
+        return $by_group;
+    }
+
+    private function load_plugin_group_serialized($id) {
+        global $wpdb;
+
+        $groups_table = $wpdb->prefix . 'imagina_updater_plugin_groups';
+        $items_table  = $wpdb->prefix . 'imagina_updater_plugin_group_items';
+
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT g.id, g.name, g.description, g.created_at,
+                        COALESCE(c.cnt, 0) AS plugin_count
+                 FROM {$groups_table} g
+                 LEFT JOIN (
+                     SELECT group_id, COUNT(*) AS cnt
+                     FROM {$items_table}
+                     WHERE group_id = %d
+                     GROUP BY group_id
+                 ) c ON c.group_id = g.id
+                 WHERE g.id = %d",
+                $id,
+                $id
+            )
+        );
+        if (!$row) {
+            return null;
+        }
+
+        $linked = $this->load_linked_api_keys_count_by_group(array((int) $row->id));
+        $plugin_ids = array();
+        if (class_exists('Imagina_Updater_Server_Plugin_Groups')) {
+            $raw = Imagina_Updater_Server_Plugin_Groups::get_group_plugin_ids((int) $row->id);
+            if (is_array($raw)) {
+                $plugin_ids = array_values(array_map('intval', $raw));
+            }
+        }
+
+        return array(
+            'id'                    => (int) $row->id,
+            'name'                  => (string) $row->name,
+            'description'           => $row->description ? (string) $row->description : null,
+            'plugin_count'          => (int) $row->plugin_count,
+            'plugin_ids'            => $plugin_ids,
+            'linked_api_keys_count' => isset($linked[(int) $row->id]) ? $linked[(int) $row->id] : 0,
+            'created_at'            => (string) $row->created_at,
+        );
+    }
+
+    /**
+     * Extrae payload común a create + update.
+     */
+    private function parse_plugin_group_payload(WP_REST_Request $request) {
+        $body = $request->get_json_params();
+        if (!is_array($body)) {
+            $body = $request->get_params();
+        }
+
+        $name        = isset($body['name']) ? sanitize_text_field((string) $body['name']) : '';
+        $description = isset($body['description']) ? sanitize_textarea_field((string) $body['description']) : '';
+        $plugin_ids  = array();
+        if (isset($body['plugin_ids']) && is_array($body['plugin_ids'])) {
+            $plugin_ids = array_values(array_unique(array_map('intval', $body['plugin_ids'])));
+        }
+
+        if ('' === $name) {
+            return new WP_Error(
+                'iaud_invalid_payload',
+                __('El nombre del grupo es obligatorio.', 'imagina-updater-server'),
+                array('status' => 400)
+            );
+        }
+
+        return array(
+            'name'        => $name,
+            'description' => $description,
+            'plugin_ids'  => $plugin_ids,
+        );
+    }
+
+    /**
+     * POST /admin/v1/plugin-groups
+     */
+    public function create_plugin_group(WP_REST_Request $request) {
+        if (!class_exists('Imagina_Updater_Server_Plugin_Groups')) {
+            return new WP_Error('iaud_unavailable', __('Plugin groups manager no disponible.', 'imagina-updater-server'), array('status' => 500));
+        }
+
+        $payload = $this->parse_plugin_group_payload($request);
+        if (is_wp_error($payload)) {
+            return $payload;
+        }
+
+        $result = Imagina_Updater_Server_Plugin_Groups::create_group(
+            $payload['name'],
+            $payload['description'],
+            $payload['plugin_ids']
+        );
+        if (is_wp_error($result)) {
+            $result->add_data(array('status' => 400));
+            return $result;
+        }
+        $id = is_array($result) && isset($result['id']) ? (int) $result['id'] : (int) $result;
+        $serialized = $this->load_plugin_group_serialized($id);
+        if (null === $serialized) {
+            return new WP_Error('iaud_create_failed', __('Grupo creado pero no se pudo recuperar.', 'imagina-updater-server'), array('status' => 500));
+        }
+        return rest_ensure_response(array('item' => $serialized));
+    }
+
+    /**
+     * PUT /admin/v1/plugin-groups/{id}
+     */
+    public function update_plugin_group(WP_REST_Request $request) {
+        if (!class_exists('Imagina_Updater_Server_Plugin_Groups')) {
+            return new WP_Error('iaud_unavailable', __('Plugin groups manager no disponible.', 'imagina-updater-server'), array('status' => 500));
+        }
+
+        $id      = (int) $request['id'];
+        $payload = $this->parse_plugin_group_payload($request);
+        if (is_wp_error($payload)) {
+            return $payload;
+        }
+
+        $result = Imagina_Updater_Server_Plugin_Groups::update_group(
+            $id,
+            $payload['name'],
+            $payload['description'],
+            $payload['plugin_ids']
+        );
+        if (is_wp_error($result)) {
+            $result->add_data(array('status' => 400));
+            return $result;
+        }
+        $serialized = $this->load_plugin_group_serialized($id);
+        if (null === $serialized) {
+            return new WP_Error('iaud_not_found', __('Grupo no encontrado.', 'imagina-updater-server'), array('status' => 404));
+        }
+        return rest_ensure_response(array('item' => $serialized));
+    }
+
+    /**
+     * DELETE /admin/v1/plugin-groups/{id}
+     *
+     * Devuelve `linked_api_keys_count` cuando >0 para que la SPA
+     * pueda mostrar un mensaje útil. La eliminación procede igualmente
+     * — las API keys referenciando el grupo no rompen, solo dejan de
+     * conceder acceso a sus plugins.
+     */
+    public function delete_plugin_group(WP_REST_Request $request) {
+        if (!class_exists('Imagina_Updater_Server_Plugin_Groups')) {
+            return new WP_Error('iaud_unavailable', __('Plugin groups manager no disponible.', 'imagina-updater-server'), array('status' => 500));
+        }
+
+        $id     = (int) $request['id'];
+        $linked = $this->load_linked_api_keys_count_by_group(array($id));
+        $ok     = Imagina_Updater_Server_Plugin_Groups::delete_group($id);
+        if (!$ok) {
+            return new WP_Error('iaud_delete_failed', __('No se pudo eliminar el grupo.', 'imagina-updater-server'), array('status' => 500));
+        }
+        return rest_ensure_response(
+            array(
+                'deleted'                   => true,
+                'id'                        => $id,
+                'orphaned_api_keys_count'   => isset($linked[$id]) ? $linked[$id] : 0,
+            )
+        );
     }
 
     // =========================================================

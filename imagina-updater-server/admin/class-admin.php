@@ -46,6 +46,13 @@ class Imagina_Updater_Server_Admin {
     private $spa_plugins_hook = '';
 
     /**
+     * Hook suffix de la pantalla SPA de Plugin Groups (Fase 5.4).
+     *
+     * @var string
+     */
+    private $spa_plugin_groups_hook = '';
+
+    /**
      * Obtener instancia
      */
     public static function get_instance() {
@@ -172,6 +179,16 @@ class Imagina_Updater_Server_Admin {
             'imagina-updater-plugins-spa',
             array($this, 'render_spa_plugins_page')
         );
+
+        // Pantalla SPA de Plugin Groups (Fase 5.4).
+        $this->spa_plugin_groups_hook = add_submenu_page(
+            'imagina-updater-server',
+            __('Grupos (nuevo)', 'imagina-updater-server'),
+            __('Grupos (nuevo)', 'imagina-updater-server'),
+            'manage_options',
+            'imagina-updater-plugin-groups-spa',
+            array($this, 'render_spa_plugin_groups_page')
+        );
     }
 
     /**
@@ -186,9 +203,10 @@ class Imagina_Updater_Server_Admin {
         // jQuery del admin viejo). Comparación exacta con el hook
         // suffix capturado al registrar la submenu.
         $spa_pages = array(
-            $this->spa_dashboard_hook => 'dashboard',
-            $this->spa_api_keys_hook  => 'api-keys',
-            $this->spa_plugins_hook   => 'plugins',
+            $this->spa_dashboard_hook      => 'dashboard',
+            $this->spa_api_keys_hook       => 'api-keys',
+            $this->spa_plugins_hook        => 'plugins',
+            $this->spa_plugin_groups_hook  => 'plugin-groups',
         );
         foreach ($spa_pages as $spa_hook => $bundle) {
             if ('' !== $spa_hook && $hook === $spa_hook) {
@@ -323,6 +341,20 @@ class Imagina_Updater_Server_Admin {
         ?>
         <div class="wrap">
             <div id="iaud-plugins"></div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Renderiza el contenedor de la SPA de Plugin Groups (Fase 5.4).
+     */
+    public function render_spa_plugin_groups_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Permisos insuficientes.', 'imagina-updater-server'));
+        }
+        ?>
+        <div class="wrap">
+            <div id="iaud-plugin-groups"></div>
         </div>
         <?php
     }

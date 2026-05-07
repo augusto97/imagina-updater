@@ -110,7 +110,7 @@ export function usePluginsLite() {
 export function usePluginGroupsLite() {
   return useQuery({
     queryKey: ['plugin-groups-lite'],
-    queryFn: () => adminGet<PluginGroupLite[]>('plugin-groups'),
+    queryFn: () => adminGet<PluginGroupLite[]>('plugin-groups?lite=1'),
     staleTime: 60 * 1000,
   });
 }

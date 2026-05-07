@@ -1,7 +1,10 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { writeFileSync } from 'node:fs';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /**
  * Páginas admin del plugin servidor. Cada entrada compila a un bundle

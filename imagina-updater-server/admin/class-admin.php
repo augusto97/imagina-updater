@@ -22,6 +22,16 @@ class Imagina_Updater_Server_Admin {
     private static $instance = null;
 
     /**
+     * Hook suffix devuelto por add_submenu_page() para la pantalla SPA
+     * del Dashboard (Fase 5.1). Se compara EXACTAMENTE en
+     * `enqueue_scripts()` para que el bundle React solo se cargue ahí
+     * (CLAUDE.md §4 regla 3).
+     *
+     * @var string
+     */
+    private $spa_dashboard_hook = '';
+
+    /**
      * Obtener instancia
      */
     public static function get_instance() {
@@ -116,6 +126,18 @@ class Imagina_Updater_Server_Admin {
             'imagina-updater-settings',
             array($this, 'render_settings_page')
         );
+
+        // Pantalla SPA del Dashboard (Fase 5.1). Convive con la
+        // versión PHP legacy mientras se completa el rediseño; cuando
+        // las 7 pantallas SPA estén listas se dará el flip.
+        $this->spa_dashboard_hook = add_submenu_page(
+            'imagina-updater-server',
+            __('Dashboard (nuevo)', 'imagina-updater-server'),
+            __('Dashboard (nuevo)', 'imagina-updater-server'),
+            'manage_options',
+            'imagina-updater-dashboard-spa',
+            array($this, 'render_spa_dashboard_page')
+        );
     }
 
     /**
@@ -123,6 +145,14 @@ class Imagina_Updater_Server_Admin {
      */
     public function enqueue_scripts($hook) {
         if (strpos($hook, 'imagina-updater') === false) {
+            return;
+        }
+
+        // Pantallas SPA: solo el bundle React (sin CSS legacy ni JS
+        // jQuery del admin viejo). Comparación exacta con el hook
+        // suffix capturado al registrar la submenu.
+        if ('' !== $this->spa_dashboard_hook && $hook === $this->spa_dashboard_hook) {
+            $this->enqueue_spa_dashboard_assets();
             return;
         }
 
@@ -135,6 +165,93 @@ class Imagina_Updater_Server_Admin {
 
         // Script principal para todas las páginas de Imagina Updater
         wp_add_inline_script('jquery', $this->get_admin_js());
+    }
+
+    /**
+     * Enqueue del bundle SPA del Dashboard (Fase 5.1).
+     *
+     * El bundle vive en `assets/dist/dashboard.{js,css}` y se acompaña
+     * de `dashboard.asset.php` (generado por Vite) con `dependencies`
+     * y `version`. Si el build no existe (npm run build no ejecutado),
+     * se muestra un aviso al admin y no se enqueua nada — evita errores
+     * 404 silenciosos.
+     */
+    private function enqueue_spa_dashboard_assets() {
+        $dist_dir = IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'assets/dist/';
+        $dist_url = IMAGINA_UPDATER_SERVER_PLUGIN_URL . 'assets/dist/';
+        $asset    = $dist_dir . 'dashboard.asset.php';
+
+        if (!file_exists($asset)) {
+            add_action('admin_notices', array($this, 'render_spa_build_missing_notice'));
+            return;
+        }
+
+        $manifest = include $asset;
+        if (!is_array($manifest)) {
+            $manifest = array('dependencies' => array(), 'version' => IMAGINA_UPDATER_SERVER_VERSION);
+        }
+
+        wp_enqueue_script(
+            'iaud-dashboard',
+            $dist_url . 'dashboard.js',
+            isset($manifest['dependencies']) ? $manifest['dependencies'] : array(),
+            isset($manifest['version']) ? $manifest['version'] : IMAGINA_UPDATER_SERVER_VERSION,
+            true
+        );
+
+        wp_enqueue_style(
+            'iaud-dashboard',
+            $dist_url . 'dashboard.css',
+            array(),
+            isset($manifest['version']) ? $manifest['version'] : IMAGINA_UPDATER_SERVER_VERSION
+        );
+
+        wp_set_script_translations('iaud-dashboard', 'imagina-updater-server');
+
+        $current_user = wp_get_current_user();
+
+        wp_localize_script(
+            'iaud-dashboard',
+            'iaudConfig',
+            array(
+                'apiUrl'      => esc_url_raw(rest_url('imagina-updater/v1/')),
+                'adminUrl'    => esc_url_raw(rest_url('imagina-updater/admin/v1/')),
+                'nonce'       => wp_create_nonce('wp_rest'),
+                'currentUser' => $current_user instanceof WP_User ? $current_user->display_name : '',
+                'locale'      => str_replace('_', '-', get_user_locale()),
+                'siteUrl'     => esc_url_raw(home_url('/')),
+            )
+        );
+    }
+
+    /**
+     * Aviso si el bundle SPA no está construido (dev environment sin
+     * `npm run build`).
+     */
+    public function render_spa_build_missing_notice() {
+        echo '<div class="notice notice-warning"><p>';
+        echo esc_html__(
+            'El bundle del nuevo Dashboard no está construido. Ejecuta `npm run build` en imagina-updater-server/assets/admin/ para generarlo.',
+            'imagina-updater-server'
+        );
+        echo '</p></div>';
+    }
+
+    /**
+     * Renderiza el contenedor de la SPA del Dashboard (Fase 5.1).
+     *
+     * El PHP queda como contenedor mínimo (CLAUDE.md §4 regla 11): solo
+     * el `<div>` raíz al que React monta. Toda la UI vive en el bundle.
+     */
+    public function render_spa_dashboard_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Permisos insuficientes.', 'imagina-updater-server'));
+        }
+        ?>
+        <div class="wrap">
+            <div id="iaud-dashboard"></div>
+        </div>
+        <?php
     }
 
     /**

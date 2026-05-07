@@ -832,23 +832,67 @@ Reemplazar `wp_schedule_event` del heartbeat por Action Scheduler. Diferida expl
 - `GET /admin/v1/dashboard/recent-downloads`
 - `GET /admin/v1/dashboard/top-plugins`
 
-#### 5.2 Página: API Keys
+#### 5.2 Página: API Keys — RESUELTA
 
-**Contenido**:
-- TanStack Table con: nombre, URL, tipo de acceso, activaciones (used/max), creada, último uso, estado, acciones
-- Filtros: estado (active/inactive), tipo de acceso, búsqueda por nombre
-- Drawer/Sheet de "Crear API Key" con formulario completo (nombre, URL, tipo de acceso, plugins/grupos, max_activations)
-- Drawer de "Editar API Key" (mismo form, con datos cargados)
-- Modal de confirmación al regenerar/desactivar
-- Banner destacado al crear: muestra la API key una vez con botón "Copiar"
+> **Estado**: ✅ resuelta en `feat/admin-api-keys` (encadenada sobre `feat/admin-dashboard`).
 
-**Endpoints nuevos**:
-- `GET /admin/v1/api-keys` (con paginación)
-- `POST /admin/v1/api-keys`
-- `PUT /admin/v1/api-keys/{id}`
-- `DELETE /admin/v1/api-keys/{id}`
-- `POST /admin/v1/api-keys/{id}/regenerate`
-- `POST /admin/v1/api-keys/{id}/toggle-active`
+**Acción ejecutada**:
+
+1. **Endpoints nuevos** en `Imagina_Updater_Server_Admin_REST_API` (todos heredan `manage_options` + nonce `wp_rest`):
+   - `GET /admin/v1/api-keys?page=&per_page=&status=&search=` — listado paginado con filtros. La columna `activations_used` se calcula con LEFT JOIN sobre `activations` (sólo `is_active=1`) para evitar N+1.
+   - `POST /admin/v1/api-keys` — crear. Devuelve `{ item, plain_key }`. **`plain_key` es la única vez que el backend expone la clave en claro.**
+   - `PUT /admin/v1/api-keys/{id}` — actualizar nombre/URL/permisos/max_activations. NO regenera la clave.
+   - `DELETE /admin/v1/api-keys/{id}` — eliminar.
+   - `POST /admin/v1/api-keys/{id}/regenerate` — genera nueva clave manteniendo el resto. Devuelve `{ item, plain_key }`.
+   - `POST /admin/v1/api-keys/{id}/toggle-active` — body `{ is_active: bool }` o sin body (toggle).
+   - `GET /admin/v1/plugins` (lite — id/slug/effective_slug/name) y `GET /admin/v1/plugin-groups` (lite — id/name) para los pickers del drawer. Las versiones completas llegan en 5.3 y 5.4.
+2. **Helpers** privados en la clase REST:
+   - `mask_api_key($plain)` → `ius_••••aBcD` (primeros 4 + últimos 4).
+   - `serialize_api_key($row, $activations_used)` → forma uniforme; **NUNCA** incluye `api_key` en claro.
+   - `parse_api_key_payload($request)` → sanitiza el body común a create + update.
+   - `load_api_key_serialized($id)` → reload con LEFT-JOIN del activations_used para devolver la fila tras mutación.
+3. **Wiring WP** (`admin/class-admin.php`):
+   - Nueva submenu **"API Keys (nuevo)"** convive con la legacy.
+   - Refactor del enqueue: `enqueue_scripts($hook)` ahora itera un map `[$hook_suffix => $bundle_slug]` y llama al método genérico `enqueue_spa_bundle($bundle)`. Esto reemplaza al `enqueue_spa_dashboard_assets()` específico de 5.0/5.1, y permite añadir cualquier pantalla SPA futura con dos líneas (un nuevo `add_submenu_page` + una entrada en el map).
+   - `render_spa_api_keys_page()` = contenedor mínimo (`<div id="iaud-api-keys"></div>`).
+4. **Vite multi-entry** ampliado: `PAGES = ['dashboard', 'api-keys']`. El emitter de `.asset.php` ya manejaba múltiples entries.
+5. **Primitives shadcn** nuevos en `src/components/ui/`:
+   - `input.tsx`, `label.tsx`, `textarea.tsx` — controlados, mismas tokens que el resto.
+   - `badge.tsx` — variantes default/secondary/success/warning/destructive/outline (cva).
+   - `drawer.tsx` — **implementación custom sin Radix** (~100 líneas). Maneja backdrop con click-to-close, Escape para cerrar, body scroll lock, slide-in con `tailwindcss-animate`. Documentado el camino para sustituirlo por `@radix-ui/react-dialog` cuando hagan falta focus traps o multi-instancia.
+6. **Componente reutilizable** `src/components/data-table.tsx` — wrapper minimalista sobre TanStack Table v8 con los primitives shadcn. Diseño plano: paginación/filtros server-side (la mantenemos en el REST). Si una pantalla concreta necesita client-side sorting/pagination con dataset pequeño, puede usar `useReactTable` directamente.
+7. **Página API Keys** en `src/pages/api-keys/` (8 archivos):
+   - `types.ts` — `ApiKey`, `ApiKeyFormValues`, `AccessType`, `StatusFilter`, lookups Lite.
+   - `api.ts` — 7 hooks de TanStack Query: `useApiKeysList` (con `placeholderData: prev → prev` para suavizar paginación), `useCreateApiKey`, `useUpdateApiKey`, `useDeleteApiKey`, `useToggleApiKeyActive`, `useRegenerateApiKey`, `usePluginsLite`, `usePluginGroupsLite`. Las mutaciones invalidan `['api-keys']` y, cuando aplica, también `['dashboard']`.
+   - `PluginPicker.tsx` — multi-select con búsqueda y checkboxes. Reutilizable para plugins y para grupos.
+   - `ApiKeyDrawer.tsx` — drawer create + edit en un solo componente. Reset al abrir/cambiar de modo. Radio cards para `access_type`. Renderiza `<PluginPicker>` condicional según el access_type. Validación inline (nombre + URL no vacíos).
+   - `PlainKeyBanner.tsx` — banner que muestra la clave **una sola vez** con botón "Copiar" (Clipboard API + fallback a `document.execCommand('copy')` para entornos no-HTTPS / navegadores viejos).
+   - `ApiKeysPage.tsx` — composición: header con CTA "Nueva API key", banner condicional, tabs (Todas/Activas/Inactivas), search input, `<DataTable>` con 7 columnas (sitio, api_key_masked, access_type badge, activations used/max, estado badge, último uso, acciones), pager simple Anterior/Siguiente. Acciones por fila: Editar, Toggle, Regenerar (con `window.confirm`), Eliminar (con `window.confirm`).
+   - `index.tsx` — entry-point con `QueryClientProvider`.
+   - `lib/api.ts` extendido inline con `adminPut`/`adminDelete` (se moverá a `src/lib/api.ts` cuando una segunda pantalla los necesite).
+8. **Confirmaciones destructivas**: implementadas con `window.confirm` para mantener bundle pequeño en esta primera iteración. Si el equipo decide pasar a `<AlertDialog>` (shadcn), se sustituyen los `window.confirm` por un componente reutilizable; tarea diferida hasta que haya un caso real de "deshacer" o copia rica que justifique.
+
+**Decisiones de scope (deliberadas)**:
+
+- **Drawer custom, no Radix**: ~5 KB ahorrados, suficiente para el caso de uso actual (un solo drawer abierto a la vez, formulario simple). Reemplazable cuando lo justifique.
+- **`window.confirm` en lugar de `<AlertDialog>`**: nativo, accesible, cero coste. Cumple la regla de no-regression del PHP legacy (que también usa confirmaciones nativas).
+- **`<select>` no necesario**: `access_type` se modela con radio cards (mejor UX para 3 opciones excluyentes con descripción) en lugar de un dropdown.
+- **No toast/snackbar**: errores se muestran inline en el drawer; éxitos cierran el drawer y refrescan la tabla. Si más adelante hay acciones background (regen + reload, batch delete), se añade un sistema de notificaciones.
+
+**Verificación pendiente del usuario** (en WP local):
+
+- [ ] `cd imagina-updater-server/assets/admin && npm run build` — compila los **dos** bundles (`dashboard` + `api-keys`); ambos `.asset.php` se generan.
+- [ ] Aparece la submenu "API Keys (nuevo)". Abrir — el bundle se carga, tabla pinta (vacía o con keys existentes).
+- [ ] Crear: nombre + URL + access_type + max_activations → submit → banner aparece con la clave en claro y copy funcional → cerrar banner → la fila aparece en la tabla con `api_key_masked`.
+- [ ] Editar una key existente → cambia nombre/URL/access_type/permisos → guardar → fila refrescada.
+- [ ] Toggle activo/inactivo → estado cambia visual e instantáneo (mutation invalida la lista).
+- [ ] Regenerar → confirm → banner con la clave nueva.
+- [ ] Eliminar → confirm → fila desaparece.
+- [ ] Filtros: tabs Todas/Activas/Inactivas + búsqueda por nombre/URL — la URL del REST refleja `?status=&search=` y el pager se reinicia a 1.
+- [ ] Pager Anterior/Siguiente con >20 keys.
+- [ ] Network tab en pantalla "Plugins (legacy)" — bundle `api-keys.js` NO debe cargarse.
+
+**Pendiente para 5.3 (Plugins)**: la pantalla con upload de ZIP, drag-and-drop, premium toggle, listado de versiones por plugin, re-inyección de protección. El endpoint `GET /admin/v1/plugins` actual es la versión Lite — se ampliará con `?page=&search=`, plus 5+ endpoints nuevos. La pantalla reusará `<DataTable>`, `<Drawer>`, `<PluginPicker>` ya construidos.
 
 #### 5.3 Página: Plugins
 

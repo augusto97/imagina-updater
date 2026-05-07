@@ -39,6 +39,13 @@ class Imagina_Updater_Server_Admin {
     private $spa_api_keys_hook = '';
 
     /**
+     * Hook suffix de la pantalla SPA de Plugins (Fase 5.3).
+     *
+     * @var string
+     */
+    private $spa_plugins_hook = '';
+
+    /**
      * Obtener instancia
      */
     public static function get_instance() {
@@ -155,6 +162,16 @@ class Imagina_Updater_Server_Admin {
             'imagina-updater-api-keys-spa',
             array($this, 'render_spa_api_keys_page')
         );
+
+        // Pantalla SPA de Plugins (Fase 5.3).
+        $this->spa_plugins_hook = add_submenu_page(
+            'imagina-updater-server',
+            __('Plugins (nuevo)', 'imagina-updater-server'),
+            __('Plugins (nuevo)', 'imagina-updater-server'),
+            'manage_options',
+            'imagina-updater-plugins-spa',
+            array($this, 'render_spa_plugins_page')
+        );
     }
 
     /**
@@ -171,6 +188,7 @@ class Imagina_Updater_Server_Admin {
         $spa_pages = array(
             $this->spa_dashboard_hook => 'dashboard',
             $this->spa_api_keys_hook  => 'api-keys',
+            $this->spa_plugins_hook   => 'plugins',
         );
         foreach ($spa_pages as $spa_hook => $bundle) {
             if ('' !== $spa_hook && $hook === $spa_hook) {
@@ -240,12 +258,13 @@ class Imagina_Updater_Server_Admin {
             $handle,
             'iaudConfig',
             array(
-                'apiUrl'      => esc_url_raw(rest_url('imagina-updater/v1/')),
-                'adminUrl'    => esc_url_raw(rest_url('imagina-updater/admin/v1/')),
-                'nonce'       => wp_create_nonce('wp_rest'),
-                'currentUser' => $current_user instanceof WP_User ? $current_user->display_name : '',
-                'locale'      => str_replace('_', '-', get_user_locale()),
-                'siteUrl'     => esc_url_raw(home_url('/')),
+                'apiUrl'                  => esc_url_raw(rest_url('imagina-updater/v1/')),
+                'adminUrl'                => esc_url_raw(rest_url('imagina-updater/admin/v1/')),
+                'nonce'                   => wp_create_nonce('wp_rest'),
+                'currentUser'             => $current_user instanceof WP_User ? $current_user->display_name : '',
+                'locale'                  => str_replace('_', '-', get_user_locale()),
+                'siteUrl'                 => esc_url_raw(home_url('/')),
+                'licenseExtensionActive'  => class_exists('Imagina_License_SDK_Injector'),
             )
         );
     }
@@ -290,6 +309,20 @@ class Imagina_Updater_Server_Admin {
         ?>
         <div class="wrap">
             <div id="iaud-api-keys"></div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Renderiza el contenedor de la SPA de Plugins (Fase 5.3).
+     */
+    public function render_spa_plugins_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Permisos insuficientes.', 'imagina-updater-server'));
+        }
+        ?>
+        <div class="wrap">
+            <div id="iaud-plugins"></div>
         </div>
         <?php
     }

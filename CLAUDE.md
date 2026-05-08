@@ -1092,17 +1092,61 @@ Reemplazar `wp_schedule_event` del heartbeat por Action Scheduler. Diferida expl
 
 **Pendiente para 5.7 (Configuración)**: la última pantalla del servidor. Tabs General / Logging / Mantenimiento. Forms estándar + botones de mantenimiento (clear caches / run migrations).
 
-#### 5.7 Página: Configuración
+#### 5.7 Página: Configuración — RESUELTA
 
-**Contenido**:
-- Tabs: General, Logging, Mantenimiento (DB migrations, clear caches)
-- Forms standard de settings con validación
+> **Estado**: ✅ resuelta en `feat/admin-settings` (encadenada sobre `feat/admin-logs`). **Última pantalla del servidor**.
 
-**Endpoints nuevos**:
-- `GET /admin/v1/settings`
-- `PUT /admin/v1/settings`
-- `POST /admin/v1/maintenance/run-migrations`
-- `POST /admin/v1/maintenance/clear-rate-limits`
+**Acción ejecutada**:
+
+1. **Endpoints nuevos** en `Imagina_Updater_Server_Admin_REST_API`:
+   - `GET /admin/v1/settings` — devuelve `{ settings: { enable_logging, log_level }, system: { plugin_version, db_version, php_version, wp_version, mysql_version, license_extension_active, object_cache_supported } }`. Settings vienen de `imagina_updater_server_config`; la sub-respuesta `system` es read-only y consolida la info legacy de la pestaña General.
+   - `PUT /admin/v1/settings` — body parcial `{ enable_logging?, log_level? }`. Valida que `log_level` sea uno de DEBUG/INFO/WARNING/ERROR (case-insensitive); cualquier otro valor → 400. Devuelve la forma completa post-update para que el cliente actualice cache sin un GET extra.
+   - `POST /admin/v1/maintenance/run-migrations` — ejecuta `Database::create_tables()` + `Database::run_migrations()` (ambas idempotentes, seguras en caliente). Devuelve `{ success: true, db_version }`.
+   - `POST /admin/v1/maintenance/clear-rate-limits` — wrapper sobre `Imagina_Updater_Server_REST_API::clear_rate_limits()` (Fase 3.4, método estático). El método ya valida `manage_options` + throttle de 60 s; la respuesta serializa `{ success, message }` para que la UI distinga ejecución exitosa de rechazo por throttle.
+2. **Helpers** privados nuevos:
+   - `read_settings_config()` — devuelve la forma canónica con defaults (`enable_logging=true`, `log_level='INFO'`) aunque la opción no exista o esté corrupta. Garantiza que el frontend siempre recibe el shape esperado.
+   - `read_system_info()` — consolida versiones + flags (license_extension_active reusa el helper de Fase 5.3; object_cache_supported chequea `wp_cache_supports('flush_group')`).
+3. **Wiring WP**:
+   - Submenu **"Configuración (nuevo)"** convive con la legacy (séptima y última submenu SPA del rediseño).
+   - Map de enqueue actualizado: `[hook → 'settings']`.
+   - `render_spa_settings_page()` = contenedor mínimo.
+4. **Vite multi-entry** ampliado: `PAGES = ['dashboard', 'api-keys', 'plugins', 'plugin-groups', 'activations', 'logs', 'settings']`. **Séptimo y último bundle del servidor**.
+5. **Página Configuración** en `src/pages/settings/` (3 archivos):
+   - `types.ts` — `SettingsValues` (enable_logging + log_level), `SystemInfo`, `SettingsResponse`, `SettingsTab` (general/logging/maintenance).
+   - `api.ts` — 4 hooks: `useSettings`, `useUpdateSettings` (con `qc.setQueryData` para reflejar el response sin invalidación, evitando flicker), `useRunMigrations`, `useClearRateLimits`.
+   - `SettingsPage.tsx` — composición:
+     - Header + nav de tabs (sin Radix; `<button>` con border-bottom condicional).
+     - **Tab General** — read-only: tabla `<dl>` con plugin/db/PHP/WP/MySQL versions + badges de estado (license-extension activa/inactiva, object cache soportado/no). Útil para diagnóstico al pegar en un soporte.
+     - **Tab Logging** — formulario controlado con checkbox enable_logging + `<select>` log_level (deshabilitado cuando logging está off). Estado `dirty` calculado vs. el valor del servidor; botón Save deshabilitado cuando no hay cambios. `useEffect` resincroniza el estado local si la query refresca con datos nuevos.
+     - **Tab Mantenimiento** — dos cards independientes:
+       - "Re-ejecutar migraciones" — un click; mensaje de éxito con `db_version` resultante.
+       - "Limpiar rate-limits" — `window.confirm` + dispatch; el mensaje refleja el `success` del backend (verde si ok, ámbar si rechazó por throttle/permisos).
+   - `index.tsx` — entry-point con `QueryClientProvider`.
+
+**Decisiones de scope (deliberadas)**:
+
+- **Sin Radix Tabs** — `<button>` simple con border-bottom + state local. ~0 KB extra. Si alguna vez se necesitan teclas izquierda/derecha o ARIA Tabs estricto, swap a `@radix-ui/react-tabs` es ~20 líneas.
+- **`useUpdateSettings` setea cache** en lugar de invalidar — el endpoint devuelve la forma completa, así que `qc.setQueryData` evita un GET extra y el flicker de skeleton entre updates.
+- **Sin "reset to defaults"** — los defaults aplican implícitamente cuando el option no existe; un botón "Reset" de UI requiere borrar la option, lo que tiene blast radius más grande que añadir hoy. Reversible.
+- **Sin export/import de settings** — la matriz de settings actual es trivial (2 valores). Si crece a docenas se reconsidera.
+- **Mantenimiento expone solo lo idempotente** (migrations + clear-rate-limits). No exponemos "Wipe all data" / "Reset DB" en UI; esas operaciones siguen siendo manuales por seguridad.
+
+**Verificación pendiente del usuario** (en WP local):
+
+- [ ] `cd imagina-updater-server/assets/admin && npm run build` — compila los **siete** bundles del servidor.
+- [ ] Submenu "Configuración (nuevo)" carga; tabs General/Logging/Mantenimiento navegables sin recarga.
+- [ ] Tab General pinta versiones + badges correctamente.
+- [ ] Tab Logging: cambiar el nivel + togglear logging, Save habilita cuando hay cambios y se deshabilita tras guardar; el cambio se refleja al instante en el banner de la pantalla Logs.
+- [ ] Tab Mantenimiento: ejecutar migraciones devuelve `db_version`; ejecutar dos veces seguidas el botón "Limpiar rate-limits" muestra el mensaje ámbar de throttle en la segunda llamada.
+- [ ] Network: `settings.js` solo se carga en su pantalla.
+
+**Pendiente para la verificación funcional final** (todas las pantallas ya están construidas):
+
+- Smoke test de las 7 pantallas SPA en una WP local con datos reales.
+- Confirmar que ningún bundle se carga fuera de su submenu.
+- Verificar que las pantallas legacy siguen funcionales hasta que se haga el flip.
+
+**Pendiente para 5.B (Cliente)**: replicar el approach completo en `imagina-updater-client`. Mismo stack, mismo prefijo, mismos primitives — los componentes en `imagina-updater-server/assets/admin/src/components/ui/` se copian (o se mueven a un paquete compartido si en algún momento se decide). Pantallas estimadas: Dashboard (estado conexión, próximas verificaciones), Configuración (URL servidor, API key, modo de visualización), Plugins disponibles (lista del servidor con instalación/habilitación).
 
 #### 5.B Cliente — Rediseño posterior
 

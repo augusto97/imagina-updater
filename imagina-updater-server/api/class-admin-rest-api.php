@@ -354,6 +354,45 @@ class Imagina_Updater_Server_Admin_REST_API {
                 'permission_callback' => array($this, 'check_admin_permissions'),
             )
         );
+
+        // ---- Fase 5.7: Settings + Maintenance -----------------------
+
+        register_rest_route(
+            self::NAMESPACE,
+            '/settings',
+            array(
+                array(
+                    'methods'             => WP_REST_Server::READABLE,
+                    'callback'            => array($this, 'get_settings'),
+                    'permission_callback' => array($this, 'check_admin_permissions'),
+                ),
+                array(
+                    'methods'             => WP_REST_Server::EDITABLE,
+                    'callback'            => array($this, 'update_settings'),
+                    'permission_callback' => array($this, 'check_admin_permissions'),
+                ),
+            )
+        );
+
+        register_rest_route(
+            self::NAMESPACE,
+            '/maintenance/run-migrations',
+            array(
+                'methods'             => WP_REST_Server::CREATABLE,
+                'callback'            => array($this, 'run_migrations'),
+                'permission_callback' => array($this, 'check_admin_permissions'),
+            )
+        );
+
+        register_rest_route(
+            self::NAMESPACE,
+            '/maintenance/clear-rate-limits',
+            array(
+                'methods'             => WP_REST_Server::CREATABLE,
+                'callback'            => array($this, 'clear_rate_limits_endpoint'),
+                'permission_callback' => array($this, 'check_admin_permissions'),
+            )
+        );
     }
 
     /**
@@ -2001,5 +2040,153 @@ class Imagina_Updater_Server_Admin_REST_API {
         }
         fclose($handle);
         exit; // Necesario: no devolvemos JSON.
+    }
+
+    // =========================================================
+    // Fase 5.7 — Settings + Maintenance
+    // =========================================================
+
+    /**
+     * Lee `imagina_updater_server_config` y devuelve siempre la forma
+     * canónica (con los campos esperados aunque la opción no exista).
+     */
+    private function read_settings_config() {
+        $raw = get_option('imagina_updater_server_config', array());
+        if (!is_array($raw)) {
+            $raw = array();
+        }
+        return array(
+            'enable_logging' => array_key_exists('enable_logging', $raw)
+                ? (bool) $raw['enable_logging']
+                : true,
+            'log_level'      => isset($raw['log_level']) && in_array($raw['log_level'], array('DEBUG', 'INFO', 'WARNING', 'ERROR'), true)
+                ? (string) $raw['log_level']
+                : 'INFO',
+        );
+    }
+
+    /**
+     * Info de plugin/PHP/WP útil para la pestaña General de la
+     * pantalla de Configuración.
+     */
+    private function read_system_info() {
+        global $wpdb;
+
+        $db_version = get_option('imagina_updater_server_db_version', '0.0.0');
+
+        return array(
+            'plugin_version'           => defined('IMAGINA_UPDATER_SERVER_VERSION') ? IMAGINA_UPDATER_SERVER_VERSION : null,
+            'db_version'               => (string) $db_version,
+            'php_version'              => PHP_VERSION,
+            'wp_version'               => get_bloginfo('version'),
+            'mysql_version'            => $wpdb->db_version(),
+            'license_extension_active' => $this->license_extension_active(),
+            'object_cache_supported'   => function_exists('wp_cache_supports') && wp_cache_supports('flush_group'),
+        );
+    }
+
+    /**
+     * GET /admin/v1/settings
+     */
+    public function get_settings(WP_REST_Request $request) {
+        unset($request);
+
+        return rest_ensure_response(
+            array(
+                'settings' => $this->read_settings_config(),
+                'system'   => $this->read_system_info(),
+            )
+        );
+    }
+
+    /**
+     * PUT /admin/v1/settings
+     */
+    public function update_settings(WP_REST_Request $request) {
+        $body = $request->get_json_params();
+        if (!is_array($body)) {
+            $body = $request->get_params();
+        }
+
+        $next = $this->read_settings_config();
+
+        if (array_key_exists('enable_logging', $body)) {
+            $next['enable_logging'] = (bool) $body['enable_logging'];
+        }
+        if (array_key_exists('log_level', $body)) {
+            $level = strtoupper((string) $body['log_level']);
+            if (!in_array($level, array('DEBUG', 'INFO', 'WARNING', 'ERROR'), true)) {
+                return new WP_Error(
+                    'iaud_invalid_log_level',
+                    __('Nivel de log inválido. Debe ser DEBUG, INFO, WARNING o ERROR.', 'imagina-updater-server'),
+                    array('status' => 400)
+                );
+            }
+            $next['log_level'] = $level;
+        }
+
+        update_option('imagina_updater_server_config', $next);
+
+        return rest_ensure_response(
+            array(
+                'settings' => $next,
+                'system'   => $this->read_system_info(),
+            )
+        );
+    }
+
+    /**
+     * POST /admin/v1/maintenance/run-migrations
+     *
+     * Ejecuta `Database::create_tables()` (idempotente, usa dbDelta) y
+     * `Database::run_migrations()` (también idempotente, chequea
+     * `SHOW COLUMNS` antes de tocar).
+     */
+    public function run_migrations(WP_REST_Request $request) {
+        unset($request);
+
+        if (!class_exists('Imagina_Updater_Server_Database')) {
+            return new WP_Error('iaud_unavailable', __('Database manager no disponible.', 'imagina-updater-server'), array('status' => 500));
+        }
+
+        Imagina_Updater_Server_Database::create_tables();
+        Imagina_Updater_Server_Database::run_migrations();
+
+        $db_version = get_option('imagina_updater_server_db_version', '0.0.0');
+
+        return rest_ensure_response(
+            array(
+                'success'    => true,
+                'db_version' => (string) $db_version,
+            )
+        );
+    }
+
+    /**
+     * POST /admin/v1/maintenance/clear-rate-limits
+     *
+     * Wrapper sobre `Imagina_Updater_Server_REST_API::clear_rate_limits()`
+     * (Fase 3.4). El método ya valida `manage_options` + throttle de
+     * 60 s, así que respeta su propio contrato; aquí solo serializamos
+     * el resultado.
+     */
+    public function clear_rate_limits_endpoint(WP_REST_Request $request) {
+        unset($request);
+
+        if (!class_exists('Imagina_Updater_Server_REST_API') ||
+            !method_exists('Imagina_Updater_Server_REST_API', 'clear_rate_limits')) {
+            return new WP_Error('iaud_unavailable', __('REST API no disponible.', 'imagina-updater-server'), array('status' => 500));
+        }
+
+        $ok = Imagina_Updater_Server_REST_API::clear_rate_limits();
+
+        return rest_ensure_response(
+            array(
+                'success'  => (bool) $ok,
+                'message'  => $ok
+                    ? __('Rate limits limpiados.', 'imagina-updater-server')
+                    : __('Operación rechazada por throttle (60 s) o por permisos.', 'imagina-updater-server'),
+            )
+        );
     }
 }

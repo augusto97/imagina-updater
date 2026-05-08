@@ -319,6 +319,41 @@ class Imagina_Updater_Server_Admin_REST_API {
                 'permission_callback' => array($this, 'check_admin_permissions'),
             )
         );
+
+        // ---- Fase 5.6: Logs -----------------------------------------
+
+        register_rest_route(
+            self::NAMESPACE,
+            '/logs',
+            array(
+                array(
+                    'methods'             => WP_REST_Server::READABLE,
+                    'callback'            => array($this, 'list_logs'),
+                    'permission_callback' => array($this, 'check_admin_permissions'),
+                    'args'                => array(
+                        'page'     => array('type' => 'integer', 'default' => 1, 'minimum' => 1),
+                        'per_page' => array('type' => 'integer', 'default' => 100, 'minimum' => 10, 'maximum' => 500),
+                        'level'    => array('type' => 'string', 'default' => 'all'),
+                        'search'   => array('type' => 'string', 'default' => ''),
+                    ),
+                ),
+                array(
+                    'methods'             => WP_REST_Server::DELETABLE,
+                    'callback'            => array($this, 'clear_logs'),
+                    'permission_callback' => array($this, 'check_admin_permissions'),
+                ),
+            )
+        );
+
+        register_rest_route(
+            self::NAMESPACE,
+            '/logs/download',
+            array(
+                'methods'             => WP_REST_Server::READABLE,
+                'callback'            => array($this, 'download_logs'),
+                'permission_callback' => array($this, 'check_admin_permissions'),
+            )
+        );
     }
 
     /**
@@ -1786,5 +1821,185 @@ class Imagina_Updater_Server_Admin_REST_API {
         }
 
         return rest_ensure_response(array('item' => $this->serialize_activation($row)));
+    }
+
+    // =========================================================
+    // Fase 5.6 — Logs
+    // =========================================================
+
+    /**
+     * Lee y parsea el archivo de log completo en memoria. El logger
+     * rota el archivo cuando excede su umbral, así que el tamaño en
+     * disco siempre está acotado y este parse es asumible.
+     *
+     * Formato esperado por línea (ver Logger::format_message):
+     *   [YYYY-MM-DD HH:MM:SS] [LEVEL] message[ | Context: {json}]
+     *
+     * Líneas mal formadas se conservan como `level=UNKNOWN` para no
+     * tirar entradas legítimas de versiones antiguas del logger.
+     *
+     * @return array<int, array{timestamp:string,level:string,message:string,context:?string}>
+     */
+    private function parse_log_file($file_path) {
+        if (!file_exists($file_path) || !is_readable($file_path)) {
+            return array();
+        }
+
+        $contents = file_get_contents($file_path);
+        if (false === $contents || '' === $contents) {
+            return array();
+        }
+
+        $entries = array();
+        $lines   = preg_split('/\r?\n/', $contents);
+        foreach ($lines as $raw) {
+            $line = trim($raw);
+            if ('' === $line) continue;
+
+            $entry = array(
+                'timestamp' => '',
+                'level'     => 'UNKNOWN',
+                'message'   => $line,
+                'context'   => null,
+            );
+
+            if (preg_match('/^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\] \[([A-Z]+)\] (.*)$/u', $line, $m)) {
+                $entry['timestamp'] = $m[1];
+                $entry['level']     = $m[2];
+                $entry['message']   = $m[3];
+
+                // Si el mensaje incluye `| Context: {...}` lo separamos.
+                $ctx_pos = strpos($entry['message'], ' | Context: ');
+                if (false !== $ctx_pos) {
+                    $entry['context'] = (string) substr($entry['message'], $ctx_pos + 12);
+                    $entry['message'] = (string) substr($entry['message'], 0, $ctx_pos);
+                }
+            }
+            $entries[] = $entry;
+        }
+        return $entries;
+    }
+
+    /**
+     * GET /admin/v1/logs
+     *
+     * Lee el archivo completo, filtra por nivel y búsqueda libre, y
+     * devuelve la página solicitada en orden cronológico inverso (más
+     * reciente primero).
+     */
+    public function list_logs(WP_REST_Request $request) {
+        if (!class_exists('Imagina_Updater_Server_Logger')) {
+            return new WP_Error('iaud_unavailable', __('Logger no disponible.', 'imagina-updater-server'), array('status' => 500));
+        }
+
+        $logger    = Imagina_Updater_Server_Logger::get_instance();
+        $log_file  = $logger->get_log_file();
+        $entries   = $this->parse_log_file($log_file);
+
+        $level_filter = strtoupper((string) $request->get_param('level'));
+        $search       = trim((string) $request->get_param('search'));
+        $page         = max(1, (int) $request->get_param('page'));
+        $per_page     = max(10, min(500, (int) $request->get_param('per_page')));
+
+        $valid_levels = array('DEBUG', 'INFO', 'WARNING', 'ERROR', 'UNKNOWN');
+        if (!in_array($level_filter, $valid_levels, true)) {
+            $level_filter = '';
+        }
+
+        if ('' !== $level_filter || '' !== $search) {
+            $needle = $search !== '' ? function_exists('mb_strtolower') ? mb_strtolower($search) : strtolower($search) : '';
+            $entries = array_values(array_filter(
+                $entries,
+                static function ($e) use ($level_filter, $needle) {
+                    if ('' !== $level_filter && $e['level'] !== $level_filter) {
+                        return false;
+                    }
+                    if ('' === $needle) return true;
+                    $hay = $e['message'] . ' ' . (string) $e['context'];
+                    $hay = function_exists('mb_strtolower') ? mb_strtolower($hay) : strtolower($hay);
+                    return false !== strpos($hay, $needle);
+                }
+            ));
+        }
+
+        // Más reciente primero.
+        $entries = array_reverse($entries);
+
+        $total = count($entries);
+        $offset = ($page - 1) * $per_page;
+        $items  = array_slice($entries, $offset, $per_page);
+
+        $log_enabled = $logger->is_enabled();
+
+        return rest_ensure_response(
+            array(
+                'items'        => $items,
+                'total'        => $total,
+                'page'         => $page,
+                'per_page'     => $per_page,
+                'log_enabled'  => $log_enabled,
+                'log_file'     => is_readable($log_file) ? basename($log_file) : null,
+            )
+        );
+    }
+
+    /**
+     * DELETE /admin/v1/logs
+     */
+    public function clear_logs(WP_REST_Request $request) {
+        unset($request);
+
+        if (!class_exists('Imagina_Updater_Server_Logger')) {
+            return new WP_Error('iaud_unavailable', __('Logger no disponible.', 'imagina-updater-server'), array('status' => 500));
+        }
+        $logger = Imagina_Updater_Server_Logger::get_instance();
+        $logger->clear_logs();
+        return rest_ensure_response(array('cleared' => true));
+    }
+
+    /**
+     * GET /admin/v1/logs/download
+     *
+     * Streamea el archivo crudo. Mismo patrón que la descarga de ZIP
+     * (Fase 3.3) — chunks de 8 KB, memoria constante.
+     */
+    public function download_logs(WP_REST_Request $request) {
+        unset($request);
+
+        if (!class_exists('Imagina_Updater_Server_Logger')) {
+            return new WP_Error('iaud_unavailable', __('Logger no disponible.', 'imagina-updater-server'), array('status' => 500));
+        }
+
+        $logger   = Imagina_Updater_Server_Logger::get_instance();
+        $log_file = $logger->get_log_file();
+        if (!file_exists($log_file)) {
+            return new WP_Error('iaud_no_log', __('No hay archivo de log todavía.', 'imagina-updater-server'), array('status' => 404));
+        }
+
+        $download_name = 'imagina-updater-' . gmdate('Ymd-His') . '.log';
+
+        if (function_exists('ob_get_level')) {
+            while (ob_get_level() > 0) {
+                ob_end_clean();
+            }
+        }
+
+        nocache_headers();
+        header('Content-Type: text/plain; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $download_name . '"');
+        header('Content-Length: ' . (string) filesize($log_file));
+
+        $handle = fopen($log_file, 'rb');
+        if (false === $handle) {
+            return new WP_Error('iaud_read_failed', __('No se pudo abrir el archivo de log.', 'imagina-updater-server'), array('status' => 500));
+        }
+        while (!feof($handle)) {
+            $chunk = fread($handle, 8192);
+            if (false === $chunk) break;
+            echo $chunk; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+            flush();
+        }
+        fclose($handle);
+        exit; // Necesario: no devolvemos JSON.
     }
 }

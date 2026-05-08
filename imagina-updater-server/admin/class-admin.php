@@ -60,6 +60,13 @@ class Imagina_Updater_Server_Admin {
     private $spa_activations_hook = '';
 
     /**
+     * Hook suffix de la pantalla SPA de Logs (Fase 5.6).
+     *
+     * @var string
+     */
+    private $spa_logs_hook = '';
+
+    /**
      * Obtener instancia
      */
     public static function get_instance() {
@@ -206,6 +213,16 @@ class Imagina_Updater_Server_Admin {
             'imagina-updater-activations-spa',
             array($this, 'render_spa_activations_page')
         );
+
+        // Pantalla SPA de Logs (Fase 5.6).
+        $this->spa_logs_hook = add_submenu_page(
+            'imagina-updater-server',
+            __('Logs (nuevo)', 'imagina-updater-server'),
+            __('Logs (nuevo)', 'imagina-updater-server'),
+            'manage_options',
+            'imagina-updater-logs-spa',
+            array($this, 'render_spa_logs_page')
+        );
     }
 
     /**
@@ -225,6 +242,7 @@ class Imagina_Updater_Server_Admin {
             $this->spa_plugins_hook        => 'plugins',
             $this->spa_plugin_groups_hook  => 'plugin-groups',
             $this->spa_activations_hook    => 'activations',
+            $this->spa_logs_hook           => 'logs',
         );
         foreach ($spa_pages as $spa_hook => $bundle) {
             if ('' !== $spa_hook && $hook === $spa_hook) {
@@ -387,6 +405,20 @@ class Imagina_Updater_Server_Admin {
         ?>
         <div class="wrap">
             <div id="iaud-activations"></div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Renderiza el contenedor de la SPA de Logs (Fase 5.6).
+     */
+    public function render_spa_logs_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Permisos insuficientes.', 'imagina-updater-server'));
+        }
+        ?>
+        <div class="wrap">
+            <div id="iaud-logs"></div>
         </div>
         <?php
     }

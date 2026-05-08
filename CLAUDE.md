@@ -1049,19 +1049,48 @@ Reemplazar `wp_schedule_event` del heartbeat por Action Scheduler. Diferida expl
 
 **Pendiente para 5.6 (Logs)**: visor con virtual scroll (TanStack Virtual), filtros por nivel, search, clear/download. Es la única pantalla con dataset potencialmente muy grande, así que activamos virtualization aquí por primera vez.
 
-#### 5.6 Página: Logs
+#### 5.6 Página: Logs — RESUELTA
 
-**Contenido**:
-- Visor de logs con virtual scroll (TanStack Virtual o similar)
-- Filtros por nivel (DEBUG, INFO, WARNING, ERROR)
-- Búsqueda por texto
-- Botón "Limpiar logs"
-- Botón "Descargar logs"
+> **Estado**: ✅ resuelta en `feat/admin-logs` (encadenada sobre `feat/admin-activations`).
 
-**Endpoints nuevos**:
-- `GET /admin/v1/logs?level=&search=&page=`
-- `DELETE /admin/v1/logs`
-- `GET /admin/v1/logs/download`
+**Acción ejecutada**:
+
+1. **Endpoints nuevos** en `Imagina_Updater_Server_Admin_REST_API`:
+   - `GET /admin/v1/logs?page=&per_page=&level=&search=` — paginado. Lee y parsea el archivo de log completo en memoria, aplica filtros, devuelve la página solicitada en orden cronológico inverso. El logger rota archivos al exceder un umbral, así que el tamaño en disco está acotado y el parse en cada request es asumible. Devuelve además `log_enabled` (estado del logger) y `log_file` (basename) para informar al UI.
+   - `DELETE /admin/v1/logs` — wrapper sobre `Imagina_Updater_Server_Logger::clear_logs()` (limpia archivo principal + rotados).
+   - `GET /admin/v1/logs/download?_wpnonce=…` — descarga del archivo crudo. Usa el mismo patrón de streaming en chunks de 8 KB que la descarga de ZIP de plugins (Fase 3.3): memoria constante independientemente del tamaño. `Content-Type: text/plain`, `Content-Disposition: attachment` con nombre `imagina-updater-YYYYMMDD-HHMMSS.log`. El nonce viaja como query param para que el navegador pueda hacer "clic → guardar como" sin XHR.
+2. **Helper privado** `parse_log_file($file_path)` — parser regex del formato `[timestamp] [LEVEL] message[ | Context: {json}]` usado por `Imagina_Updater_Server_Logger::format_message`. Líneas mal formadas se conservan con `level=UNKNOWN` (compatibilidad con versiones antiguas del logger).
+3. **Wiring WP**:
+   - Submenu **"Logs (nuevo)"** convive con la legacy.
+   - Map de enqueue actualizado: `[hook → 'logs']`.
+   - `render_spa_logs_page()` = contenedor mínimo.
+4. **Vite multi-entry** ampliado: `PAGES = ['dashboard', 'api-keys', 'plugins', 'plugin-groups', 'activations', 'logs']`. Sexto bundle.
+5. **Página Logs** en `src/pages/logs/` (4 archivos):
+   - `types.ts` — `LogEntry`, `LogLevel` (DEBUG / INFO / WARNING / ERROR / UNKNOWN), `LogLevelFilter`, `LogsListResponse`.
+   - `api.ts` — 2 hooks (`useLogsList` con `placeholderData`, `useClearLogs`) + helper `getLogsDownloadUrl()` que construye la URL absoluta con `?_wpnonce=` para usar como `href` del botón Descargar (clic → save-as nativo).
+   - `LogsPage.tsx` — composición: header con CTAs Descargar / Limpiar (gated por `total > 0`), banner amber-tinted cuando `log_enabled=false` (logger deshabilitado en settings). Tabs por nivel (Todos/Debug/Info/Warning/Error) + search. Lista renderiza un `<ul>` con `<li>` por entrada — Badge de nivel con icono Lucide (Bug/Info/TriangleAlert/AlertCircle), timestamp formateado, mensaje con `line-clamp-2` por defecto, botón "Ver contexto" expande un `<pre>` con el JSON. Pager Anterior/Siguiente. Confirm con `window.confirm` antes de Limpiar.
+   - `index.tsx` — entry-point. `staleTime: 10s` (más corto que las otras pantallas: el log tiene actividad continua, queremos refrescos más vivos al volver).
+
+**Decisiones de scope (deliberadas)**:
+
+- **Sin virtual scroll** (CLAUDE.md mencionaba "TanStack Virtual o similar"). Razón: el log rota cuando crece, y la paginación server-side de 100 entradas/página rinde muy bien sin añadir librería. Si el equipo decide ver miles de líneas en una sola pantalla, instalar `@tanstack/react-virtual` (~5 KB) y reemplazar el `<ul>` por una `useVirtualizer` es ~30 líneas de cambio. Por defecto preferí budget pequeño + UX consistente con el resto de pantallas.
+- **Parsing en memoria** vs. streaming line-by-line: el archivo está acotado por la rotación del logger; preferí simplicidad sobre micro-optimización. Si en el futuro se cambia la política de rotación a archivos grandes, se puede pasar a `SplFileObject` con cursor.
+- **Descarga via anchor con nonce en query string** — es seguro porque solo `manage_options` ve la URL, y la cookie de WP también es necesaria. Alternativa con XHR + Blob descargado tendría peor UX (usuario no ve el progreso de save-as nativo del navegador).
+- **No tail-follow / live updates** — la pantalla muestra un snapshot. Refrescar = `placeholderData` mantiene la vista mientras llega la nueva. Tail-follow añade WebSocket o polling, ambos fuera de scope.
+- **Sin filtros por rango de fechas** — el filtro "from / to" es útil pero el caso típico es "ver lo último o buscar un texto", ya cubierto. Reversible.
+
+**Verificación pendiente del usuario** (en WP local):
+
+- [ ] `cd imagina-updater-server/assets/admin && npm run build` — compila los **seis** bundles.
+- [ ] Submenu "Logs (nuevo)" carga; entradas existentes aparecen ordenadas (más reciente primero).
+- [ ] Tabs Debug/Info/Warning/Error filtran. Búsqueda por texto en mensaje + contexto funciona.
+- [ ] Entrada con contexto: botón "Ver contexto" expande un `<pre>` con el JSON.
+- [ ] Limpiar → confirm → tabla queda vacía + archivo borrado en disco (verificable con `ls wp-content/uploads/imagina-updater-logs/`).
+- [ ] Descargar → navegador inicia descarga; archivo `.log` contiene exactamente el contenido en disco.
+- [ ] Si el logger está deshabilitado (Configuración): banner amber visible.
+- [ ] Network: bundle `logs.js` solo se carga en su pantalla.
+
+**Pendiente para 5.7 (Configuración)**: la última pantalla del servidor. Tabs General / Logging / Mantenimiento. Forms estándar + botones de mantenimiento (clear caches / run migrations).
 
 #### 5.7 Página: Configuración
 

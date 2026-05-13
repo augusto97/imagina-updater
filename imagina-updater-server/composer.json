@@ -1,0 +1,23 @@
+{
+    "name": "imagina/updater-server",
+    "description": "Distribute custom WordPress plugin updates from a central server (Imagina Updater Server).",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "php": ">=7.4"
+    },
+    "autoload": {
+        "classmap": [
+            "includes/",
+            "admin/",
+            "api/"
+        ]
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    },
+    "support": {
+        "source": "https://github.com/augusto97/imagina-updater"
+    }
+}

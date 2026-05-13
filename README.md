@@ -36,13 +36,23 @@ imagina-updater-license-extension-5.3.0.zip: OK
 
 ## Estado del corte
 
-Esta versión refleja el estado del repositorio **post Fase 0/1/2/3 (todas mergeadas a main) + Fase 4 en `refactor/architecture`**:
+Esta versión refleja el estado del repositorio **post Fase 0/1/2/3/4/5.0–5.7 (todas mergeadas a `main`)**. El servidor incluye el rediseño completo del admin como SPA React + TypeScript + Vite (Fase 5), construido y empaquetado dentro del ZIP en `imagina-updater-server/assets/dist/`.
 
-- Fase 0–3: ver historial en `CLAUDE.md` (cleanup SDK legacy, fixes críticos, sweep PHPCS, robustez en streaming/cache/rate-limit).
-- Fase 4.1 (parcial): añadido `composer.json` con `autoload.classmap` en cada uno de los 3 plugins. Sin renombres de clases ni cambios runtime; los entry points siguen cargando con `require_once`. La migración completa a `src/` con namespaces queda diferida hasta una sesión con WP local para validar end-to-end.
-- Fase 4.2: añadido `imagina-updater-server/docs/HOOKS.md` con los 6 hooks `do_action` que expone el servidor (parámetros, ejemplos, consumidores). Cliente y license-extension no exponen hooks propios.
-- Fase 4.3: `Imagina_License_SDK_Injector::rezip_plugin` reescrito a two-phase commit: ZIP nuevo se construye en `.new`, `rename()` atómico al final. Si falla a mitad (open/addFile/close/rename), el ZIP original queda intacto. Eliminado el sistema de `.backup` previo.
-- Fase 4.4: diferida (Action Scheduler añadiría dependencia externa; decisión pendiente).
+- **Fase 0–3** — ver historial en `CLAUDE.md` (cleanup SDK legacy, fixes críticos, sweep PHPCS, robustez en streaming/cache/rate-limit).
+- **Fase 4** — arquitectura: composer.json con classmap autoload en los 3 plugins; `docs/HOOKS.md` con los 6 `do_action` del servidor; `rezip_plugin` two-phase commit atómico. 4.4 (Action Scheduler) diferida.
+- **Fase 5** — admin SPA del servidor: 7 submenús **"(nuevo)"** conviven con los legacy mientras se valida en producción.
+  - 5.0 Setup técnico (Vite multi-entry, Tailwind con prefijo `iaud-`, shadcn primitives, REST namespace `imagina-updater/admin/v1`).
+  - 5.1 Dashboard (4 KPIs + chart SVG 30d + tablas + quick actions).
+  - 5.2 API Keys (CRUD + drawer + banner con clave en claro una sola vez).
+  - 5.3 Plugins (upload drag-and-drop, premium toggle, re-inyección, versions).
+  - 5.4 Plugin Groups (CRUD con conteo de API keys vinculadas).
+  - 5.5 Activations (tabla con filtros estado/api-key/dominio + desactivar).
+  - 5.6 Logs (visor parseado + filtros por nivel + descarga streaming).
+  - 5.7 Configuración (tabs General / Logging / Mantenimiento).
+
+**Backend nuevo:** ~30 endpoints bajo `wp-json/imagina-updater/admin/v1/` con permission `manage_options` + nonce `wp_rest`. La API pública `wp-json/imagina-updater/v1/` queda intacta (no rompe sitios cliente en producción).
+
+**Frontend (servidor):** ~80 KB gzip por pantalla en media (chunk compartido de TanStack Query 65 KB + entry 2–6 KB + CSS Tailwind 25 KB). Bien dentro del budget de 250 KB / pantalla.
 
 ## Versionado
 
@@ -51,17 +61,45 @@ Esta versión refleja el estado del repositorio **post Fase 0/1/2/3 (todas merge
 
 ## Cómo se generaron
 
-Desde la rama `chore/remove-legacy-sdk` (post-Fase 0):
+Desde `main` (post Fase 5):
 
 ```bash
 cd /ruta/al/repo
-zip -rq /tmp/imagina-updater-server-1.0.0.zip imagina-updater-server -x "*.DS_Store" "*/.git/*"
-zip -rq /tmp/imagina-updater-client-1.0.0.zip imagina-updater-client -x "*.DS_Store" "*/.git/*"
-zip -rq /tmp/imagina-updater-license-extension-5.3.0.zip imagina-updater-license-extension -x "*.DS_Store" "*/.git/*"
+git checkout main && git pull
+
+# 1. Construir los bundles del admin SPA del servidor
+cd imagina-updater-server/assets/admin
+npm install
+npm run build           # genera assets/dist/{dashboard,api-keys,plugins,plugin-groups,
+                        # activations,logs,settings}.{js,asset.php} + iaud.css
+
+# 2. Volver a la raíz y empaquetar (excluyendo dev-only del SPA)
+cd ../../..
+zip -rq /tmp/imagina-updater-server-1.0.0.zip imagina-updater-server \
+  -x "imagina-updater-server/assets/admin/node_modules/*" \
+     "imagina-updater-server/assets/admin/src/*" \
+     "imagina-updater-server/assets/admin/index.html" \
+     "imagina-updater-server/assets/admin/package*.json" \
+     "imagina-updater-server/assets/admin/*.config.*" \
+     "imagina-updater-server/assets/admin/tsconfig*.json" \
+     "imagina-updater-server/assets/admin/components.json" \
+     "imagina-updater-server/assets/admin/README.md" \
+     "imagina-updater-server/assets/admin/.gitignore" \
+     "*.DS_Store" "*/.git/*"
+
+zip -rq /tmp/imagina-updater-client-1.0.2.zip imagina-updater-client \
+  -x "*.DS_Store" "*/.git/*"
+
+zip -rq /tmp/imagina-updater-license-extension-5.3.0.zip imagina-updater-license-extension \
+  -x "*.DS_Store" "*/.git/*"
+
+sha256sum /tmp/imagina-updater-*.zip > /tmp/SHA256SUMS.txt
 ```
+
+`assets/dist/` SÍ va dentro del ZIP del servidor (es lo que WordPress carga en producción). Los archivos de dev del SPA (node_modules, src/, configs) quedan fuera para no inflar el ZIP — solo importan al desarrollar.
 
 ## Referencias
 
 - Repositorio principal: rama `main`.
 - Documento de guía: `CLAUDE.md` en `main`.
-- Trabajo en curso: rama `chore/remove-legacy-sdk` (Fase 0).
+- Workflow de desarrollo: cada fase tiene su propio merge commit en `main` (`git log --merges main` los lista).

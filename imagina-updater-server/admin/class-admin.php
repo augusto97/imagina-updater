@@ -32,6 +32,13 @@ class Imagina_Updater_Server_Admin {
     private $spa_dashboard_hook = '';
 
     /**
+     * Hook suffix de la pantalla SPA de API Keys (Fase 5.2).
+     *
+     * @var string
+     */
+    private $spa_api_keys_hook = '';
+
+    /**
      * Obtener instancia
      */
     public static function get_instance() {
@@ -138,6 +145,16 @@ class Imagina_Updater_Server_Admin {
             'imagina-updater-dashboard-spa',
             array($this, 'render_spa_dashboard_page')
         );
+
+        // Pantalla SPA de API Keys (Fase 5.2).
+        $this->spa_api_keys_hook = add_submenu_page(
+            'imagina-updater-server',
+            __('API Keys (nuevo)', 'imagina-updater-server'),
+            __('API Keys (nuevo)', 'imagina-updater-server'),
+            'manage_options',
+            'imagina-updater-api-keys-spa',
+            array($this, 'render_spa_api_keys_page')
+        );
     }
 
     /**
@@ -151,9 +168,15 @@ class Imagina_Updater_Server_Admin {
         // Pantallas SPA: solo el bundle React (sin CSS legacy ni JS
         // jQuery del admin viejo). Comparación exacta con el hook
         // suffix capturado al registrar la submenu.
-        if ('' !== $this->spa_dashboard_hook && $hook === $this->spa_dashboard_hook) {
-            $this->enqueue_spa_dashboard_assets();
-            return;
+        $spa_pages = array(
+            $this->spa_dashboard_hook => 'dashboard',
+            $this->spa_api_keys_hook  => 'api-keys',
+        );
+        foreach ($spa_pages as $spa_hook => $bundle) {
+            if ('' !== $spa_hook && $hook === $spa_hook) {
+                $this->enqueue_spa_bundle($bundle);
+                return;
+            }
         }
 
         wp_enqueue_style(
@@ -168,18 +191,19 @@ class Imagina_Updater_Server_Admin {
     }
 
     /**
-     * Enqueue del bundle SPA del Dashboard (Fase 5.1).
+     * Enqueue genérico de un bundle SPA (Fase 5.x).
      *
-     * El bundle vive en `assets/dist/dashboard.{js,css}` y se acompaña
-     * de `dashboard.asset.php` (generado por Vite) con `dependencies`
-     * y `version`. Si el build no existe (npm run build no ejecutado),
-     * se muestra un aviso al admin y no se enqueua nada — evita errores
-     * 404 silenciosos.
+     * Cada bundle vive en `assets/dist/<slug>.{js,css}` con un
+     * `<slug>.asset.php` adyacente generado por Vite (dependencies
+     * + version hash). Si el build no existe se muestra un aviso al
+     * admin y no se enqueua nada — evita errores 404 silenciosos.
+     *
+     * @param string $bundle Slug del bundle (`dashboard`, `api-keys`, …).
      */
-    private function enqueue_spa_dashboard_assets() {
+    private function enqueue_spa_bundle($bundle) {
         $dist_dir = IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'assets/dist/';
         $dist_url = IMAGINA_UPDATER_SERVER_PLUGIN_URL . 'assets/dist/';
-        $asset    = $dist_dir . 'dashboard.asset.php';
+        $asset    = $dist_dir . $bundle . '.asset.php';
 
         if (!file_exists($asset)) {
             add_action('admin_notices', array($this, 'render_spa_build_missing_notice'));
@@ -190,28 +214,30 @@ class Imagina_Updater_Server_Admin {
         if (!is_array($manifest)) {
             $manifest = array('dependencies' => array(), 'version' => IMAGINA_UPDATER_SERVER_VERSION);
         }
+        $version = isset($manifest['version']) ? $manifest['version'] : IMAGINA_UPDATER_SERVER_VERSION;
+        $deps    = isset($manifest['dependencies']) ? $manifest['dependencies'] : array();
 
+        $handle = 'iaud-' . $bundle;
         wp_enqueue_script(
-            'iaud-dashboard',
-            $dist_url . 'dashboard.js',
-            isset($manifest['dependencies']) ? $manifest['dependencies'] : array(),
-            isset($manifest['version']) ? $manifest['version'] : IMAGINA_UPDATER_SERVER_VERSION,
+            $handle,
+            $dist_url . $bundle . '.js',
+            $deps,
+            $version,
             true
         );
-
         wp_enqueue_style(
-            'iaud-dashboard',
-            $dist_url . 'dashboard.css',
+            $handle,
+            $dist_url . $bundle . '.css',
             array(),
-            isset($manifest['version']) ? $manifest['version'] : IMAGINA_UPDATER_SERVER_VERSION
+            $version
         );
 
-        wp_set_script_translations('iaud-dashboard', 'imagina-updater-server');
+        wp_set_script_translations($handle, 'imagina-updater-server');
 
         $current_user = wp_get_current_user();
 
         wp_localize_script(
-            'iaud-dashboard',
+            $handle,
             'iaudConfig',
             array(
                 'apiUrl'      => esc_url_raw(rest_url('imagina-updater/v1/')),
@@ -250,6 +276,20 @@ class Imagina_Updater_Server_Admin {
         ?>
         <div class="wrap">
             <div id="iaud-dashboard"></div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Renderiza el contenedor de la SPA de API Keys (Fase 5.2).
+     */
+    public function render_spa_api_keys_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Permisos insuficientes.', 'imagina-updater-server'));
+        }
+        ?>
+        <div class="wrap">
+            <div id="iaud-api-keys"></div>
         </div>
         <?php
     }

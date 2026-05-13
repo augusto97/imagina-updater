@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Imagina Updater Server — Admin (dev)</title>
+  </head>
+  <body class="iaud-app">
+    <!--
+      Solo para `vite dev`. En producción (WordPress) los bundles se
+      enqueuen desde PHP y montan en sus respectivos contenedores
+      (#iaud-dashboard, #iaud-plugins, etc.) inyectados por las views.
+    -->
+    <div id="iaud-dashboard"></div>
+    <script type="module" src="/src/pages/dashboard/index.tsx"></script>
+  </body>
+</html>

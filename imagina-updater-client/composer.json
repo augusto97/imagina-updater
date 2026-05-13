@@ -1,0 +1,22 @@
+{
+    "name": "imagina/updater-client",
+    "description": "Receive plugin updates from a central Imagina Updater Server.",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "php": ">=7.4"
+    },
+    "autoload": {
+        "classmap": [
+            "includes/",
+            "admin/"
+        ]
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    },
+    "support": {
+        "source": "https://github.com/augusto97/imagina-updater"
+    }
+}

@@ -294,18 +294,32 @@ Scope sugerido: `server`, `client`, `license-extension`, `admin-ui`, `claude`, `
 
 ---
 
-## 5. Decisiones por confirmar (antes de empezar Fase 5)
+## 5. Decisiones de Fase 5 — RESUELTAS (defaults adoptados por autorización del usuario)
 
-> Estas decisiones impactan el rediseño visual y deben quedar resueltas antes de empezar a construir componentes. Si Claude Code llega a esta fase sin que estén definidas, debe preguntar al usuario.
+> Estas decisiones quedaron pendientes hasta el inicio de Fase 5. El usuario autorizó proceder con las recomendaciones del documento, así que se fijaron los valores por defecto descritos abajo. **Toda nueva pantalla debe respetar estos valores. Cambiarlos requiere aprobación explícita.**
 
-- [ ] **Paleta corporativa de Imagina** — ¿hay colores fijos (primario, secundario, acentos)? ¿Hay logo SVG/PNG disponible?
-- [ ] **Modo oscuro** — ¿soportar `dark:` desde el día 1 o dejarlo para una iteración posterior?
-- [ ] **Densidad de UI** — compacta (estilo Linear, Vercel, Stripe Dashboard) vs aireada (estilo Notion, Airtable). Recomendación inicial: **compacta** para admin de WP, mejor uso del espacio.
-- [ ] **Referencias visuales** — ¿hay 1-2 dashboards de referencia que el equipo quiera emular?
-- [ ] **Tipografía** — Inter por defecto (recomendación). ¿Otra preferencia?
-- [ ] **Branding del prefijo** — confirmar `iaud-` o cambiar (ej: `imupd-`, `iup-`).
-- [ ] **Ubicación de `assets/dist/`** — ¿gitignored o commiteado? Recomendación: commiteado para releases, gitignored en desarrollo. Definir en `.gitignore`.
-- [ ] **Cliente también** — ¿el rediseño aplica también al admin de `imagina-updater-client`? Recomendación: **sí, pero después** del servidor (Fase 5.B).
+- [x] **Paleta corporativa de Imagina** — sin paleta entregada. Defaults provisionales:
+  - Base neutra: escala `slate` de Tailwind (texto/fondos/borders) — `slate-50` … `slate-950`.
+  - Color primario: variable CSS `--iaud-primary` con valor inicial `oklch(0.55 0.18 250)` (azul). Cuando llegue la paleta real, se cambia el valor de la variable y los acentos heredan automáticamente.
+  - Logo: placeholder textual hasta que se entregue SVG/PNG. Cuando llegue, se coloca en `imagina-updater-server/assets/admin/src/assets/logo.svg`.
+- [x] **Modo oscuro** — NO desde el día 1. Iteración posterior. Razón: `wp-admin` no expone modo oscuro nativo, mezclar light/dark añade casos edge sin retorno hasta tener la SPA estable.
+- [x] **Densidad de UI** — compacta (estilo Linear, Vercel, Stripe Dashboard). Spacing scale ajustado: `p-3` por defecto en cards y filas de tabla; `p-4` solo cuando haya jerarquía visual; `p-6` reservado a drawers y modales.
+- [x] **Referencias visuales** — Linear (interacciones, microcopy, densidad) + Stripe Dashboard (tablas con muchas columnas, formularios). Vercel Dashboard como referencia secundaria para visualización de listados.
+- [x] **Tipografía** — Inter por defecto. Self-hosted vía `@fontsource/inter` (no peticiones a Google Fonts) con weights `400` / `500` / `600` / `700`.
+- [x] **Branding del prefijo** — `iaud-` confirmado. Aplicado vía `prefix: 'iaud-'` en `tailwind.config.ts`. Variables CSS también prefijadas (`--iaud-primary`, `--iaud-bg`, etc.).
+- [x] **Ubicación de `assets/dist/`** — **gitignored** en el repositorio principal (`main` y feature branches). Los builds finales se empaquetan en los ZIPs de la rama `release` (que es huérfana). El flujo de release ejecuta `npm run build` antes de `zip`.
+- [x] **Cliente también** — sí, pero en Fase 5.B (después de mergear el rediseño completo del servidor a `main`). El cliente reusa el mismo stack, mismo prefijo, misma paleta y los componentes shadcn ya construidos en `imagina-updater-server/assets/admin/src/components/ui/`.
+
+**Stack confirmado** (consistente con sección 2.2):
+
+- React 18.3.x, ReactDOM 18.3.x — bundleados (no externalizados a `wp.element`) en la primera iteración. Optimización a externals queda diferida; el budget de 250 KB gzip per page lo permite con holgura.
+- TypeScript 5.6+ en strict mode (`"strict": true, "noUncheckedIndexedAccess": true, "exactOptionalPropertyTypes": true`).
+- Vite 5.4+ con multi-entry (una entry por pantalla admin).
+- Tailwind 3.4+ con `prefix: 'iaud-'` y `corePlugins.preflight: false`.
+- shadcn/ui sobre Tailwind, con componentes copiados a `src/components/ui/` (no `npm install`-ables; el CLI solo genera).
+- TanStack Query 5.x para fetching/caché del REST. TanStack Table 8.x para todas las tablas.
+- Lucide React para iconos.
+- `clsx` + `tailwind-merge` para combinar utility classes condicionalmente (helper `cn()`).
 
 ---
 
@@ -567,56 +581,92 @@ Las 6 advertencias del CSV (líneas 1005-1006 y 1048 originales del server admin
 
 ---
 
-### Fase 4 — Arquitectónico
+### Fase 4 — Arquitectónico — PARCIALMENTE RESUELTA
+
+> **Estado**: 4.2 ✅ y 4.3 ✅ resueltos en `refactor/architecture`. 4.1 ⚠️ hecha solo a medias (composer.json sin migración de namespaces). 4.4 ⏸️ diferida (añade dependencia externa).
 
 **Rama**: `refactor/architecture`
 
-**Objetivo**: mejoras estructurales de fondo. Esta fase es opcional y puede dividirse en sub-fases.
+**Objetivo original**: mejoras estructurales de fondo. Esta fase es opcional y puede dividirse en sub-fases.
 
-#### 4.1 Migración a namespaces PSR-4
+#### 4.1 Migración a namespaces PSR-4 — PARCIAL
 
-**Acción**:
-1. Crear `composer.json` en cada plugin con autoload PSR-4:
-   ```json
-   {
-     "autoload": {
-       "psr-4": {
-         "ImaginaWP\\UpdaterServer\\": "src/"
-       }
-     }
-   }
-   ```
-2. Mover clases de `includes/class-*.php` a `src/` con namespaces:
-   - `Imagina_Updater_Server_API_Keys` → `ImaginaWP\UpdaterServer\ApiKeys`
-   - `Imagina_Updater_Server_Activations` → `ImaginaWP\UpdaterServer\Activations`
-   - etc.
-3. Mantener archivos legacy con `class_alias` para retrocompatibilidad si hay extensiones de terceros.
-4. Generar autoloader con `composer dump-autoload -o`.
-5. Cargar autoloader en el archivo principal del plugin.
+> **Estado**: ⚠️ solo se añadió `composer.json` con classmap autoload en los 3 plugins. La migración de archivos a `src/` con namespaces y `class_alias` queda diferida hasta que haya WP local para validar end-to-end.
 
-#### 4.2 Documentar hooks (filter/action reference)
+**Acción ejecutada**:
 
-Crear `imagina-updater-server/docs/HOOKS.md` con todos los hooks expuestos, parámetros y ejemplos. La license-extension depende de ellos y futuras extensiones también.
+- Creado `imagina-updater-server/composer.json`, `imagina-updater-client/composer.json`, `imagina-updater-license-extension/composer.json` con:
+  - Metadata estándar (name, description, license, php constraint).
+  - `autoload.classmap` apuntando a las carpetas existentes (`includes/`, `admin/`, `api/`).
+  - Sin renombres de clases, sin movimientos de archivos, sin cambios en los entry points.
+- El loader actual (`require_once includes/class-*.php` en el archivo principal) se mantiene intacto. Los plugins distribuidos sin `vendor/` siguen funcionando exactamente igual.
 
-#### 4.3 Mejorar rollback de inyección de código en ZIPs
+**Lo que esto habilita**:
 
-**Síntoma**: en `class-sdk-injector.php`, si la inyección falla a mitad, el ZIP puede quedar corrupto. Hay backup pero el flow de restore no es atómico.
+- Tooling de análisis estático (PHPStan, Psalm) y dependencias dev vía `composer install`.
+- Declaración de intención: este proyecto se gestiona como un proyecto PHP moderno, no como un conjunto suelto de archivos.
+- Base preparada para la migración completa de namespaces.
 
-**Acción**:
-1. Refactorizar `inject_sdk_if_needed()` para usar el patrón two-phase commit:
-   - Fase 1: extraer, modificar, re-zippear a archivo temporal con sufijo `.new`
-   - Fase 2: si todo OK, `rename($temp, $original)` (atómico en ext4/xfs)
-   - Si falla, eliminar el `.new` y dejar el original intacto
-2. Eliminar el sistema de `.backup` actual una vez el nuevo flujo esté validado.
+**Lo que NO se hizo (deferred)**:
 
-#### 4.4 Action Scheduler para heartbeat
+- Mover `includes/class-*.php` a `src/` con namespaces (`ImaginaWP\UpdaterServer\`, `ImaginaWP\UpdaterClient\`, `ImaginaWP\LicenseExtension\`).
+- Renombrar clases (`Imagina_Updater_Server_API_Keys` → `ImaginaWP\UpdaterServer\ApiKeys`, etc.).
+- Añadir `class_alias` para retrocompatibilidad.
+- Cargar el autoloader de Composer en runtime desde los archivos principales.
 
-Reemplazar `wp_schedule_event` del heartbeat por Action Scheduler (más robusto, mejor logging, retry automático).
+**Razonamiento**: una migración de namespaces sobre ~25 archivos de clase sin un entorno WP local para smoke-test arriesga rupturas sutiles (autoloader edge cases, `instanceof` checks, datos serializados en BD que referencian clases por nombre antiguo) que solo aparecerían en producción. Mejor diferirlo a una sesión con la verificación en vivo disponible.
+
+#### 4.2 Documentar hooks (filter/action reference) — RESUELTO
+
+**Acción ejecutada**: creado `imagina-updater-server/docs/HOOKS.md` con los 6 hooks que expone el servidor (todos `do_action`; 0 `apply_filters`):
+
+- `imagina_updater_after_upload_form`
+- `imagina_updater_after_move_plugin_file` ← punto de inyección de protección
+- `imagina_updater_after_upload_plugin`
+- `imagina_updater_plugins_column_toggles`
+- `imagina_updater_plugins_table_header`
+- `imagina_updater_plugins_table_row` (recibe `$plugin`)
+
+Cada entrada documenta cuándo se dispara, parámetros (con tipos y mutabilidad), origen (archivo + línea), consumidores actuales (license-extension), ejemplo de uso, y best practices (capabilities, performance, two-phase commit).
+
+El cliente y la license-extension **no exponen hooks propios** (auditado con `grep "do_action\|apply_filters"`), así que no se creó HOOKS.md para ellos. Si en el futuro empiezan a exponer hooks, se añadirá uno por plugin siguiendo el mismo template.
+
+#### 4.3 Mejorar rollback de inyección de código en ZIPs — RESUELTO
+
+**Síntoma original**: el flujo de `rezip_plugin()` hacía `copy(original, .backup) → unlink(original) → ZipArchive::CREATE → addFile loop → close → unlink(.backup)`. Entre el `unlink(original)` y un `close()` exitoso había una ventana donde un crash de PHP corrompía el plugin. Además se ignoraba el valor de retorno de `$zip->close()` y `addFile()`.
+
+**Acción ejecutada** (`Imagina_License_SDK_Injector::rezip_plugin`):
+
+1. El nuevo ZIP se construye en `$output_zip . '.new'` — el original NO se toca.
+2. Si `ZipArchive::open`, `addFile` o `close` fallan: borrar `.new`, devolver error con mensaje específico. Original intacto.
+3. En éxito: `rename(.new, original)` — atómico en filesystems POSIX (ext4/xfs/btrfs cuando ambas rutas comparten mountpoint, que es siempre el caso aquí).
+4. Si `rename` falla (raro: cross-filesystem, permisos): borrar `.new`, devolver error. Original intacto.
+5. Eliminado el sistema de `.backup` por innecesario con este flujo.
+6. Añadido `ZipArchive::OVERWRITE` para que un `.new` huérfano de un intento previo se reemplace, y `unlink` preventivo de `.new` al inicio.
+7. Valor de retorno de `addFile` y `close` ahora se chequea.
+
+Ambos call sites (`inject_sdk_if_needed` línea ~128 y `remove_protection` línea ~612) van por este private method, así que ambos heredan el comportamiento.
+
+#### 4.4 Action Scheduler para heartbeat — DIFERIDA
+
+Reemplazar `wp_schedule_event` del heartbeat por Action Scheduler. Diferida explícitamente al inicio de la fase porque añade dependencia externa (la librería de Action Scheduler, normalmente embebida en WooCommerce). Pendiente para una sub-fase futura cuando se decida si:
+
+- Embeber Action Scheduler como dependencia composer.
+- O depender de la presencia de WooCommerce.
+- O quedarse con `wp_schedule_event` y añadir lógica propia de retry.
 
 **Verificación de Fase 4**:
-- PSR-4 cargando sin errores. Tests funcionales completos.
-- Hooks documentados con ejemplos compilables.
-- Inyección con simulación de fallo: ZIP original siempre intacto.
+
+- 4.1 (parcial): `composer.json` válido en los 3 plugins; `composer install` opcional para tooling. Sin cambios runtime.
+- 4.2: `HOOKS.md` revisable manualmente; los ejemplos son copy-paste compilables.
+- 4.3 pendiente del usuario en WP local: simular fallo durante inyección (p.ej. permisos read-only en uploads/, espacio en disco saturado) y confirmar que el ZIP original sigue intacto y descargable.
+
+**Cambios adicionales realizados durante esta fase**: ninguno fuera del plan.
+
+**Pendientes derivados**:
+
+- Migración completa de PSR-4 (parte de 4.1 que quedó fuera).
+- Decisión sobre 4.4 (Action Scheduler vs wp_schedule_event con retry propio).
 
 ---
 
@@ -629,9 +679,31 @@ Reemplazar `wp_schedule_event` del heartbeat por Action Scheduler (más robusto,
 - Fase 0 mergeada
 - Idealmente Fase 1 mergeada también (para empezar sobre código limpio)
 
-#### 5.0 Setup técnico
+#### 5.0 Setup técnico — RESUELTO
 
-**Pasos**:
+> **Estado**: ✅ resuelto en `feat/admin-redesign`. Skeleton técnico operativo; el primer bundle (Dashboard placeholder) compila y se puede cargar desde wp-admin pendiente de cablear el enqueue PHP por pantalla (5.1+).
+
+**Acción ejecutada**:
+
+1. Creada `imagina-updater-server/assets/admin/` con `package.json`, `tsconfig.json` (strict + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes`), `tsconfig.node.json`, `vite.config.ts`, `tailwind.config.ts`, `postcss.config.js`, `components.json`, `index.html` (solo dev), `.gitignore` y `README.md`.
+2. `vite.config.ts` con multi-entry parametrizada por el array `PAGES` (solo `dashboard` en este commit; añadir slugs aquí + crear `src/pages/<slug>/index.tsx` para nuevas pantallas). Plugin local `emit-wordpress-asset-files` que escribe `<entry>.asset.php` junto a cada bundle, con la convención `array('dependencies' => array(), 'version' => '<hash>')`.
+3. **React/ReactDOM bundleados** (no externalizados a `wp.element`) en esta primera iteración; el budget de 250 KB gzip per page tiene holgura. `dependencies` queda vacío en los `.asset.php`. Migrar a externals queda como optimización posterior si algún bundle se acerca al techo.
+4. Tailwind con `prefix: 'iaud-'`, `corePlugins.preflight: false` y tokens semánticos (`--iaud-primary`, `--iaud-bg`, etc.) que viven scoped en `.iaud-app` dentro de `src/styles/globals.css`. Modo oscuro reservado pero sin valores (Fase 5.B).
+5. `components.json` con `prefix: 'iaud-'`, `baseColor: 'slate'` y aliases (`@/components`, `@/lib/utils`). Listo para que `npx shadcn@latest add button` (etc.) coloque componentes con el prefijo correcto.
+6. `src/lib/utils.ts` con el helper `cn()` (clsx + tailwind-merge) y `src/lib/api.ts` con cliente REST mínimo: `adminGet`/`adminPost` apuntando a `iaudConfig.adminUrl` (inyectado desde PHP vía `wp_localize_script`) con header `X-WP-Nonce`.
+7. `src/pages/dashboard/index.tsx` placeholder funcional: monta en `#iaud-dashboard`, envuelve con `QueryClientProvider`, demuestra que Tailwind con prefijo está activo. Las KPI cards reales se construyen en 5.1.
+8. **REST admin namespace** creado: `imagina-updater-server/api/class-admin-rest-api.php` con la clase `Imagina_Updater_Server_Admin_REST_API` (singleton) y namespace `imagina-updater/admin/v1`. Permission callback común: `current_user_can('manage_options')` + nonce `wp_rest`. Primer endpoint `GET /dashboard/stats` que devuelve los 4 KPIs (total plugins, active api keys, active activations, downloads 24h) consultando las tablas custom directamente. La API pública `/imagina-updater/v1/` queda intacta (CLAUDE.md §4 regla 5).
+9. Loader actualizado: `imagina-updater-server.php` añade el `require_once` y la inicialización del singleton junto al REST público.
+10. `.gitignore` raíz añade `imagina-updater-server/assets/dist/` y `imagina-updater-client/assets/dist/` para que los builds NO se commiteen en `main`/feature branches. Los builds finales viajan en los ZIPs de la rama `release` (CLAUDE.md §5).
+
+**Pendiente para 5.1**:
+
+- Crear el sub-menú admin que renderiza la view `dashboard.php` con `<div id="iaud-dashboard"></div>`.
+- `enqueue_dashboard_assets($hook)` con guard `if ($hook !== '...') return;` (CLAUDE.md §4 regla 3).
+- KPI cards reales con datos de `GET /admin/v1/dashboard/stats`.
+- Gráfico de descargas 30d (decisión: recharts si entra en budget, si no tabla).
+
+**Pasos originales del plan (referencia, ya cubiertos)**:
 
 1. Crear `imagina-updater-server/assets/admin/` con esta estructura:
    ```
@@ -712,101 +784,369 @@ Reemplazar `wp_schedule_event` del heartbeat por Action Scheduler (más robusto,
 
 7. **REST namespace separado para el admin**: crear `/imagina-updater/admin/v1/` para los endpoints que solo usa la SPA. Permission callback: `current_user_can('manage_options')` + nonce. La API pública `/imagina-updater/v1/` se mantiene intacta.
 
-#### 5.1 Página: Dashboard
+#### 5.1 Página: Dashboard — RESUELTA
 
-**Contenido**:
-- 4 KPI cards: Total Plugins, Total API Keys activas, Activaciones activas, Descargas últimas 24h
-- Gráfico de descargas últimos 30 días (recharts si entra en budget; si no, una tabla simple es suficiente)
-- Tabla "Últimas descargas" (10 más recientes)
-- Tabla "Top plugins por descargas" (5 más descargados)
-- Quick actions: "Subir plugin", "Crear API key"
+> **Estado**: ✅ resuelta en `feat/admin-dashboard` (encadenada sobre `feat/admin-redesign`).
 
-**Endpoints nuevos (admin/v1)**:
+**Acción ejecutada**:
+
+1. **Endpoints nuevos** en `Imagina_Updater_Server_Admin_REST_API`:
+   - `GET /admin/v1/dashboard/stats` (ya existía desde 5.0).
+   - `GET /admin/v1/dashboard/downloads-30d` — serie diaria (30 entries con días vacíos rellenos a 0).
+   - `GET /admin/v1/dashboard/recent-downloads` — últimas 10 descargas con plugin y site_name (LEFT JOIN sobre plugins + api_keys).
+   - `GET /admin/v1/dashboard/top-plugins` — top 5 por descargas totales (LEFT JOIN + COUNT + GROUP BY).
+   Permission callback heredado: `manage_options` + nonce `wp_rest`.
+2. **Submenu admin** "Dashboard (nuevo)" añadido en `class-admin.php`. Convive con la pantalla legacy mientras se completa el rediseño (cuando estén las 7 pantallas SPA, se hará el flip y se eliminan las views PHP antiguas).
+3. **Enqueue condicional** (CLAUDE.md §4 regla 3): el método `enqueue_scripts($hook)` ahora compara `$hook === $this->spa_dashboard_hook` (suffix capturado al registrar la submenu). Si coincide, encolla SOLO el bundle SPA (sin CSS legacy ni jQuery). Si no, comportamiento previo. Si el bundle no está construido, muestra `admin_notices` con instrucciones.
+4. **`render_spa_dashboard_page()`** queda como contenedor mínimo: `<div class="wrap"><div id="iaud-dashboard"></div></div>` (CLAUDE.md §4 regla 11).
+5. **`wp_localize_script('iaud-dashboard', 'iaudConfig', …)`** inyecta `apiUrl`, `adminUrl`, `nonce` (wp_rest), `currentUser`, `locale` (formato BCP 47), `siteUrl`. `wp_set_script_translations` con dominio `imagina-updater-server`.
+6. **shadcn primitives** copiados a `src/components/ui/` con prefijo `iaud-`: `card.tsx` (Card / CardHeader / CardTitle / CardDescription / CardContent / CardFooter), `button.tsx` (con `cva` y variantes default/secondary/outline/ghost/destructive + sizes sm/default/lg/icon, `default = h-9` por densidad compacta), `table.tsx` (con `py-2` por defecto vs `py-4` upstream), `skeleton.tsx`.
+7. **Página Dashboard** dividida en módulos en `src/pages/dashboard/`:
+   - `api.ts` — 4 hooks de TanStack Query mapeando 1:1 con endpoints.
+   - `StatsCards.tsx` — grid responsive de 4 KPIs con iconos Lucide y skeleton loaders.
+   - `DownloadsChart.tsx` — bar chart 30d en SVG inline. **Decisión**: NO añadir recharts/chart.js para mantener bundle bajo budget (CLAUDE.md §2.3). ~30 líneas de SVG con tooltip via `<title>`.
+   - `RecentDownloadsTable.tsx` — tabla shadcn con plugin/version/sitio/cuándo (formateo relativo).
+   - `TopPluginsTable.tsx` — tabla shadcn con plugin/versión/descargas (tabular-nums).
+   - `QuickActions.tsx` — botones a las pantallas legacy de Plugins / API Keys (links a `admin.php?page=…`).
+   - `DashboardPage.tsx` — composición vertical (header con botón "Actualizar" que invalida queries `['dashboard']`, KPIs, chart, grid 2 columnas con tablas, quick actions).
+   - `index.tsx` — entry-point con `QueryClientProvider`.
+8. **`src/lib/format.ts`** — helpers `formatNumber`, `formatDateTime`, `formatRelativeTime` con `Intl.*` y locale de `iaudConfig.locale`. Asume datetime de DB en UTC (ver "Limitación conocida" abajo).
+9. **`vite.config.ts`** — `__dirname` calculado vía `fileURLToPath(import.meta.url)` (ESM puro, no depende de polyfills de Vite).
+
+**Limitación conocida**: `formatDateTime` y `formatRelativeTime` interpretan los strings `downloaded_at` como UTC (`new Date(input + 'Z')`). Si el servidor MySQL no está en UTC, los timestamps mostrados estarán desplazados. WP recomienda UTC; revisar al cerrar Fase 5 con WP local.
+
+**Pendiente para 5.2 (API Keys)**: la primera pantalla con tabla grande activa el patrón de `useTanStackTable` shared hook + `<DataTable>` componente reutilizable. Los primitives `Table*` ya están listos para integrarse.
+
+**Verificación pendiente del usuario** (en WP local):
+
+- [ ] `cd imagina-updater-server/assets/admin && npm install && npm run build` — compila sin errores; genera `dashboard.{js,css,asset.php}` en `assets/dist/`.
+- [ ] Activar el plugin servidor; aparece la submenu "Dashboard (nuevo)".
+- [ ] Abrir esa pantalla — el bundle se carga, render del dashboard sin errores en consola, KPIs llegan, chart se dibuja.
+- [ ] Navegar a otra pantalla del plugin (ej. "Plugins" legacy) — el bundle SPA NO se carga (verificar en Network tab que `dashboard.js` no aparece).
+- [ ] Navegar a una pantalla NO del plugin (ej. "Posts") — verificar que ni el bundle SPA ni el CSS legacy del plugin se cargan ahí.
+- [ ] Subir plugin nuevo + descargar desde un sitio cliente; volver al dashboard y pulsar "Actualizar" — los contadores y la fila nueva aparecen.
+
+**Endpoints documentados (admin/v1)**:
 - `GET /admin/v1/dashboard/stats`
+- `GET /admin/v1/dashboard/downloads-30d`
 - `GET /admin/v1/dashboard/recent-downloads`
 - `GET /admin/v1/dashboard/top-plugins`
 
-#### 5.2 Página: API Keys
+#### 5.2 Página: API Keys — RESUELTA
 
-**Contenido**:
-- TanStack Table con: nombre, URL, tipo de acceso, activaciones (used/max), creada, último uso, estado, acciones
-- Filtros: estado (active/inactive), tipo de acceso, búsqueda por nombre
-- Drawer/Sheet de "Crear API Key" con formulario completo (nombre, URL, tipo de acceso, plugins/grupos, max_activations)
-- Drawer de "Editar API Key" (mismo form, con datos cargados)
-- Modal de confirmación al regenerar/desactivar
-- Banner destacado al crear: muestra la API key una vez con botón "Copiar"
+> **Estado**: ✅ resuelta en `feat/admin-api-keys` (encadenada sobre `feat/admin-dashboard`).
 
-**Endpoints nuevos**:
-- `GET /admin/v1/api-keys` (con paginación)
-- `POST /admin/v1/api-keys`
-- `PUT /admin/v1/api-keys/{id}`
-- `DELETE /admin/v1/api-keys/{id}`
-- `POST /admin/v1/api-keys/{id}/regenerate`
-- `POST /admin/v1/api-keys/{id}/toggle-active`
+**Acción ejecutada**:
 
-#### 5.3 Página: Plugins
+1. **Endpoints nuevos** en `Imagina_Updater_Server_Admin_REST_API` (todos heredan `manage_options` + nonce `wp_rest`):
+   - `GET /admin/v1/api-keys?page=&per_page=&status=&search=` — listado paginado con filtros. La columna `activations_used` se calcula con LEFT JOIN sobre `activations` (sólo `is_active=1`) para evitar N+1.
+   - `POST /admin/v1/api-keys` — crear. Devuelve `{ item, plain_key }`. **`plain_key` es la única vez que el backend expone la clave en claro.**
+   - `PUT /admin/v1/api-keys/{id}` — actualizar nombre/URL/permisos/max_activations. NO regenera la clave.
+   - `DELETE /admin/v1/api-keys/{id}` — eliminar.
+   - `POST /admin/v1/api-keys/{id}/regenerate` — genera nueva clave manteniendo el resto. Devuelve `{ item, plain_key }`.
+   - `POST /admin/v1/api-keys/{id}/toggle-active` — body `{ is_active: bool }` o sin body (toggle).
+   - `GET /admin/v1/plugins` (lite — id/slug/effective_slug/name) y `GET /admin/v1/plugin-groups` (lite — id/name) para los pickers del drawer. Las versiones completas llegan en 5.3 y 5.4.
+2. **Helpers** privados en la clase REST:
+   - `mask_api_key($plain)` → `ius_••••aBcD` (primeros 4 + últimos 4).
+   - `serialize_api_key($row, $activations_used)` → forma uniforme; **NUNCA** incluye `api_key` en claro.
+   - `parse_api_key_payload($request)` → sanitiza el body común a create + update.
+   - `load_api_key_serialized($id)` → reload con LEFT-JOIN del activations_used para devolver la fila tras mutación.
+3. **Wiring WP** (`admin/class-admin.php`):
+   - Nueva submenu **"API Keys (nuevo)"** convive con la legacy.
+   - Refactor del enqueue: `enqueue_scripts($hook)` ahora itera un map `[$hook_suffix => $bundle_slug]` y llama al método genérico `enqueue_spa_bundle($bundle)`. Esto reemplaza al `enqueue_spa_dashboard_assets()` específico de 5.0/5.1, y permite añadir cualquier pantalla SPA futura con dos líneas (un nuevo `add_submenu_page` + una entrada en el map).
+   - `render_spa_api_keys_page()` = contenedor mínimo (`<div id="iaud-api-keys"></div>`).
+4. **Vite multi-entry** ampliado: `PAGES = ['dashboard', 'api-keys']`. El emitter de `.asset.php` ya manejaba múltiples entries.
+5. **Primitives shadcn** nuevos en `src/components/ui/`:
+   - `input.tsx`, `label.tsx`, `textarea.tsx` — controlados, mismas tokens que el resto.
+   - `badge.tsx` — variantes default/secondary/success/warning/destructive/outline (cva).
+   - `drawer.tsx` — **implementación custom sin Radix** (~100 líneas). Maneja backdrop con click-to-close, Escape para cerrar, body scroll lock, slide-in con `tailwindcss-animate`. Documentado el camino para sustituirlo por `@radix-ui/react-dialog` cuando hagan falta focus traps o multi-instancia.
+6. **Componente reutilizable** `src/components/data-table.tsx` — wrapper minimalista sobre TanStack Table v8 con los primitives shadcn. Diseño plano: paginación/filtros server-side (la mantenemos en el REST). Si una pantalla concreta necesita client-side sorting/pagination con dataset pequeño, puede usar `useReactTable` directamente.
+7. **Página API Keys** en `src/pages/api-keys/` (8 archivos):
+   - `types.ts` — `ApiKey`, `ApiKeyFormValues`, `AccessType`, `StatusFilter`, lookups Lite.
+   - `api.ts` — 7 hooks de TanStack Query: `useApiKeysList` (con `placeholderData: prev → prev` para suavizar paginación), `useCreateApiKey`, `useUpdateApiKey`, `useDeleteApiKey`, `useToggleApiKeyActive`, `useRegenerateApiKey`, `usePluginsLite`, `usePluginGroupsLite`. Las mutaciones invalidan `['api-keys']` y, cuando aplica, también `['dashboard']`.
+   - `PluginPicker.tsx` — multi-select con búsqueda y checkboxes. Reutilizable para plugins y para grupos.
+   - `ApiKeyDrawer.tsx` — drawer create + edit en un solo componente. Reset al abrir/cambiar de modo. Radio cards para `access_type`. Renderiza `<PluginPicker>` condicional según el access_type. Validación inline (nombre + URL no vacíos).
+   - `PlainKeyBanner.tsx` — banner que muestra la clave **una sola vez** con botón "Copiar" (Clipboard API + fallback a `document.execCommand('copy')` para entornos no-HTTPS / navegadores viejos).
+   - `ApiKeysPage.tsx` — composición: header con CTA "Nueva API key", banner condicional, tabs (Todas/Activas/Inactivas), search input, `<DataTable>` con 7 columnas (sitio, api_key_masked, access_type badge, activations used/max, estado badge, último uso, acciones), pager simple Anterior/Siguiente. Acciones por fila: Editar, Toggle, Regenerar (con `window.confirm`), Eliminar (con `window.confirm`).
+   - `index.tsx` — entry-point con `QueryClientProvider`.
+   - `lib/api.ts` extendido inline con `adminPut`/`adminDelete` (se moverá a `src/lib/api.ts` cuando una segunda pantalla los necesite).
+8. **Confirmaciones destructivas**: implementadas con `window.confirm` para mantener bundle pequeño en esta primera iteración. Si el equipo decide pasar a `<AlertDialog>` (shadcn), se sustituyen los `window.confirm` por un componente reutilizable; tarea diferida hasta que haya un caso real de "deshacer" o copia rica que justifique.
 
-**Contenido**:
-- Tabla de plugins con: nombre, slug (mostrar `slug_override` si existe), versión actual, premium badge, grupos, descargas totales, última subida, acciones
-- Botón "Subir plugin" abre Drawer con uploader (drag-and-drop), checkbox "Es premium", textarea changelog, multi-select de grupos
-- Acciones por plugin: Ver versiones, Editar (slug_override, grupos, premium toggle, descripción), Eliminar, Re-inyectar protección
-- Indicador de progreso para uploads grandes
+**Decisiones de scope (deliberadas)**:
 
-**Endpoints nuevos**:
-- `GET /admin/v1/plugins`
-- `POST /admin/v1/plugins/upload` (multipart)
-- `PUT /admin/v1/plugins/{id}`
-- `DELETE /admin/v1/plugins/{id}`
-- `POST /admin/v1/plugins/{id}/toggle-premium`
-- `POST /admin/v1/plugins/{id}/reinject-protection`
-- `GET /admin/v1/plugins/{id}/versions`
+- **Drawer custom, no Radix**: ~5 KB ahorrados, suficiente para el caso de uso actual (un solo drawer abierto a la vez, formulario simple). Reemplazable cuando lo justifique.
+- **`window.confirm` en lugar de `<AlertDialog>`**: nativo, accesible, cero coste. Cumple la regla de no-regression del PHP legacy (que también usa confirmaciones nativas).
+- **`<select>` no necesario**: `access_type` se modela con radio cards (mejor UX para 3 opciones excluyentes con descripción) en lugar de un dropdown.
+- **No toast/snackbar**: errores se muestran inline en el drawer; éxitos cierran el drawer y refrescan la tabla. Si más adelante hay acciones background (regen + reload, batch delete), se añade un sistema de notificaciones.
 
-#### 5.4 Página: Plugin Groups
+**Verificación pendiente del usuario** (en WP local):
 
-**Contenido**:
-- Tabla de grupos con: nombre, descripción, plugins incluidos (count), creado, acciones
-- Drawer de crear/editar con multi-select de plugins (con búsqueda)
-- Acciones: editar, eliminar (con confirmación si tiene API keys vinculadas)
+- [ ] `cd imagina-updater-server/assets/admin && npm run build` — compila los **dos** bundles (`dashboard` + `api-keys`); ambos `.asset.php` se generan.
+- [ ] Aparece la submenu "API Keys (nuevo)". Abrir — el bundle se carga, tabla pinta (vacía o con keys existentes).
+- [ ] Crear: nombre + URL + access_type + max_activations → submit → banner aparece con la clave en claro y copy funcional → cerrar banner → la fila aparece en la tabla con `api_key_masked`.
+- [ ] Editar una key existente → cambia nombre/URL/access_type/permisos → guardar → fila refrescada.
+- [ ] Toggle activo/inactivo → estado cambia visual e instantáneo (mutation invalida la lista).
+- [ ] Regenerar → confirm → banner con la clave nueva.
+- [ ] Eliminar → confirm → fila desaparece.
+- [ ] Filtros: tabs Todas/Activas/Inactivas + búsqueda por nombre/URL — la URL del REST refleja `?status=&search=` y el pager se reinicia a 1.
+- [ ] Pager Anterior/Siguiente con >20 keys.
+- [ ] Network tab en pantalla "Plugins (legacy)" — bundle `api-keys.js` NO debe cargarse.
 
-**Endpoints nuevos**:
-- CRUD `/admin/v1/plugin-groups`
+**Pendiente para 5.3 (Plugins)**: la pantalla con upload de ZIP, drag-and-drop, premium toggle, listado de versiones por plugin, re-inyección de protección. El endpoint `GET /admin/v1/plugins` actual es la versión Lite — se ampliará con `?page=&search=`, plus 5+ endpoints nuevos. La pantalla reusará `<DataTable>`, `<Drawer>`, `<PluginPicker>` ya construidos.
 
-#### 5.5 Página: Activations
+#### 5.3 Página: Plugins — RESUELTA
 
-**Contenido**:
-- Tabla de activaciones con: dominio, API key (link), token (mascarado), activada, última verificación, estado, acciones
-- Filtros: API key (dropdown), estado, búsqueda por dominio
-- Acciones: desactivar (con confirmación)
+> **Estado**: ✅ resuelta en `feat/admin-plugins` (encadenada sobre `feat/admin-api-keys`).
 
-**Endpoints nuevos**:
-- `GET /admin/v1/activations`
-- `POST /admin/v1/activations/{id}/deactivate`
+**Acción ejecutada**:
 
-#### 5.6 Página: Logs
+1. **Endpoints nuevos** en `Imagina_Updater_Server_Admin_REST_API`:
+   - `GET /admin/v1/plugins?page=&per_page=&search=` — paginado, full. Devuelve `{ items, total, page, per_page, license_extension_active }`. Cada `PluginRow` incluye `total_downloads` (LEFT JOIN downloads + COUNT) y `group_ids` (cargado en bulk vía `load_group_ids_for_plugins` para evitar N+1). El helper `serialize_plugin` calcula `effective_slug` y respeta `is_premium` solo si la extensión está activa.
+   - `GET /admin/v1/plugins?lite=1` — modo dual: el endpoint anterior (Lite) creado en 5.2 ahora se obtiene con este flag. Pickers de la pantalla API Keys actualizados para añadir `?lite=1` al request.
+   - `POST /admin/v1/plugins/upload` — multipart. Body `plugin_file` (ZIP) + opcional `changelog`, `description`, `is_premium`, `group_ids[]`. Estrategia premium: el upload base hace `is_premium=0` (los hooks legacy NO inyectan), y si el body pidió premium hacemos `UPDATE is_premium=1` + `Imagina_License_SDK_Injector::inject_sdk_if_needed()` manualmente. Esto desacopla la SPA de la lectura `$_POST['is_premium']` del flujo legacy y mantiene los hooks intactos para el form PHP viejo (CLAUDE.md §4 regla 2).
+   - `PUT /admin/v1/plugins/{id}` — edita `slug_override`, `description`, `group_ids` (atómico via `set_plugin_groups`). NO toca `is_premium` (endpoint dedicado).
+   - `DELETE /admin/v1/plugins/{id}`.
+   - `POST /admin/v1/plugins/{id}/toggle-premium` — body `{ is_premium }` o toggle. Cuando enciende, intenta inyectar protección. Cuando apaga, NO desinyecta el código existente del ZIP (queda como tarea futura).
+   - `POST /admin/v1/plugins/{id}/reinject-protection` — re-inyecta. Maneja el shape `{ success, message }` que devuelve `inject_sdk_if_needed`.
+   - `GET /admin/v1/plugins/{id}/versions` — historial de versiones del plugin.
+2. **Helpers** privados nuevos: `license_extension_active()` (chequea `class_exists('Imagina_License_SDK_Injector')`), `serialize_plugin()`, `load_group_ids_for_plugins()` (bulk-load con `IN (?, ?, …)` para evitar N+1), `set_plugin_groups()` (delete + insert atómico), `load_plugin_serialized()`.
+3. **Wiring WP**:
+   - Submenu **"Plugins (nuevo)"** convive con la legacy.
+   - `enqueue_scripts($hook)` añade el slug en el map `[hook → bundle]`.
+   - `iaudConfig` ahora incluye `licenseExtensionActive` (boolean) — el frontend gatea visualmente las acciones premium/reinject según esto.
+   - `render_spa_plugins_page()` = contenedor mínimo (`<div id="iaud-plugins"></div>`).
+4. **Shared lib** `src/lib/api.ts` extendido:
+   - Promovidos `adminPut` / `adminDelete` (que en 5.2 vivían inline en `pages/api-keys/api.ts`).
+   - Nuevo `adminPostMultipart(path, FormData, { onProgress })` con XHR (necesario porque `fetch` no expone progreso de upload). Reportería de % via `xhr.upload.onprogress`.
+   - Tipo de `iaudConfig` extendido con `licenseExtensionActive?: boolean`.
+5. **Página Plugins** en `src/pages/plugins/` (8 archivos):
+   - `types.ts` — `PluginRow`, `PluginListResponse`, `PluginVersion`, `PluginUploadValues`, `PluginEditValues`.
+   - `lib.ts` — helper `formatBytes()`.
+   - `api.ts` — 7 hooks de TanStack Query: `usePluginsList` (con `placeholderData: prev → prev`), `usePluginVersions` (con `enabled: pluginId !== null`), `usePluginGroupsLite` (compartido con API Keys via misma queryKey), `useUploadPlugin` (acepta callback `onProgress`), `useUpdatePlugin`, `useDeletePlugin`, `useTogglePremium`, `useReinjectProtection`. Mutaciones invalidan `['plugins']`, `['plugins-lite']` (el picker de API Keys) y, cuando aplica, `['dashboard']`.
+   - `UploadDrawer.tsx` — drawer con drag-and-drop **sin librerías**. Usa eventos `onDragOver/onDragLeave/onDrop` nativos. Validación cliente de extensión `.zip`. Muestra archivo seleccionado con tamaño formateado. Progress bar inline durante el upload. Toggle premium SOLO se renderiza si `licenseExtensionActive`. Reusa `<PluginPicker>` para los grupos.
+   - `EditDrawer.tsx` — formulario de edición (slug_override, description, groups). Reset al abrir/cambiar de plugin. Reusa `<PluginPicker>`.
+   - `VersionsDrawer.tsx` — tabla read-only de versiones. Lee solo cuando el drawer está abierto (`enabled` en el query).
+   - `PluginsPage.tsx` — composición: header con CTA "Subir plugin", search input, `<DataTable>` con 6 columnas (Plugin con badge premium, Versión, Descargas, Grupos count, Última subida, Acciones), pager Anterior/Siguiente. Acciones por fila: Ver versiones, Editar, Toggle premium (gated), Re-inyectar (gated + solo si is_premium), Eliminar. Todas las acciones destructivas piden `window.confirm`.
+   - `index.tsx` — entry-point con `QueryClientProvider`.
+6. **Vite multi-entry** ampliado: `PAGES = ['dashboard', 'api-keys', 'plugins']`.
 
-**Contenido**:
-- Visor de logs con virtual scroll (TanStack Virtual o similar)
-- Filtros por nivel (DEBUG, INFO, WARNING, ERROR)
-- Búsqueda por texto
-- Botón "Limpiar logs"
-- Botón "Descargar logs"
+**Decisiones de scope (deliberadas)**:
 
-**Endpoints nuevos**:
-- `GET /admin/v1/logs?level=&search=&page=`
-- `DELETE /admin/v1/logs`
-- `GET /admin/v1/logs/download`
+- **Drag-and-drop sin librerías** — el patrón nativo del DOM (`onDragOver` + `onDrop`) es suficiente para nuestro caso (un solo file, validación simple). Cero dependencias añadidas.
+- **Toggle premium NO desinyecta** — apagar `is_premium=0` solo limpia el flag en BD; el código de protección permanece embebido en el ZIP. Desinyectar requiere parsing y rebuild adicional, fuera del scope de 5.3. El admin que necesite limpiar puede re-subir un ZIP fresco.
+- **Sin `<select>` de filtros** — solo búsqueda por nombre/slug. Si el equipo necesita filtros tipo "premium / no premium / con grupos / sin grupos", se añade en una iteración posterior.
+- **No bulk actions** — el listado actual no soporta selección múltiple ni operaciones en bote (delete masivo, toggle masivo). Si surge la necesidad real, se añade `<Checkbox>` columna 0 + barra de acciones flotante.
+- **VersionsDrawer read-only** — listar versiones, no eliminarlas ni promover una vieja a "current". Esas operaciones son raras y peligrosas; quedan en pantalla legacy hasta que aparezca un caso real.
+- **Modo `is_premium=true` en upload requiere extensión activa** — si la extensión no está cargada, el endpoint devuelve 400. La SPA oculta el checkbox; pero si alguien hace POST directo, el backend protege.
 
-#### 5.7 Página: Configuración
+**Verificación pendiente del usuario** (en WP local):
 
-**Contenido**:
-- Tabs: General, Logging, Mantenimiento (DB migrations, clear caches)
-- Forms standard de settings con validación
+- [ ] `cd imagina-updater-server/assets/admin && npm run build` — compila los **tres** bundles (`dashboard`, `api-keys`, `plugins`).
+- [ ] Aparece la submenu "Plugins (nuevo)". Tabla pinta los plugins existentes con `total_downloads`, badge premium (solo si extensión activa), grupos count.
+- [ ] Drag-and-drop de un ZIP en el drawer de upload — se ve el filename + tamaño. Submit con/sin premium → fila aparece.
+- [ ] Subida con archivo no-ZIP → error visible inline.
+- [ ] Editar slug_override → la columna refleja "(override de slug-original)" tras guardar.
+- [ ] Editar grupos → el contador de grupos cambia.
+- [ ] Toggle premium (con extensión activa) → badge aparece/desaparece. La acción de re-inyectar aparece solo cuando is_premium=1.
+- [ ] Re-inyectar → ZIP en disco se actualiza (puede verificarse con `unzip -p <zip> <main-file>.php | grep IMAGINA`).
+- [ ] Versiones drawer → lista con sizes, fechas y changelogs.
+- [ ] Eliminar → el plugin desaparece de la tabla y del picker de API Keys (cache invalidado).
+- [ ] Si la extensión está desactivada: no aparecen las acciones premium ni re-inyectar; el checkbox del drawer tampoco; backend devuelve 400 si se fuerza.
+- [ ] Picker de plugins en pantalla API Keys → sigue funcionando (consume `?lite=1`).
 
-**Endpoints nuevos**:
-- `GET /admin/v1/settings`
-- `PUT /admin/v1/settings`
-- `POST /admin/v1/maintenance/run-migrations`
-- `POST /admin/v1/maintenance/clear-rate-limits`
+**Pendiente para 5.4 (Plugin Groups)**: pantalla mucho más simple. Tabla de grupos, drawer create/edit con `<PluginPicker>` (ya construido). Endpoints: CRUD `/admin/v1/plugin-groups`. La pantalla reusará absolutamente todos los primitives.
+
+#### 5.4 Página: Plugin Groups — RESUELTA
+
+> **Estado**: ✅ resuelta en `feat/admin-plugin-groups` (encadenada sobre `feat/admin-plugins`).
+
+**Acción ejecutada**:
+
+1. **Endpoints CRUD** en `Imagina_Updater_Server_Admin_REST_API`:
+   - `GET /admin/v1/plugin-groups` — modo dual (mismo patrón que `/plugins`):
+     - `?lite=1` → array plano `[{id, name}]` (consumido por los pickers de drawers de API Keys y Plugins; rutas existentes ajustadas para añadir el flag).
+     - sin `lite` → `{ items: [...] }` con `id`, `name`, `description`, `plugin_count`, `linked_api_keys_count`, `created_at`.
+   - `POST /admin/v1/plugin-groups` — body `{ name, description?, plugin_ids? }`.
+   - `PUT /admin/v1/plugin-groups/{id}` — mismo body.
+   - `DELETE /admin/v1/plugin-groups/{id}` — devuelve `{ deleted, id, orphaned_api_keys_count }` para que la SPA pueda comunicar consecuencias.
+2. **Helpers** privados nuevos:
+   - `load_linked_api_keys_count_by_group(int[] $group_ids): array<int, int>` — usa `JSON_CONTAINS(allowed_groups, %s)` sobre `wp_imagina_updater_api_keys`. Cae a 0 silenciosamente si MySQL no expone `JSON_CONTAINS` (versiones <5.7), suprimiendo errores con `$wpdb->suppress_errors()`. La pantalla seguirá funcional sin ese contador.
+   - `load_plugin_group_serialized(int $id)` — recarga un grupo concreto con `plugin_count`, `plugin_ids`, `linked_api_keys_count`.
+   - `parse_plugin_group_payload($request)` — sanitiza body común (name + description + plugin_ids).
+3. **Wiring WP**:
+   - Submenu **"Grupos (nuevo)"** convive con la legacy.
+   - Map de enqueue actualizado: `[hook → 'plugin-groups']`.
+   - `render_spa_plugin_groups_page()` = contenedor mínimo.
+4. **Vite multi-entry** ampliado: `PAGES = ['dashboard', 'api-keys', 'plugins', 'plugin-groups']`. Cuarto bundle activo.
+5. **Pickers actualizados**: `usePluginGroupsLite()` en `pages/api-keys/api.ts` y `pages/plugins/api.ts` ahora consumen `?lite=1`.
+6. **Página Plugin Groups** en `src/pages/plugin-groups/` (5 archivos):
+   - `types.ts` — `PluginGroupRow`, `PluginGroupListResponse`, `PluginGroupFormValues`. `plugin_ids` es opcional (solo viene en el response de mutaciones, no en el listado).
+   - `api.ts` — 4 hooks: `usePluginGroupsList`, `usePluginsLite` (compartido vía mismo queryKey), `useCreatePluginGroup`, `useUpdatePluginGroup`, `useDeletePluginGroup`. Mutaciones invalidan `['plugin-groups']`, `['plugin-groups-lite']`, `['plugins']` (porque la columna "Grupos count" en la tabla de Plugins puede cambiar) y `['api-keys']` cuando se elimina un grupo (las keys vinculadas pierden acceso).
+   - `PluginGroupDrawer.tsx` — drawer create + edit en uno. Reset al abrir/cambiar editing. Reusa `<PluginPicker>` para los plugins. Banner amber-tinted cuando se edita un grupo con API keys vinculadas.
+   - `PluginGroupsPage.tsx` — composición lean: header con CTA, `<DataTable>` de 5 columnas (Nombre + descripción, Plugins count, API keys vinculadas, Creado, Acciones). Acción Eliminar con `window.confirm` que cita el número de API keys afectadas. NO hay tabs ni search por ahora (los listados de grupos suelen ser cortos; si el inventario crece se añade).
+   - `index.tsx` — entry-point con `QueryClientProvider`.
+
+**Decisiones de scope (deliberadas)**:
+
+- **Sin filtros ni paginación** — los grupos se cuentan en decenas, no en miles. Si crece el inventario se añade.
+- **Eliminación NO bloquea por API keys vinculadas** — solo avisa. El usuario decide. Las API keys con grupos huérfanos quedan funcionalmente igual al estado "tipo de acceso = grupos" sin grupos seleccionados (= sin acceso a nada). El admin debe reconfigurar esas keys explícitamente.
+- **`JSON_CONTAINS` con fallback a 0** — preferí compatibilidad ancha sobre exactitud absoluta del contador. En MySQL 5.6 (raro hoy) la columna mostraría `—` siempre. En MySQL 5.7+ / MariaDB 10.2.4+ funciona perfecto.
+- **No bulk actions** — mismo razonamiento que en 5.3.
+- **Sin search** — al ser pocos grupos, scrollear o usar Ctrl+F del navegador suele bastar. Reversible si llega feedback.
+
+**Verificación pendiente del usuario** (en WP local):
+
+- [ ] `cd imagina-updater-server/assets/admin && npm run build` — compila los **cuatro** bundles.
+- [ ] Aparece la submenu "Grupos (nuevo)". Tabla pinta los grupos existentes con `plugin_count` y `linked_api_keys_count` correctos.
+- [ ] Crear grupo: nombre + descripción + selección de plugins → fila aparece + `plugin_count` correcto.
+- [ ] Editar: cambiar nombre/descripción/plugins → fila se refresca. La columna "Grupos count" en la pantalla Plugins refleja el cambio.
+- [ ] Editar un grupo con API keys vinculadas: el banner amber aparece dentro del drawer.
+- [ ] Eliminar: confirm con conteo de API keys → fila desaparece + las keys afectadas siguen visibles en pantalla API Keys (cache `['api-keys']` invalidado).
+- [ ] Picker en API Keys / Plugins → sigue funcionando con `?lite=1`.
+- [ ] En MySQL antiguo sin `JSON_CONTAINS`: `linked_api_keys_count` muestra `—` pero todo lo demás funciona.
+
+**Pendiente para 5.5 (Activations)**: tabla con dropdown de filtro por API key (consumirá `?lite=1` o un nuevo lite endpoint para api-keys), filtro por estado, búsqueda por dominio, acción "desactivar". Reusará todos los primitives.
+
+#### 5.5 Página: Activations — RESUELTA
+
+> **Estado**: ✅ resuelta en `feat/admin-activations` (encadenada sobre `feat/admin-plugin-groups`).
+
+**Acción ejecutada**:
+
+1. **Endpoints nuevos** en `Imagina_Updater_Server_Admin_REST_API`:
+   - `GET /admin/v1/activations?page=&per_page=&status=&api_key_id=&search=` — paginado con LEFT JOIN sobre api_keys para incluir `site_name` sin un round-trip extra. Filtros combinables: estado (active/inactive/all), api_key_id (0 = todas) y `search` por dominio (LIKE).
+   - `POST /admin/v1/activations/{id}/deactivate` — wrapper sobre `Imagina_Updater_Server_Activations::deactivate_site($id)`. Devuelve la fila actualizada serializada.
+   - **Nuevo modo dual** en `GET /admin/v1/api-keys`: `?lite=1` devuelve `[{id, site_name}]` para alimentar el dropdown filtro de esta pantalla. La forma paginada existente sigue funcional.
+2. **Helpers** privados nuevos: `mask_activation_token()` (formato `iat_••••aBcD`) y `serialize_activation()` (forma uniforme con `is_active` boolean, fechas como strings, token mascarado).
+3. **Wiring WP** (`admin/class-admin.php`):
+   - Submenu **"Activaciones (nuevo)"** convive con la legacy.
+   - Map de enqueue actualizado: `[hook → 'activations']`.
+   - `render_spa_activations_page()` = contenedor mínimo (`<div id="iaud-activations"></div>`).
+4. **Vite multi-entry** ampliado: `PAGES = ['dashboard', 'api-keys', 'plugins', 'plugin-groups', 'activations']`. Quinto bundle.
+5. **Página Activations** en `src/pages/activations/` (4 archivos):
+   - `types.ts` — `ActivationRow`, `ActivationsListResponse`, `ApiKeyOptionLite`.
+   - `api.ts` — 3 hooks: `useActivationsList` (con `placeholderData`), `useApiKeysOptions` (consume `?lite=1`), `useDeactivateActivation`. La mutación invalida `['activations']`, `['api-keys']` (porque `activations_used` cambia) y `['dashboard']`.
+   - `ActivationsPage.tsx` — composición: header, tabs Todas/Activas/Inactivas, dropdown nativo `<select>` con todas las API keys + opción "Todas las API keys", search por dominio. `<DataTable>` de 6 columnas (Dominio + sub-línea con site_name de la API key, Token mascarado, Estado badge, Activada, Última verificación, Acciones). Pager Anterior/Siguiente. La acción "Desactivar" solo aparece cuando `is_active=true`; cuando ya está inactiva, muestra el `deactivated_at` en relativa.
+   - `index.tsx` — entry-point.
+
+**Decisiones de scope (deliberadas)**:
+
+- **`<select>` nativo para el filtro de API key** — ~0 KB extra vs. instalar Radix Select. Se ve consistente con el resto de inputs gracias a las clases utility.
+- **No se permite "reactivar"** — la activación se cierra; el sitio cliente debe pedir una nueva (`POST /activate`) para volver. Coherente con el flujo del dominio (CLAUDE.md §1.6); si en el futuro se necesita "rehydrate", se añade endpoint dedicado.
+- **Sin acciones bulk** — el caso de uso típico es desactivar puntualmente por sitio comprometido o cliente que se baja. Si surge demanda real, columna 0 + barra flotante.
+- **Token mascarado, no copiable** — no se expone el token en claro nunca (mismo principio que API Keys §5.2). El admin no debería tener motivo legítimo para copiarlo.
+
+**Verificación pendiente del usuario** (en WP local):
+
+- [ ] `cd imagina-updater-server/assets/admin && npm run build` — compila los **cinco** bundles.
+- [ ] Submenu "Activaciones (nuevo)" carga; tabla pinta activaciones existentes con dominio, site_name de la API key, token mascarado, estado.
+- [ ] Tabs Todas/Activas/Inactivas filtran correctamente.
+- [ ] Dropdown de API key filtra por `api_key_id`.
+- [ ] Búsqueda por dominio (LIKE).
+- [ ] Acción Desactivar → confirm → fila pasa a "Inactiva", `activations_used` de la pantalla API Keys decrementa, KPI del Dashboard refleja el cambio.
+- [ ] Activación ya inactiva muestra "Desactivada hace X" en lugar de botón.
+- [ ] Network tab: `activations.js` solo se carga en su pantalla.
+
+**Pendiente para 5.6 (Logs)**: visor con virtual scroll (TanStack Virtual), filtros por nivel, search, clear/download. Es la única pantalla con dataset potencialmente muy grande, así que activamos virtualization aquí por primera vez.
+
+#### 5.6 Página: Logs — RESUELTA
+
+> **Estado**: ✅ resuelta en `feat/admin-logs` (encadenada sobre `feat/admin-activations`).
+
+**Acción ejecutada**:
+
+1. **Endpoints nuevos** en `Imagina_Updater_Server_Admin_REST_API`:
+   - `GET /admin/v1/logs?page=&per_page=&level=&search=` — paginado. Lee y parsea el archivo de log completo en memoria, aplica filtros, devuelve la página solicitada en orden cronológico inverso. El logger rota archivos al exceder un umbral, así que el tamaño en disco está acotado y el parse en cada request es asumible. Devuelve además `log_enabled` (estado del logger) y `log_file` (basename) para informar al UI.
+   - `DELETE /admin/v1/logs` — wrapper sobre `Imagina_Updater_Server_Logger::clear_logs()` (limpia archivo principal + rotados).
+   - `GET /admin/v1/logs/download?_wpnonce=…` — descarga del archivo crudo. Usa el mismo patrón de streaming en chunks de 8 KB que la descarga de ZIP de plugins (Fase 3.3): memoria constante independientemente del tamaño. `Content-Type: text/plain`, `Content-Disposition: attachment` con nombre `imagina-updater-YYYYMMDD-HHMMSS.log`. El nonce viaja como query param para que el navegador pueda hacer "clic → guardar como" sin XHR.
+2. **Helper privado** `parse_log_file($file_path)` — parser regex del formato `[timestamp] [LEVEL] message[ | Context: {json}]` usado por `Imagina_Updater_Server_Logger::format_message`. Líneas mal formadas se conservan con `level=UNKNOWN` (compatibilidad con versiones antiguas del logger).
+3. **Wiring WP**:
+   - Submenu **"Logs (nuevo)"** convive con la legacy.
+   - Map de enqueue actualizado: `[hook → 'logs']`.
+   - `render_spa_logs_page()` = contenedor mínimo.
+4. **Vite multi-entry** ampliado: `PAGES = ['dashboard', 'api-keys', 'plugins', 'plugin-groups', 'activations', 'logs']`. Sexto bundle.
+5. **Página Logs** en `src/pages/logs/` (4 archivos):
+   - `types.ts` — `LogEntry`, `LogLevel` (DEBUG / INFO / WARNING / ERROR / UNKNOWN), `LogLevelFilter`, `LogsListResponse`.
+   - `api.ts` — 2 hooks (`useLogsList` con `placeholderData`, `useClearLogs`) + helper `getLogsDownloadUrl()` que construye la URL absoluta con `?_wpnonce=` para usar como `href` del botón Descargar (clic → save-as nativo).
+   - `LogsPage.tsx` — composición: header con CTAs Descargar / Limpiar (gated por `total > 0`), banner amber-tinted cuando `log_enabled=false` (logger deshabilitado en settings). Tabs por nivel (Todos/Debug/Info/Warning/Error) + search. Lista renderiza un `<ul>` con `<li>` por entrada — Badge de nivel con icono Lucide (Bug/Info/TriangleAlert/AlertCircle), timestamp formateado, mensaje con `line-clamp-2` por defecto, botón "Ver contexto" expande un `<pre>` con el JSON. Pager Anterior/Siguiente. Confirm con `window.confirm` antes de Limpiar.
+   - `index.tsx` — entry-point. `staleTime: 10s` (más corto que las otras pantallas: el log tiene actividad continua, queremos refrescos más vivos al volver).
+
+**Decisiones de scope (deliberadas)**:
+
+- **Sin virtual scroll** (CLAUDE.md mencionaba "TanStack Virtual o similar"). Razón: el log rota cuando crece, y la paginación server-side de 100 entradas/página rinde muy bien sin añadir librería. Si el equipo decide ver miles de líneas en una sola pantalla, instalar `@tanstack/react-virtual` (~5 KB) y reemplazar el `<ul>` por una `useVirtualizer` es ~30 líneas de cambio. Por defecto preferí budget pequeño + UX consistente con el resto de pantallas.
+- **Parsing en memoria** vs. streaming line-by-line: el archivo está acotado por la rotación del logger; preferí simplicidad sobre micro-optimización. Si en el futuro se cambia la política de rotación a archivos grandes, se puede pasar a `SplFileObject` con cursor.
+- **Descarga via anchor con nonce en query string** — es seguro porque solo `manage_options` ve la URL, y la cookie de WP también es necesaria. Alternativa con XHR + Blob descargado tendría peor UX (usuario no ve el progreso de save-as nativo del navegador).
+- **No tail-follow / live updates** — la pantalla muestra un snapshot. Refrescar = `placeholderData` mantiene la vista mientras llega la nueva. Tail-follow añade WebSocket o polling, ambos fuera de scope.
+- **Sin filtros por rango de fechas** — el filtro "from / to" es útil pero el caso típico es "ver lo último o buscar un texto", ya cubierto. Reversible.
+
+**Verificación pendiente del usuario** (en WP local):
+
+- [ ] `cd imagina-updater-server/assets/admin && npm run build` — compila los **seis** bundles.
+- [ ] Submenu "Logs (nuevo)" carga; entradas existentes aparecen ordenadas (más reciente primero).
+- [ ] Tabs Debug/Info/Warning/Error filtran. Búsqueda por texto en mensaje + contexto funciona.
+- [ ] Entrada con contexto: botón "Ver contexto" expande un `<pre>` con el JSON.
+- [ ] Limpiar → confirm → tabla queda vacía + archivo borrado en disco (verificable con `ls wp-content/uploads/imagina-updater-logs/`).
+- [ ] Descargar → navegador inicia descarga; archivo `.log` contiene exactamente el contenido en disco.
+- [ ] Si el logger está deshabilitado (Configuración): banner amber visible.
+- [ ] Network: bundle `logs.js` solo se carga en su pantalla.
+
+**Pendiente para 5.7 (Configuración)**: la última pantalla del servidor. Tabs General / Logging / Mantenimiento. Forms estándar + botones de mantenimiento (clear caches / run migrations).
+
+#### 5.7 Página: Configuración — RESUELTA
+
+> **Estado**: ✅ resuelta en `feat/admin-settings` (encadenada sobre `feat/admin-logs`). **Última pantalla del servidor**.
+
+**Acción ejecutada**:
+
+1. **Endpoints nuevos** en `Imagina_Updater_Server_Admin_REST_API`:
+   - `GET /admin/v1/settings` — devuelve `{ settings: { enable_logging, log_level }, system: { plugin_version, db_version, php_version, wp_version, mysql_version, license_extension_active, object_cache_supported } }`. Settings vienen de `imagina_updater_server_config`; la sub-respuesta `system` es read-only y consolida la info legacy de la pestaña General.
+   - `PUT /admin/v1/settings` — body parcial `{ enable_logging?, log_level? }`. Valida que `log_level` sea uno de DEBUG/INFO/WARNING/ERROR (case-insensitive); cualquier otro valor → 400. Devuelve la forma completa post-update para que el cliente actualice cache sin un GET extra.
+   - `POST /admin/v1/maintenance/run-migrations` — ejecuta `Database::create_tables()` + `Database::run_migrations()` (ambas idempotentes, seguras en caliente). Devuelve `{ success: true, db_version }`.
+   - `POST /admin/v1/maintenance/clear-rate-limits` — wrapper sobre `Imagina_Updater_Server_REST_API::clear_rate_limits()` (Fase 3.4, método estático). El método ya valida `manage_options` + throttle de 60 s; la respuesta serializa `{ success, message }` para que la UI distinga ejecución exitosa de rechazo por throttle.
+2. **Helpers** privados nuevos:
+   - `read_settings_config()` — devuelve la forma canónica con defaults (`enable_logging=true`, `log_level='INFO'`) aunque la opción no exista o esté corrupta. Garantiza que el frontend siempre recibe el shape esperado.
+   - `read_system_info()` — consolida versiones + flags (license_extension_active reusa el helper de Fase 5.3; object_cache_supported chequea `wp_cache_supports('flush_group')`).
+3. **Wiring WP**:
+   - Submenu **"Configuración (nuevo)"** convive con la legacy (séptima y última submenu SPA del rediseño).
+   - Map de enqueue actualizado: `[hook → 'settings']`.
+   - `render_spa_settings_page()` = contenedor mínimo.
+4. **Vite multi-entry** ampliado: `PAGES = ['dashboard', 'api-keys', 'plugins', 'plugin-groups', 'activations', 'logs', 'settings']`. **Séptimo y último bundle del servidor**.
+5. **Página Configuración** en `src/pages/settings/` (3 archivos):
+   - `types.ts` — `SettingsValues` (enable_logging + log_level), `SystemInfo`, `SettingsResponse`, `SettingsTab` (general/logging/maintenance).
+   - `api.ts` — 4 hooks: `useSettings`, `useUpdateSettings` (con `qc.setQueryData` para reflejar el response sin invalidación, evitando flicker), `useRunMigrations`, `useClearRateLimits`.
+   - `SettingsPage.tsx` — composición:
+     - Header + nav de tabs (sin Radix; `<button>` con border-bottom condicional).
+     - **Tab General** — read-only: tabla `<dl>` con plugin/db/PHP/WP/MySQL versions + badges de estado (license-extension activa/inactiva, object cache soportado/no). Útil para diagnóstico al pegar en un soporte.
+     - **Tab Logging** — formulario controlado con checkbox enable_logging + `<select>` log_level (deshabilitado cuando logging está off). Estado `dirty` calculado vs. el valor del servidor; botón Save deshabilitado cuando no hay cambios. `useEffect` resincroniza el estado local si la query refresca con datos nuevos.
+     - **Tab Mantenimiento** — dos cards independientes:
+       - "Re-ejecutar migraciones" — un click; mensaje de éxito con `db_version` resultante.
+       - "Limpiar rate-limits" — `window.confirm` + dispatch; el mensaje refleja el `success` del backend (verde si ok, ámbar si rechazó por throttle/permisos).
+   - `index.tsx` — entry-point con `QueryClientProvider`.
+
+**Decisiones de scope (deliberadas)**:
+
+- **Sin Radix Tabs** — `<button>` simple con border-bottom + state local. ~0 KB extra. Si alguna vez se necesitan teclas izquierda/derecha o ARIA Tabs estricto, swap a `@radix-ui/react-tabs` es ~20 líneas.
+- **`useUpdateSettings` setea cache** en lugar de invalidar — el endpoint devuelve la forma completa, así que `qc.setQueryData` evita un GET extra y el flicker de skeleton entre updates.
+- **Sin "reset to defaults"** — los defaults aplican implícitamente cuando el option no existe; un botón "Reset" de UI requiere borrar la option, lo que tiene blast radius más grande que añadir hoy. Reversible.
+- **Sin export/import de settings** — la matriz de settings actual es trivial (2 valores). Si crece a docenas se reconsidera.
+- **Mantenimiento expone solo lo idempotente** (migrations + clear-rate-limits). No exponemos "Wipe all data" / "Reset DB" en UI; esas operaciones siguen siendo manuales por seguridad.
+
+**Verificación pendiente del usuario** (en WP local):
+
+- [ ] `cd imagina-updater-server/assets/admin && npm run build` — compila los **siete** bundles del servidor.
+- [ ] Submenu "Configuración (nuevo)" carga; tabs General/Logging/Mantenimiento navegables sin recarga.
+- [ ] Tab General pinta versiones + badges correctamente.
+- [ ] Tab Logging: cambiar el nivel + togglear logging, Save habilita cuando hay cambios y se deshabilita tras guardar; el cambio se refleja al instante en el banner de la pantalla Logs.
+- [ ] Tab Mantenimiento: ejecutar migraciones devuelve `db_version`; ejecutar dos veces seguidas el botón "Limpiar rate-limits" muestra el mensaje ámbar de throttle en la segunda llamada.
+- [ ] Network: `settings.js` solo se carga en su pantalla.
+
+**Pendiente para la verificación funcional final** (todas las pantallas ya están construidas):
+
+- Smoke test de las 7 pantallas SPA en una WP local con datos reales.
+- Confirmar que ningún bundle se carga fuera de su submenu.
+- Verificar que las pantallas legacy siguen funcionales hasta que se haga el flip.
+
+**Pendiente para 5.B (Cliente)**: replicar el approach completo en `imagina-updater-client`. Mismo stack, mismo prefijo, mismos primitives — los componentes en `imagina-updater-server/assets/admin/src/components/ui/` se copian (o se mueven a un paquete compartido si en algún momento se decide). Pantallas estimadas: Dashboard (estado conexión, próximas verificaciones), Configuración (URL servidor, API key, modo de visualización), Plugins disponibles (lista del servidor con instalación/habilitación).
 
 #### 5.B Cliente — Rediseño posterior
 

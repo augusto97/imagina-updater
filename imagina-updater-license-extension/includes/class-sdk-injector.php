@@ -363,22 +363,31 @@ class Imagina_License_SDK_Injector {
      * @return array
      */
     private static function rezip_plugin($extract_dir, $output_zip) {
-        // Crear backup del ZIP original
-        $backup_path = $output_zip . '.backup';
-        if (file_exists($output_zip)) {
-            copy($output_zip, $backup_path);
-            unlink($output_zip);
+        // Fase 4.3 — Two-phase commit:
+        // 1. Construir el ZIP nuevo en $output_zip.new (el original NO se toca).
+        // 2. Si cualquier paso falla (open, addFile, close), borrar .new y
+        //    devolver error. El original queda intacto.
+        // 3. En éxito, rename($new_path, $output_zip) — operación atómica en
+        //    ext4/xfs/btrfs (la mayoría de filesystems POSIX). Si rename
+        //    falla (caso muy raro: cross-filesystem, permisos), también se
+        //    deja el original intacto.
+        //
+        // Esto reemplaza el patrón anterior con .backup que entre el unlink
+        // del original y el close exitoso del ZIP nuevo dejaba una ventana
+        // donde un crash de PHP corrompía el archivo.
+
+        $new_path = $output_zip . '.new';
+
+        // Si por algún motivo quedó un .new de un intento anterior, eliminarlo.
+        if (file_exists($new_path)) {
+            @unlink($new_path);
         }
 
         $zip = new ZipArchive();
-        if ($zip->open($output_zip, ZipArchive::CREATE) !== true) {
-            // Restaurar backup
-            if (file_exists($backup_path)) {
-                rename($backup_path, $output_zip);
-            }
+        if ($zip->open($new_path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
             return array(
                 'success' => false,
-                'message' => 'No se pudo crear el archivo ZIP'
+                'message' => 'No se pudo crear el archivo ZIP temporal'
             );
         }
 
@@ -392,15 +401,37 @@ class Imagina_License_SDK_Injector {
             if (!$file->isDir()) {
                 $file_path = $file->getRealPath();
                 $relative_path = substr($file_path, strlen($extract_dir) + 1);
-                $zip->addFile($file_path, $relative_path);
+                if (!$zip->addFile($file_path, $relative_path)) {
+                    $zip->close();
+                    @unlink($new_path);
+                    return array(
+                        'success' => false,
+                        'message' => 'Error al añadir archivo al ZIP: ' . $relative_path
+                    );
+                }
             }
         }
 
-        $zip->close();
+        // ZipArchive::close() devuelve false si hubo errores escribiendo a
+        // disco (espacio, permisos, EIO). Si falla, el .new puede estar
+        // corrupto pero el original sigue intacto.
+        if (!$zip->close()) {
+            @unlink($new_path);
+            return array(
+                'success' => false,
+                'message' => 'Error al cerrar el archivo ZIP temporal'
+            );
+        }
 
-        // Eliminar backup
-        if (file_exists($backup_path)) {
-            unlink($backup_path);
+        // Reemplazo atómico: en filesystems POSIX rename() sobre el mismo
+        // mountpoint es atómico; readers concurrentes ven el archivo viejo
+        // o el nuevo, nunca un archivo a medio escribir.
+        if (!@rename($new_path, $output_zip)) {
+            @unlink($new_path);
+            return array(
+                'success' => false,
+                'message' => 'No se pudo reemplazar el ZIP original (rename falló)'
+            );
         }
 
         return array(

@@ -22,6 +22,58 @@ class Imagina_Updater_Server_Admin {
     private static $instance = null;
 
     /**
+     * Hook suffix devuelto por add_submenu_page() para la pantalla SPA
+     * del Dashboard (Fase 5.1). Se compara EXACTAMENTE en
+     * `enqueue_scripts()` para que el bundle React solo se cargue ahí
+     * (CLAUDE.md §4 regla 3).
+     *
+     * @var string
+     */
+    private $spa_dashboard_hook = '';
+
+    /**
+     * Hook suffix de la pantalla SPA de API Keys (Fase 5.2).
+     *
+     * @var string
+     */
+    private $spa_api_keys_hook = '';
+
+    /**
+     * Hook suffix de la pantalla SPA de Plugins (Fase 5.3).
+     *
+     * @var string
+     */
+    private $spa_plugins_hook = '';
+
+    /**
+     * Hook suffix de la pantalla SPA de Plugin Groups (Fase 5.4).
+     *
+     * @var string
+     */
+    private $spa_plugin_groups_hook = '';
+
+    /**
+     * Hook suffix de la pantalla SPA de Activations (Fase 5.5).
+     *
+     * @var string
+     */
+    private $spa_activations_hook = '';
+
+    /**
+     * Hook suffix de la pantalla SPA de Logs (Fase 5.6).
+     *
+     * @var string
+     */
+    private $spa_logs_hook = '';
+
+    /**
+     * Hook suffix de la pantalla SPA de Configuración (Fase 5.7).
+     *
+     * @var string
+     */
+    private $spa_settings_hook = '';
+
+    /**
      * Obtener instancia
      */
     public static function get_instance() {
@@ -116,6 +168,78 @@ class Imagina_Updater_Server_Admin {
             'imagina-updater-settings',
             array($this, 'render_settings_page')
         );
+
+        // Pantalla SPA del Dashboard (Fase 5.1). Convive con la
+        // versión PHP legacy mientras se completa el rediseño; cuando
+        // las 7 pantallas SPA estén listas se dará el flip.
+        $this->spa_dashboard_hook = add_submenu_page(
+            'imagina-updater-server',
+            __('Dashboard (nuevo)', 'imagina-updater-server'),
+            __('Dashboard (nuevo)', 'imagina-updater-server'),
+            'manage_options',
+            'imagina-updater-dashboard-spa',
+            array($this, 'render_spa_dashboard_page')
+        );
+
+        // Pantalla SPA de API Keys (Fase 5.2).
+        $this->spa_api_keys_hook = add_submenu_page(
+            'imagina-updater-server',
+            __('API Keys (nuevo)', 'imagina-updater-server'),
+            __('API Keys (nuevo)', 'imagina-updater-server'),
+            'manage_options',
+            'imagina-updater-api-keys-spa',
+            array($this, 'render_spa_api_keys_page')
+        );
+
+        // Pantalla SPA de Plugins (Fase 5.3).
+        $this->spa_plugins_hook = add_submenu_page(
+            'imagina-updater-server',
+            __('Plugins (nuevo)', 'imagina-updater-server'),
+            __('Plugins (nuevo)', 'imagina-updater-server'),
+            'manage_options',
+            'imagina-updater-plugins-spa',
+            array($this, 'render_spa_plugins_page')
+        );
+
+        // Pantalla SPA de Plugin Groups (Fase 5.4).
+        $this->spa_plugin_groups_hook = add_submenu_page(
+            'imagina-updater-server',
+            __('Grupos (nuevo)', 'imagina-updater-server'),
+            __('Grupos (nuevo)', 'imagina-updater-server'),
+            'manage_options',
+            'imagina-updater-plugin-groups-spa',
+            array($this, 'render_spa_plugin_groups_page')
+        );
+
+        // Pantalla SPA de Activations (Fase 5.5).
+        $this->spa_activations_hook = add_submenu_page(
+            'imagina-updater-server',
+            __('Activaciones (nuevo)', 'imagina-updater-server'),
+            __('Activaciones (nuevo)', 'imagina-updater-server'),
+            'manage_options',
+            'imagina-updater-activations-spa',
+            array($this, 'render_spa_activations_page')
+        );
+
+        // Pantalla SPA de Logs (Fase 5.6).
+        $this->spa_logs_hook = add_submenu_page(
+            'imagina-updater-server',
+            __('Logs (nuevo)', 'imagina-updater-server'),
+            __('Logs (nuevo)', 'imagina-updater-server'),
+            'manage_options',
+            'imagina-updater-logs-spa',
+            array($this, 'render_spa_logs_page')
+        );
+
+        // Pantalla SPA de Configuración (Fase 5.7).
+        $this->spa_settings_hook = add_submenu_page(
+            'imagina-updater-server',
+            __('Configuración (nuevo)', 'imagina-updater-server'),
+            __('Configuración (nuevo)', 'imagina-updater-server'),
+            'manage_options',
+            'imagina-updater-settings-spa',
+            array($this, 'render_spa_settings_page')
+        );
     }
 
     /**
@@ -124,6 +248,25 @@ class Imagina_Updater_Server_Admin {
     public function enqueue_scripts($hook) {
         if (strpos($hook, 'imagina-updater') === false) {
             return;
+        }
+
+        // Pantallas SPA: solo el bundle React (sin CSS legacy ni JS
+        // jQuery del admin viejo). Comparación exacta con el hook
+        // suffix capturado al registrar la submenu.
+        $spa_pages = array(
+            $this->spa_dashboard_hook      => 'dashboard',
+            $this->spa_api_keys_hook       => 'api-keys',
+            $this->spa_plugins_hook        => 'plugins',
+            $this->spa_plugin_groups_hook  => 'plugin-groups',
+            $this->spa_activations_hook    => 'activations',
+            $this->spa_logs_hook           => 'logs',
+            $this->spa_settings_hook       => 'settings',
+        );
+        foreach ($spa_pages as $spa_hook => $bundle) {
+            if ('' !== $spa_hook && $hook === $spa_hook) {
+                $this->enqueue_spa_bundle($bundle);
+                return;
+            }
         }
 
         wp_enqueue_style(
@@ -135,6 +278,181 @@ class Imagina_Updater_Server_Admin {
 
         // Script principal para todas las páginas de Imagina Updater
         wp_add_inline_script('jquery', $this->get_admin_js());
+    }
+
+    /**
+     * Enqueue genérico de un bundle SPA (Fase 5.x).
+     *
+     * Cada bundle vive en `assets/dist/<slug>.{js,css}` con un
+     * `<slug>.asset.php` adyacente generado por Vite (dependencies
+     * + version hash). Si el build no existe se muestra un aviso al
+     * admin y no se enqueua nada — evita errores 404 silenciosos.
+     *
+     * @param string $bundle Slug del bundle (`dashboard`, `api-keys`, …).
+     */
+    private function enqueue_spa_bundle($bundle) {
+        $dist_dir = IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'assets/dist/';
+        $dist_url = IMAGINA_UPDATER_SERVER_PLUGIN_URL . 'assets/dist/';
+        $asset    = $dist_dir . $bundle . '.asset.php';
+
+        if (!file_exists($asset)) {
+            add_action('admin_notices', array($this, 'render_spa_build_missing_notice'));
+            return;
+        }
+
+        $manifest = include $asset;
+        if (!is_array($manifest)) {
+            $manifest = array('dependencies' => array(), 'version' => IMAGINA_UPDATER_SERVER_VERSION);
+        }
+        $version = isset($manifest['version']) ? $manifest['version'] : IMAGINA_UPDATER_SERVER_VERSION;
+        $deps    = isset($manifest['dependencies']) ? $manifest['dependencies'] : array();
+
+        $handle = 'iaud-' . $bundle;
+        wp_enqueue_script(
+            $handle,
+            $dist_url . $bundle . '.js',
+            $deps,
+            $version,
+            true
+        );
+        wp_enqueue_style(
+            $handle,
+            $dist_url . $bundle . '.css',
+            array(),
+            $version
+        );
+
+        wp_set_script_translations($handle, 'imagina-updater-server');
+
+        $current_user = wp_get_current_user();
+
+        wp_localize_script(
+            $handle,
+            'iaudConfig',
+            array(
+                'apiUrl'                  => esc_url_raw(rest_url('imagina-updater/v1/')),
+                'adminUrl'                => esc_url_raw(rest_url('imagina-updater/admin/v1/')),
+                'nonce'                   => wp_create_nonce('wp_rest'),
+                'currentUser'             => $current_user instanceof WP_User ? $current_user->display_name : '',
+                'locale'                  => str_replace('_', '-', get_user_locale()),
+                'siteUrl'                 => esc_url_raw(home_url('/')),
+                'licenseExtensionActive'  => class_exists('Imagina_License_SDK_Injector'),
+            )
+        );
+    }
+
+    /**
+     * Aviso si el bundle SPA no está construido (dev environment sin
+     * `npm run build`).
+     */
+    public function render_spa_build_missing_notice() {
+        echo '<div class="notice notice-warning"><p>';
+        echo esc_html__(
+            'El bundle del nuevo Dashboard no está construido. Ejecuta `npm run build` en imagina-updater-server/assets/admin/ para generarlo.',
+            'imagina-updater-server'
+        );
+        echo '</p></div>';
+    }
+
+    /**
+     * Renderiza el contenedor de la SPA del Dashboard (Fase 5.1).
+     *
+     * El PHP queda como contenedor mínimo (CLAUDE.md §4 regla 11): solo
+     * el `<div>` raíz al que React monta. Toda la UI vive en el bundle.
+     */
+    public function render_spa_dashboard_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Permisos insuficientes.', 'imagina-updater-server'));
+        }
+        ?>
+        <div class="wrap">
+            <div id="iaud-dashboard"></div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Renderiza el contenedor de la SPA de API Keys (Fase 5.2).
+     */
+    public function render_spa_api_keys_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Permisos insuficientes.', 'imagina-updater-server'));
+        }
+        ?>
+        <div class="wrap">
+            <div id="iaud-api-keys"></div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Renderiza el contenedor de la SPA de Plugins (Fase 5.3).
+     */
+    public function render_spa_plugins_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Permisos insuficientes.', 'imagina-updater-server'));
+        }
+        ?>
+        <div class="wrap">
+            <div id="iaud-plugins"></div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Renderiza el contenedor de la SPA de Plugin Groups (Fase 5.4).
+     */
+    public function render_spa_plugin_groups_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Permisos insuficientes.', 'imagina-updater-server'));
+        }
+        ?>
+        <div class="wrap">
+            <div id="iaud-plugin-groups"></div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Renderiza el contenedor de la SPA de Activations (Fase 5.5).
+     */
+    public function render_spa_activations_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Permisos insuficientes.', 'imagina-updater-server'));
+        }
+        ?>
+        <div class="wrap">
+            <div id="iaud-activations"></div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Renderiza el contenedor de la SPA de Logs (Fase 5.6).
+     */
+    public function render_spa_logs_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Permisos insuficientes.', 'imagina-updater-server'));
+        }
+        ?>
+        <div class="wrap">
+            <div id="iaud-logs"></div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Renderiza el contenedor de la SPA de Configuración (Fase 5.7).
+     */
+    public function render_spa_settings_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Permisos insuficientes.', 'imagina-updater-server'));
+        }
+        ?>
+        <div class="wrap">
+            <div id="iaud-settings"></div>
+        </div>
+        <?php
     }
 
     /**

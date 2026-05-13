@@ -14,7 +14,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
  * Para añadir una pantalla nueva: crear `src/pages/<name>/index.tsx` y
  * añadir el slug aquí.
  */
-const PAGES = ['dashboard', 'api-keys'] as const;
+const PAGES = ['dashboard', 'api-keys', 'plugins'] as const;
 
 /**
  * Emite, junto a cada bundle, un archivo `<entry>.asset.php` que el

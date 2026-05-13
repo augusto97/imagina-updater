@@ -183,8 +183,14 @@ class Imagina_Updater_Server_Admin_REST_API {
             '/plugins',
             array(
                 'methods'             => WP_REST_Server::READABLE,
-                'callback'            => array($this, 'list_plugins_lite'),
+                'callback'            => array($this, 'list_plugins'),
                 'permission_callback' => array($this, 'check_admin_permissions'),
+                'args'                => array(
+                    'lite'     => array('type' => 'boolean', 'default' => false),
+                    'page'     => array('type' => 'integer', 'default' => 1, 'minimum' => 1),
+                    'per_page' => array('type' => 'integer', 'default' => 20, 'minimum' => 1, 'maximum' => 100),
+                    'search'   => array('type' => 'string', 'default' => ''),
+                ),
             )
         );
 
@@ -194,6 +200,65 @@ class Imagina_Updater_Server_Admin_REST_API {
             array(
                 'methods'             => WP_REST_Server::READABLE,
                 'callback'            => array($this, 'list_plugin_groups_lite'),
+                'permission_callback' => array($this, 'check_admin_permissions'),
+            )
+        );
+
+        // ---- Fase 5.3: Plugins CRUD + upload + versions -------------
+
+        register_rest_route(
+            self::NAMESPACE,
+            '/plugins/upload',
+            array(
+                'methods'             => WP_REST_Server::CREATABLE,
+                'callback'            => array($this, 'upload_plugin'),
+                'permission_callback' => array($this, 'check_admin_permissions'),
+            )
+        );
+
+        register_rest_route(
+            self::NAMESPACE,
+            '/plugins/(?P<id>\d+)',
+            array(
+                array(
+                    'methods'             => WP_REST_Server::EDITABLE,
+                    'callback'            => array($this, 'update_plugin'),
+                    'permission_callback' => array($this, 'check_admin_permissions'),
+                ),
+                array(
+                    'methods'             => WP_REST_Server::DELETABLE,
+                    'callback'            => array($this, 'delete_plugin'),
+                    'permission_callback' => array($this, 'check_admin_permissions'),
+                ),
+            )
+        );
+
+        register_rest_route(
+            self::NAMESPACE,
+            '/plugins/(?P<id>\d+)/toggle-premium',
+            array(
+                'methods'             => WP_REST_Server::CREATABLE,
+                'callback'            => array($this, 'toggle_plugin_premium'),
+                'permission_callback' => array($this, 'check_admin_permissions'),
+            )
+        );
+
+        register_rest_route(
+            self::NAMESPACE,
+            '/plugins/(?P<id>\d+)/reinject-protection',
+            array(
+                'methods'             => WP_REST_Server::CREATABLE,
+                'callback'            => array($this, 'reinject_plugin_protection'),
+                'permission_callback' => array($this, 'check_admin_permissions'),
+            )
+        );
+
+        register_rest_route(
+            self::NAMESPACE,
+            '/plugins/(?P<id>\d+)/versions',
+            array(
+                'methods'             => WP_REST_Server::READABLE,
+                'callback'            => array($this, 'list_plugin_versions'),
                 'permission_callback' => array($this, 'check_admin_permissions'),
             )
         );
@@ -721,16 +786,23 @@ class Imagina_Updater_Server_Admin_REST_API {
     }
 
     /**
-     * GET /admin/v1/plugins (lite)
+     * GET /admin/v1/plugins
      *
-     * Listado minimalista (id, slug, name) para los pickers del
-     * drawer de creación/edición de API keys. La versión completa,
-     * con subida de ZIPs, versiones y filtros, se construye en 5.3.
+     * Modo dual:
+     *   - `?lite=1` → array plano `[{id, slug, effective_slug, name}]`,
+     *     usado por los pickers del drawer de API Keys.
+     *   - Sin `lite` → paginado con todos los campos para la pantalla
+     *     de Plugins (Fase 5.3).
      */
-    public function list_plugins_lite(WP_REST_Request $request) {
-        global $wpdb;
+    public function list_plugins(WP_REST_Request $request) {
+        if ($request->get_param('lite')) {
+            return $this->list_plugins_lite_response();
+        }
+        return $this->list_plugins_full_response($request);
+    }
 
-        unset($request);
+    private function list_plugins_lite_response() {
+        global $wpdb;
 
         $plugins_table = $wpdb->prefix . 'imagina_updater_plugins';
 
@@ -748,6 +820,141 @@ class Imagina_Updater_Server_Admin_REST_API {
         unset($row);
 
         return rest_ensure_response($rows);
+    }
+
+    private function list_plugins_full_response(WP_REST_Request $request) {
+        global $wpdb;
+
+        $page     = max(1, (int) $request->get_param('page'));
+        $per_page = max(1, min(100, (int) $request->get_param('per_page')));
+        $search   = trim((string) $request->get_param('search'));
+        $offset   = ($page - 1) * $per_page;
+
+        $plugins_table   = $wpdb->prefix . 'imagina_updater_plugins';
+        $downloads_table = $wpdb->prefix . 'imagina_updater_downloads';
+        $items_table     = $wpdb->prefix . 'imagina_updater_plugin_group_items';
+
+        $premium_active = $this->license_extension_active();
+        $premium_select = $premium_active ? 'p.is_premium AS is_premium,' : '0 AS is_premium,';
+
+        $where      = array();
+        $where_args = array();
+        if ('' !== $search) {
+            $like         = '%' . $wpdb->esc_like($search) . '%';
+            $where[]      = '(p.name LIKE %s OR p.slug LIKE %s OR p.slug_override LIKE %s)';
+            $where_args[] = $like;
+            $where_args[] = $like;
+            $where_args[] = $like;
+        }
+        $where_sql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+
+        $count_sql = "SELECT COUNT(*) FROM {$plugins_table} p {$where_sql}";
+        $total     = (int) ($where_args
+            ? $wpdb->get_var($wpdb->prepare($count_sql, $where_args))
+            : $wpdb->get_var($count_sql));
+
+        $list_sql = "SELECT p.id, p.slug, p.slug_override, p.name, p.description,
+                            p.author, p.homepage, p.current_version, p.file_size,
+                            p.uploaded_at, {$premium_select}
+                            COALESCE(d.cnt, 0) AS total_downloads
+                     FROM {$plugins_table} p
+                     LEFT JOIN (
+                         SELECT plugin_id, COUNT(*) AS cnt
+                         FROM {$downloads_table}
+                         GROUP BY plugin_id
+                     ) d ON d.plugin_id = p.id
+                     {$where_sql}
+                     ORDER BY p.uploaded_at DESC
+                     LIMIT %d OFFSET %d";
+
+        $list_args = array_merge($where_args, array($per_page, $offset));
+        $rows      = $wpdb->get_results($wpdb->prepare($list_sql, $list_args));
+
+        $items = array();
+        if (is_array($rows)) {
+            // Cargar group_ids en bulk para evitar N+1.
+            $plugin_ids = array_map(static function ($r) { return (int) $r->id; }, $rows);
+            $group_ids_by_plugin = $this->load_group_ids_for_plugins($plugin_ids, $items_table);
+
+            foreach ($rows as $row) {
+                $items[] = $this->serialize_plugin($row, $group_ids_by_plugin, $premium_active);
+            }
+        }
+
+        return rest_ensure_response(
+            array(
+                'items'                    => $items,
+                'total'                    => $total,
+                'page'                     => $page,
+                'per_page'                 => $per_page,
+                'license_extension_active' => $premium_active,
+            )
+        );
+    }
+
+    /**
+     * @param int[]  $plugin_ids
+     * @param string $items_table
+     * @return array<int, int[]>
+     */
+    private function load_group_ids_for_plugins($plugin_ids, $items_table) {
+        global $wpdb;
+
+        $by_plugin = array();
+        if (empty($plugin_ids)) {
+            return $by_plugin;
+        }
+        $placeholders = implode(',', array_fill(0, count($plugin_ids), '%d'));
+        $rows         = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT plugin_id, group_id FROM {$items_table} WHERE plugin_id IN ({$placeholders})",
+                $plugin_ids
+            )
+        );
+        if (!is_array($rows)) {
+            return $by_plugin;
+        }
+        foreach ($rows as $row) {
+            $pid = (int) $row->plugin_id;
+            if (!isset($by_plugin[$pid])) {
+                $by_plugin[$pid] = array();
+            }
+            $by_plugin[$pid][] = (int) $row->group_id;
+        }
+        return $by_plugin;
+    }
+
+    private function serialize_plugin($row, $group_ids_by_plugin, $premium_active) {
+        $pid       = (int) $row->id;
+        $group_ids = isset($group_ids_by_plugin[$pid]) ? $group_ids_by_plugin[$pid] : array();
+
+        return array(
+            'id'              => $pid,
+            'slug'            => (string) $row->slug,
+            'slug_override'   => $row->slug_override ? (string) $row->slug_override : null,
+            'effective_slug'  => !empty($row->slug_override) ? (string) $row->slug_override : (string) $row->slug,
+            'name'            => (string) $row->name,
+            'description'     => $row->description ? (string) $row->description : null,
+            'author'          => $row->author ? (string) $row->author : null,
+            'homepage'        => $row->homepage ? (string) $row->homepage : null,
+            'current_version' => (string) $row->current_version,
+            'file_size'       => (int) $row->file_size,
+            'uploaded_at'     => (string) $row->uploaded_at,
+            'is_premium'      => $premium_active ? ((int) $row->is_premium === 1) : false,
+            'group_ids'       => $group_ids,
+            'total_downloads' => (int) $row->total_downloads,
+        );
+    }
+
+    /**
+     * Bool: ¿está activa la extensión de licencias?
+     *
+     * Nos sirve para (a) gatear los endpoints de premium / reinject y
+     * (b) decidir si la columna `is_premium` existe (la migración la
+     * crea solo cuando la extensión está activa).
+     */
+    private function license_extension_active() {
+        return class_exists('Imagina_License_SDK_Injector');
     }
 
     /**
@@ -769,6 +976,343 @@ class Imagina_Updater_Server_Admin_REST_API {
         }
         foreach ($rows as &$row) {
             $row['id'] = (int) $row['id'];
+        }
+        unset($row);
+
+        return rest_ensure_response($rows);
+    }
+
+    // =========================================================
+    // Fase 5.3 — Plugins
+    // =========================================================
+
+    /**
+     * Recarga un plugin completo a partir del ID y lo serializa.
+     */
+    private function load_plugin_serialized($id) {
+        global $wpdb;
+
+        $plugins_table   = $wpdb->prefix . 'imagina_updater_plugins';
+        $downloads_table = $wpdb->prefix . 'imagina_updater_downloads';
+        $items_table     = $wpdb->prefix . 'imagina_updater_plugin_group_items';
+
+        $premium_active = $this->license_extension_active();
+        $premium_select = $premium_active ? 'p.is_premium AS is_premium,' : '0 AS is_premium,';
+
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT p.id, p.slug, p.slug_override, p.name, p.description,
+                        p.author, p.homepage, p.current_version, p.file_size,
+                        p.uploaded_at, {$premium_select}
+                        COALESCE(d.cnt, 0) AS total_downloads
+                 FROM {$plugins_table} p
+                 LEFT JOIN (
+                     SELECT plugin_id, COUNT(*) AS cnt
+                     FROM {$downloads_table}
+                     GROUP BY plugin_id
+                 ) d ON d.plugin_id = p.id
+                 WHERE p.id = %d",
+                $id
+            )
+        );
+        if (!$row) {
+            return null;
+        }
+
+        $group_ids_by_plugin = $this->load_group_ids_for_plugins(array((int) $row->id), $items_table);
+        return $this->serialize_plugin($row, $group_ids_by_plugin, $premium_active);
+    }
+
+    /**
+     * Sustituye las membresías de grupo de un plugin por el set
+     * indicado, en una sola operación.
+     */
+    private function set_plugin_groups($plugin_id, array $group_ids) {
+        global $wpdb;
+
+        $items_table = $wpdb->prefix . 'imagina_updater_plugin_group_items';
+
+        $wpdb->delete($items_table, array('plugin_id' => $plugin_id), array('%d'));
+
+        foreach (array_unique(array_map('intval', $group_ids)) as $gid) {
+            if ($gid <= 0) continue;
+            $wpdb->insert(
+                $items_table,
+                array('plugin_id' => $plugin_id, 'group_id' => $gid),
+                array('%d', '%d')
+            );
+        }
+    }
+
+    /**
+     * POST /admin/v1/plugins/upload (multipart)
+     *
+     * Body multipart con un campo `plugin_file` (ZIP) y opcionalmente:
+     *   - `changelog` (texto)
+     *   - `is_premium` ('1' / '0')
+     *   - `group_ids[]` (IDs de grupos)
+     *   - `description` (texto)
+     *
+     * Estrategia premium: subimos el plugin con `is_premium=0` (las
+     * acciones de hook legacy NO inyectan), y si el body pidió
+     * is_premium=1 hacemos UPDATE + reinject manualmente. Esto
+     * desacopla la SPA del lectura `$_POST` que hace la legacy
+     * y la mantenemos compatible (CLAUDE.md §4 regla 2: hooks no
+     * eliminados, siguen funcionando para el form PHP viejo).
+     */
+    public function upload_plugin(WP_REST_Request $request) {
+        if (!class_exists('Imagina_Updater_Server_Plugin_Manager')) {
+            return new WP_Error('iaud_unavailable', __('Plugin manager no disponible.', 'imagina-updater-server'), array('status' => 500));
+        }
+
+        $files = $request->get_file_params();
+        if (empty($files) || empty($files['plugin_file']) || !is_array($files['plugin_file'])) {
+            return new WP_Error('iaud_no_file', __('Falta el archivo plugin_file.', 'imagina-updater-server'), array('status' => 400));
+        }
+
+        $file_param = $files['plugin_file'];
+        if ((int) (isset($file_param['error']) ? $file_param['error'] : UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            return new WP_Error('iaud_upload_error', __('Error de upload.', 'imagina-updater-server'), array('status' => 400));
+        }
+
+        $body         = $request->get_params();
+        $changelog    = isset($body['changelog']) ? sanitize_textarea_field((string) $body['changelog']) : null;
+        $description  = isset($body['description']) ? sanitize_textarea_field((string) $body['description']) : null;
+        $want_premium = isset($body['is_premium']) && '1' === (string) $body['is_premium'];
+        $group_ids    = array();
+        if (isset($body['group_ids'])) {
+            $raw = is_array($body['group_ids']) ? $body['group_ids'] : explode(',', (string) $body['group_ids']);
+            $group_ids = array_values(array_unique(array_map('intval', $raw)));
+        }
+
+        $result = Imagina_Updater_Server_Plugin_Manager::upload_plugin($file_param, $changelog, false);
+        if (is_wp_error($result)) {
+            $result->add_data(array('status' => 400));
+            return $result;
+        }
+
+        $plugin_id = (int) $result['id'];
+
+        // Description y groups si se especificaron.
+        global $wpdb;
+        $plugins_table = $wpdb->prefix . 'imagina_updater_plugins';
+        if (null !== $description) {
+            $wpdb->update(
+                $plugins_table,
+                array('description' => $description),
+                array('id' => $plugin_id),
+                array('%s'),
+                array('%d')
+            );
+        }
+        if (!empty($group_ids)) {
+            $this->set_plugin_groups($plugin_id, $group_ids);
+        }
+
+        // Premium opcional + inyección.
+        if ($want_premium) {
+            if (!$this->license_extension_active()) {
+                return new WP_Error(
+                    'iaud_premium_unavailable',
+                    __('La extensión de licencias no está activa; no se puede marcar como premium.', 'imagina-updater-server'),
+                    array('status' => 400)
+                );
+            }
+            $wpdb->update(
+                $plugins_table,
+                array('is_premium' => 1),
+                array('id' => $plugin_id),
+                array('%d'),
+                array('%d')
+            );
+            $file_path = isset($result['file_path']) ? (string) $result['file_path'] : '';
+            if ('' !== $file_path && file_exists($file_path)) {
+                Imagina_License_SDK_Injector::inject_sdk_if_needed($file_path, true);
+            }
+        }
+
+        $serialized = $this->load_plugin_serialized($plugin_id);
+        if (null === $serialized) {
+            return new WP_Error('iaud_post_upload_load_failed', __('No se pudo recuperar el plugin tras subirlo.', 'imagina-updater-server'), array('status' => 500));
+        }
+        return rest_ensure_response(array('item' => $serialized));
+    }
+
+    /**
+     * PUT /admin/v1/plugins/{id}
+     *
+     * Edita campos editables: slug_override, description, group_ids.
+     * El `is_premium` se cambia con su endpoint dedicado.
+     */
+    public function update_plugin(WP_REST_Request $request) {
+        global $wpdb;
+
+        $id = (int) $request['id'];
+        $body = $request->get_json_params();
+        if (!is_array($body)) {
+            $body = $request->get_params();
+        }
+
+        $plugins_table = $wpdb->prefix . 'imagina_updater_plugins';
+
+        $update = array();
+        $format = array();
+
+        if (array_key_exists('slug_override', $body)) {
+            $raw = is_string($body['slug_override']) ? sanitize_title($body['slug_override']) : '';
+            $update['slug_override'] = '' === $raw ? null : $raw;
+            $format[] = '%s';
+        }
+        if (array_key_exists('description', $body)) {
+            $update['description'] = isset($body['description']) ? sanitize_textarea_field((string) $body['description']) : null;
+            $format[] = '%s';
+        }
+
+        if (!empty($update)) {
+            $ok = $wpdb->update($plugins_table, $update, array('id' => $id), $format, array('%d'));
+            if (false === $ok) {
+                return new WP_Error('iaud_db_error', __('No se pudo actualizar el plugin.', 'imagina-updater-server'), array('status' => 500));
+            }
+        }
+
+        if (array_key_exists('group_ids', $body) && is_array($body['group_ids'])) {
+            $this->set_plugin_groups($id, $body['group_ids']);
+        }
+
+        $serialized = $this->load_plugin_serialized($id);
+        if (null === $serialized) {
+            return new WP_Error('iaud_not_found', __('Plugin no encontrado.', 'imagina-updater-server'), array('status' => 404));
+        }
+        return rest_ensure_response(array('item' => $serialized));
+    }
+
+    /**
+     * DELETE /admin/v1/plugins/{id}
+     */
+    public function delete_plugin(WP_REST_Request $request) {
+        if (!class_exists('Imagina_Updater_Server_Plugin_Manager')) {
+            return new WP_Error('iaud_unavailable', __('Plugin manager no disponible.', 'imagina-updater-server'), array('status' => 500));
+        }
+        $id = (int) $request['id'];
+        $ok = Imagina_Updater_Server_Plugin_Manager::delete_plugin($id);
+        if (!$ok) {
+            return new WP_Error('iaud_delete_failed', __('No se pudo eliminar el plugin.', 'imagina-updater-server'), array('status' => 500));
+        }
+        return rest_ensure_response(array('deleted' => true, 'id' => $id));
+    }
+
+    /**
+     * POST /admin/v1/plugins/{id}/toggle-premium
+     *
+     * Body opcional `{ is_premium: bool }`. Si no se envía, alterna.
+     * Cuando enciende premium, intenta inyectar protección al ZIP.
+     * Cuando apaga, NO desinyecta el código existente (eso requiere
+     * un flujo separado y queda fuera del alcance de 5.3).
+     */
+    public function toggle_plugin_premium(WP_REST_Request $request) {
+        global $wpdb;
+
+        if (!$this->license_extension_active()) {
+            return new WP_Error(
+                'iaud_premium_unavailable',
+                __('La extensión de licencias no está activa.', 'imagina-updater-server'),
+                array('status' => 400)
+            );
+        }
+
+        $id = (int) $request['id'];
+        $plugins_table = $wpdb->prefix . 'imagina_updater_plugins';
+
+        $row = $wpdb->get_row($wpdb->prepare("SELECT id, is_premium, file_path FROM {$plugins_table} WHERE id = %d", $id));
+        if (!$row) {
+            return new WP_Error('iaud_not_found', __('Plugin no encontrado.', 'imagina-updater-server'), array('status' => 404));
+        }
+
+        $body = $request->get_json_params();
+        $next = isset($body['is_premium']) ? (bool) $body['is_premium'] : !((int) $row->is_premium === 1);
+
+        $wpdb->update(
+            $plugins_table,
+            array('is_premium' => $next ? 1 : 0),
+            array('id' => $id),
+            array('%d'),
+            array('%d')
+        );
+
+        if ($next && !empty($row->file_path) && file_exists($row->file_path)) {
+            Imagina_License_SDK_Injector::inject_sdk_if_needed($row->file_path, true);
+        }
+
+        $serialized = $this->load_plugin_serialized($id);
+        if (null === $serialized) {
+            return new WP_Error('iaud_not_found', __('Plugin no encontrado.', 'imagina-updater-server'), array('status' => 404));
+        }
+        return rest_ensure_response(array('item' => $serialized));
+    }
+
+    /**
+     * POST /admin/v1/plugins/{id}/reinject-protection
+     */
+    public function reinject_plugin_protection(WP_REST_Request $request) {
+        global $wpdb;
+
+        if (!$this->license_extension_active()) {
+            return new WP_Error('iaud_premium_unavailable', __('La extensión de licencias no está activa.', 'imagina-updater-server'), array('status' => 400));
+        }
+        $id = (int) $request['id'];
+        $plugins_table = $wpdb->prefix . 'imagina_updater_plugins';
+
+        $row = $wpdb->get_row($wpdb->prepare("SELECT id, is_premium, file_path FROM {$plugins_table} WHERE id = %d", $id));
+        if (!$row) {
+            return new WP_Error('iaud_not_found', __('Plugin no encontrado.', 'imagina-updater-server'), array('status' => 404));
+        }
+        if ((int) $row->is_premium !== 1) {
+            return new WP_Error('iaud_not_premium', __('Este plugin no está marcado como premium.', 'imagina-updater-server'), array('status' => 400));
+        }
+        if (empty($row->file_path) || !file_exists($row->file_path)) {
+            return new WP_Error('iaud_zip_missing', __('El ZIP del plugin no se encuentra en disco.', 'imagina-updater-server'), array('status' => 500));
+        }
+
+        $result = Imagina_License_SDK_Injector::inject_sdk_if_needed($row->file_path, true);
+        if (!is_array($result) || empty($result['success'])) {
+            $message = is_array($result) && !empty($result['message'])
+                ? (string) $result['message']
+                : __('La inyección de protección falló.', 'imagina-updater-server');
+            return new WP_Error('iaud_inject_failed', $message, array('status' => 500));
+        }
+
+        $serialized = $this->load_plugin_serialized($id);
+        if (null === $serialized) {
+            return new WP_Error('iaud_not_found', __('Plugin no encontrado.', 'imagina-updater-server'), array('status' => 404));
+        }
+        return rest_ensure_response(array('item' => $serialized, 'reinjected' => true, 'message' => $result['message']));
+    }
+
+    /**
+     * GET /admin/v1/plugins/{id}/versions
+     */
+    public function list_plugin_versions(WP_REST_Request $request) {
+        global $wpdb;
+
+        $id = (int) $request['id'];
+        $versions_table = $wpdb->prefix . 'imagina_updater_versions';
+
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT id, version, file_size, changelog, uploaded_at
+                 FROM {$versions_table}
+                 WHERE plugin_id = %d
+                 ORDER BY uploaded_at DESC",
+                $id
+            ),
+            ARRAY_A
+        );
+        if (!is_array($rows)) {
+            $rows = array();
+        }
+        foreach ($rows as &$row) {
+            $row['id']        = (int) $row['id'];
+            $row['file_size'] = (int) $row['file_size'];
         }
         unset($row);
 

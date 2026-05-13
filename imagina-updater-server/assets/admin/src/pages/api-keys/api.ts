@@ -3,7 +3,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { adminGet, adminPost } from '@/lib/api';
+import { adminDelete, adminGet, adminPost, adminPut } from '@/lib/api';
 import type {
   ApiKeyFormValues,
   ApiKeyListResponse,
@@ -12,50 +12,6 @@ import type {
   PluginLite,
   StatusFilter,
 } from './types';
-
-/**
- * adminPut/adminDelete no existen en lib/api.ts (lib mantiene solo
- * GET/POST). Para PUT/DELETE armamos fetch inline aquí — cambiar a
- * helpers compartidos cuando una segunda pantalla los necesite.
- */
-async function adminPut<T>(path: string, body: unknown): Promise<T> {
-  return adminFetch<T>(path, 'PUT', body);
-}
-async function adminDelete<T>(path: string): Promise<T> {
-  return adminFetch<T>(path, 'DELETE');
-}
-async function adminFetch<T>(
-  path: string,
-  method: 'PUT' | 'DELETE',
-  body?: unknown,
-): Promise<T> {
-  const cfg = window.iaudConfig;
-  if (!cfg) throw new Error('iaudConfig no disponible');
-  const url =
-    cfg.adminUrl.replace(/\/$/, '') + '/' + path.replace(/^\//, '');
-
-  const response = await fetch(url, {
-    method,
-    credentials: 'same-origin',
-    headers: {
-      'X-WP-Nonce': cfg.nonce,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  });
-
-  if (!response.ok) {
-    let errBody: { message?: string } = {};
-    try {
-      errBody = (await response.json()) as typeof errBody;
-    } catch {
-      /* opaque */
-    }
-    throw new Error(errBody.message ?? `Request failed with ${response.status}`);
-  }
-  return (await response.json()) as T;
-}
 
 interface ListParams {
   page: number;
@@ -146,7 +102,7 @@ export function useRegenerateApiKey() {
 export function usePluginsLite() {
   return useQuery({
     queryKey: ['plugins-lite'],
-    queryFn: () => adminGet<PluginLite[]>('plugins'),
+    queryFn: () => adminGet<PluginLite[]>('plugins?lite=1'),
     staleTime: 60 * 1000,
   });
 }

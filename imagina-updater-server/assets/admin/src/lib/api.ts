@@ -19,6 +19,7 @@ declare global {
       currentUser?: string;
       locale?: string;
       siteUrl?: string;
+      licenseExtensionActive?: boolean;
     };
   }
 }
@@ -62,11 +63,27 @@ export async function adminPost<T>(
   path: string,
   body?: unknown,
 ): Promise<T> {
+  return adminJsonRequest<T>('POST', path, body);
+}
+
+export async function adminPut<T>(path: string, body?: unknown): Promise<T> {
+  return adminJsonRequest<T>('PUT', path, body);
+}
+
+export async function adminDelete<T>(path: string): Promise<T> {
+  return adminJsonRequest<T>('DELETE', path);
+}
+
+async function adminJsonRequest<T>(
+  method: 'POST' | 'PUT' | 'DELETE',
+  path: string,
+  body?: unknown,
+): Promise<T> {
   const cfg = getConfig();
   const url = cfg.adminUrl.replace(/\/$/, '') + '/' + path.replace(/^\//, '');
 
   const response = await fetch(url, {
-    method: 'POST',
+    method,
     credentials: 'same-origin',
     headers: {
       'X-WP-Nonce': cfg.nonce,
@@ -77,6 +94,67 @@ export async function adminPost<T>(
   });
 
   return parseResponse<T>(response);
+}
+
+/**
+ * Variante multipart para subidas de archivos. NO se setea
+ * Content-Type — el navegador añade el boundary correcto al detectar
+ * un FormData en `body`.
+ *
+ * `onProgress` (opcional) recibe el porcentaje 0-100 mientras se
+ * envía. Implementado con XHR porque `fetch` no expone progreso de
+ * upload todavía.
+ */
+export async function adminPostMultipart<T>(
+  path: string,
+  formData: FormData,
+  options?: { onProgress?: (percent: number) => void },
+): Promise<T> {
+  const cfg = getConfig();
+  const url = cfg.adminUrl.replace(/\/$/, '') + '/' + path.replace(/^\//, '');
+
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url, true);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader('X-WP-Nonce', cfg.nonce);
+    xhr.setRequestHeader('Accept', 'application/json');
+
+    if (options?.onProgress && xhr.upload) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          options.onProgress!(Math.round((e.loaded / e.total) * 100));
+        }
+      };
+    }
+
+    xhr.onload = () => {
+      let parsed: unknown;
+      try {
+        parsed = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+      } catch {
+        parsed = null;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(parsed as T);
+        return;
+      }
+      const message =
+        (parsed && typeof parsed === 'object' && 'message' in parsed
+          ? String((parsed as { message: unknown }).message)
+          : null) ?? `Request failed with status ${xhr.status}`;
+      const err = new Error(message) as ApiError;
+      err.status = xhr.status;
+      reject(err);
+    };
+    xhr.onerror = () => {
+      const err = new Error('Network error during upload.') as ApiError;
+      err.status = 0;
+      reject(err);
+    };
+
+    xhr.send(formData);
+  });
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {

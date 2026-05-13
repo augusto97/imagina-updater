@@ -894,22 +894,67 @@ Reemplazar `wp_schedule_event` del heartbeat por Action Scheduler. Diferida expl
 
 **Pendiente para 5.3 (Plugins)**: la pantalla con upload de ZIP, drag-and-drop, premium toggle, listado de versiones por plugin, re-inyección de protección. El endpoint `GET /admin/v1/plugins` actual es la versión Lite — se ampliará con `?page=&search=`, plus 5+ endpoints nuevos. La pantalla reusará `<DataTable>`, `<Drawer>`, `<PluginPicker>` ya construidos.
 
-#### 5.3 Página: Plugins
+#### 5.3 Página: Plugins — RESUELTA
 
-**Contenido**:
-- Tabla de plugins con: nombre, slug (mostrar `slug_override` si existe), versión actual, premium badge, grupos, descargas totales, última subida, acciones
-- Botón "Subir plugin" abre Drawer con uploader (drag-and-drop), checkbox "Es premium", textarea changelog, multi-select de grupos
-- Acciones por plugin: Ver versiones, Editar (slug_override, grupos, premium toggle, descripción), Eliminar, Re-inyectar protección
-- Indicador de progreso para uploads grandes
+> **Estado**: ✅ resuelta en `feat/admin-plugins` (encadenada sobre `feat/admin-api-keys`).
 
-**Endpoints nuevos**:
-- `GET /admin/v1/plugins`
-- `POST /admin/v1/plugins/upload` (multipart)
-- `PUT /admin/v1/plugins/{id}`
-- `DELETE /admin/v1/plugins/{id}`
-- `POST /admin/v1/plugins/{id}/toggle-premium`
-- `POST /admin/v1/plugins/{id}/reinject-protection`
-- `GET /admin/v1/plugins/{id}/versions`
+**Acción ejecutada**:
+
+1. **Endpoints nuevos** en `Imagina_Updater_Server_Admin_REST_API`:
+   - `GET /admin/v1/plugins?page=&per_page=&search=` — paginado, full. Devuelve `{ items, total, page, per_page, license_extension_active }`. Cada `PluginRow` incluye `total_downloads` (LEFT JOIN downloads + COUNT) y `group_ids` (cargado en bulk vía `load_group_ids_for_plugins` para evitar N+1). El helper `serialize_plugin` calcula `effective_slug` y respeta `is_premium` solo si la extensión está activa.
+   - `GET /admin/v1/plugins?lite=1` — modo dual: el endpoint anterior (Lite) creado en 5.2 ahora se obtiene con este flag. Pickers de la pantalla API Keys actualizados para añadir `?lite=1` al request.
+   - `POST /admin/v1/plugins/upload` — multipart. Body `plugin_file` (ZIP) + opcional `changelog`, `description`, `is_premium`, `group_ids[]`. Estrategia premium: el upload base hace `is_premium=0` (los hooks legacy NO inyectan), y si el body pidió premium hacemos `UPDATE is_premium=1` + `Imagina_License_SDK_Injector::inject_sdk_if_needed()` manualmente. Esto desacopla la SPA de la lectura `$_POST['is_premium']` del flujo legacy y mantiene los hooks intactos para el form PHP viejo (CLAUDE.md §4 regla 2).
+   - `PUT /admin/v1/plugins/{id}` — edita `slug_override`, `description`, `group_ids` (atómico via `set_plugin_groups`). NO toca `is_premium` (endpoint dedicado).
+   - `DELETE /admin/v1/plugins/{id}`.
+   - `POST /admin/v1/plugins/{id}/toggle-premium` — body `{ is_premium }` o toggle. Cuando enciende, intenta inyectar protección. Cuando apaga, NO desinyecta el código existente del ZIP (queda como tarea futura).
+   - `POST /admin/v1/plugins/{id}/reinject-protection` — re-inyecta. Maneja el shape `{ success, message }` que devuelve `inject_sdk_if_needed`.
+   - `GET /admin/v1/plugins/{id}/versions` — historial de versiones del plugin.
+2. **Helpers** privados nuevos: `license_extension_active()` (chequea `class_exists('Imagina_License_SDK_Injector')`), `serialize_plugin()`, `load_group_ids_for_plugins()` (bulk-load con `IN (?, ?, …)` para evitar N+1), `set_plugin_groups()` (delete + insert atómico), `load_plugin_serialized()`.
+3. **Wiring WP**:
+   - Submenu **"Plugins (nuevo)"** convive con la legacy.
+   - `enqueue_scripts($hook)` añade el slug en el map `[hook → bundle]`.
+   - `iaudConfig` ahora incluye `licenseExtensionActive` (boolean) — el frontend gatea visualmente las acciones premium/reinject según esto.
+   - `render_spa_plugins_page()` = contenedor mínimo (`<div id="iaud-plugins"></div>`).
+4. **Shared lib** `src/lib/api.ts` extendido:
+   - Promovidos `adminPut` / `adminDelete` (que en 5.2 vivían inline en `pages/api-keys/api.ts`).
+   - Nuevo `adminPostMultipart(path, FormData, { onProgress })` con XHR (necesario porque `fetch` no expone progreso de upload). Reportería de % via `xhr.upload.onprogress`.
+   - Tipo de `iaudConfig` extendido con `licenseExtensionActive?: boolean`.
+5. **Página Plugins** en `src/pages/plugins/` (8 archivos):
+   - `types.ts` — `PluginRow`, `PluginListResponse`, `PluginVersion`, `PluginUploadValues`, `PluginEditValues`.
+   - `lib.ts` — helper `formatBytes()`.
+   - `api.ts` — 7 hooks de TanStack Query: `usePluginsList` (con `placeholderData: prev → prev`), `usePluginVersions` (con `enabled: pluginId !== null`), `usePluginGroupsLite` (compartido con API Keys via misma queryKey), `useUploadPlugin` (acepta callback `onProgress`), `useUpdatePlugin`, `useDeletePlugin`, `useTogglePremium`, `useReinjectProtection`. Mutaciones invalidan `['plugins']`, `['plugins-lite']` (el picker de API Keys) y, cuando aplica, `['dashboard']`.
+   - `UploadDrawer.tsx` — drawer con drag-and-drop **sin librerías**. Usa eventos `onDragOver/onDragLeave/onDrop` nativos. Validación cliente de extensión `.zip`. Muestra archivo seleccionado con tamaño formateado. Progress bar inline durante el upload. Toggle premium SOLO se renderiza si `licenseExtensionActive`. Reusa `<PluginPicker>` para los grupos.
+   - `EditDrawer.tsx` — formulario de edición (slug_override, description, groups). Reset al abrir/cambiar de plugin. Reusa `<PluginPicker>`.
+   - `VersionsDrawer.tsx` — tabla read-only de versiones. Lee solo cuando el drawer está abierto (`enabled` en el query).
+   - `PluginsPage.tsx` — composición: header con CTA "Subir plugin", search input, `<DataTable>` con 6 columnas (Plugin con badge premium, Versión, Descargas, Grupos count, Última subida, Acciones), pager Anterior/Siguiente. Acciones por fila: Ver versiones, Editar, Toggle premium (gated), Re-inyectar (gated + solo si is_premium), Eliminar. Todas las acciones destructivas piden `window.confirm`.
+   - `index.tsx` — entry-point con `QueryClientProvider`.
+6. **Vite multi-entry** ampliado: `PAGES = ['dashboard', 'api-keys', 'plugins']`.
+
+**Decisiones de scope (deliberadas)**:
+
+- **Drag-and-drop sin librerías** — el patrón nativo del DOM (`onDragOver` + `onDrop`) es suficiente para nuestro caso (un solo file, validación simple). Cero dependencias añadidas.
+- **Toggle premium NO desinyecta** — apagar `is_premium=0` solo limpia el flag en BD; el código de protección permanece embebido en el ZIP. Desinyectar requiere parsing y rebuild adicional, fuera del scope de 5.3. El admin que necesite limpiar puede re-subir un ZIP fresco.
+- **Sin `<select>` de filtros** — solo búsqueda por nombre/slug. Si el equipo necesita filtros tipo "premium / no premium / con grupos / sin grupos", se añade en una iteración posterior.
+- **No bulk actions** — el listado actual no soporta selección múltiple ni operaciones en bote (delete masivo, toggle masivo). Si surge la necesidad real, se añade `<Checkbox>` columna 0 + barra de acciones flotante.
+- **VersionsDrawer read-only** — listar versiones, no eliminarlas ni promover una vieja a "current". Esas operaciones son raras y peligrosas; quedan en pantalla legacy hasta que aparezca un caso real.
+- **Modo `is_premium=true` en upload requiere extensión activa** — si la extensión no está cargada, el endpoint devuelve 400. La SPA oculta el checkbox; pero si alguien hace POST directo, el backend protege.
+
+**Verificación pendiente del usuario** (en WP local):
+
+- [ ] `cd imagina-updater-server/assets/admin && npm run build` — compila los **tres** bundles (`dashboard`, `api-keys`, `plugins`).
+- [ ] Aparece la submenu "Plugins (nuevo)". Tabla pinta los plugins existentes con `total_downloads`, badge premium (solo si extensión activa), grupos count.
+- [ ] Drag-and-drop de un ZIP en el drawer de upload — se ve el filename + tamaño. Submit con/sin premium → fila aparece.
+- [ ] Subida con archivo no-ZIP → error visible inline.
+- [ ] Editar slug_override → la columna refleja "(override de slug-original)" tras guardar.
+- [ ] Editar grupos → el contador de grupos cambia.
+- [ ] Toggle premium (con extensión activa) → badge aparece/desaparece. La acción de re-inyectar aparece solo cuando is_premium=1.
+- [ ] Re-inyectar → ZIP en disco se actualiza (puede verificarse con `unzip -p <zip> <main-file>.php | grep IMAGINA`).
+- [ ] Versiones drawer → lista con sizes, fechas y changelogs.
+- [ ] Eliminar → el plugin desaparece de la tabla y del picker de API Keys (cache invalidado).
+- [ ] Si la extensión está desactivada: no aparecen las acciones premium ni re-inyectar; el checkbox del drawer tampoco; backend devuelve 400 si se fuerza.
+- [ ] Picker de plugins en pantalla API Keys → sigue funcionando (consume `?lite=1`).
+
+**Pendiente para 5.4 (Plugin Groups)**: pantalla mucho más simple. Tabla de grupos, drawer create/edit con `<PluginPicker>` (ya construido). Endpoints: CRUD `/admin/v1/plugin-groups`. La pantalla reusará absolutamente todos los primitives.
 
 #### 5.4 Página: Plugin Groups
 

@@ -17,6 +17,8 @@ declare global {
       adminUrl: string;
       nonce: string;
       currentUser?: string;
+      locale?: string;
+      siteUrl?: string;
     };
   }
 }

@@ -784,17 +784,51 @@ Reemplazar `wp_schedule_event` del heartbeat por Action Scheduler. Diferida expl
 
 7. **REST namespace separado para el admin**: crear `/imagina-updater/admin/v1/` para los endpoints que solo usa la SPA. Permission callback: `current_user_can('manage_options')` + nonce. La API pública `/imagina-updater/v1/` se mantiene intacta.
 
-#### 5.1 Página: Dashboard
+#### 5.1 Página: Dashboard — RESUELTA
 
-**Contenido**:
-- 4 KPI cards: Total Plugins, Total API Keys activas, Activaciones activas, Descargas últimas 24h
-- Gráfico de descargas últimos 30 días (recharts si entra en budget; si no, una tabla simple es suficiente)
-- Tabla "Últimas descargas" (10 más recientes)
-- Tabla "Top plugins por descargas" (5 más descargados)
-- Quick actions: "Subir plugin", "Crear API key"
+> **Estado**: ✅ resuelta en `feat/admin-dashboard` (encadenada sobre `feat/admin-redesign`).
 
-**Endpoints nuevos (admin/v1)**:
+**Acción ejecutada**:
+
+1. **Endpoints nuevos** en `Imagina_Updater_Server_Admin_REST_API`:
+   - `GET /admin/v1/dashboard/stats` (ya existía desde 5.0).
+   - `GET /admin/v1/dashboard/downloads-30d` — serie diaria (30 entries con días vacíos rellenos a 0).
+   - `GET /admin/v1/dashboard/recent-downloads` — últimas 10 descargas con plugin y site_name (LEFT JOIN sobre plugins + api_keys).
+   - `GET /admin/v1/dashboard/top-plugins` — top 5 por descargas totales (LEFT JOIN + COUNT + GROUP BY).
+   Permission callback heredado: `manage_options` + nonce `wp_rest`.
+2. **Submenu admin** "Dashboard (nuevo)" añadido en `class-admin.php`. Convive con la pantalla legacy mientras se completa el rediseño (cuando estén las 7 pantallas SPA, se hará el flip y se eliminan las views PHP antiguas).
+3. **Enqueue condicional** (CLAUDE.md §4 regla 3): el método `enqueue_scripts($hook)` ahora compara `$hook === $this->spa_dashboard_hook` (suffix capturado al registrar la submenu). Si coincide, encolla SOLO el bundle SPA (sin CSS legacy ni jQuery). Si no, comportamiento previo. Si el bundle no está construido, muestra `admin_notices` con instrucciones.
+4. **`render_spa_dashboard_page()`** queda como contenedor mínimo: `<div class="wrap"><div id="iaud-dashboard"></div></div>` (CLAUDE.md §4 regla 11).
+5. **`wp_localize_script('iaud-dashboard', 'iaudConfig', …)`** inyecta `apiUrl`, `adminUrl`, `nonce` (wp_rest), `currentUser`, `locale` (formato BCP 47), `siteUrl`. `wp_set_script_translations` con dominio `imagina-updater-server`.
+6. **shadcn primitives** copiados a `src/components/ui/` con prefijo `iaud-`: `card.tsx` (Card / CardHeader / CardTitle / CardDescription / CardContent / CardFooter), `button.tsx` (con `cva` y variantes default/secondary/outline/ghost/destructive + sizes sm/default/lg/icon, `default = h-9` por densidad compacta), `table.tsx` (con `py-2` por defecto vs `py-4` upstream), `skeleton.tsx`.
+7. **Página Dashboard** dividida en módulos en `src/pages/dashboard/`:
+   - `api.ts` — 4 hooks de TanStack Query mapeando 1:1 con endpoints.
+   - `StatsCards.tsx` — grid responsive de 4 KPIs con iconos Lucide y skeleton loaders.
+   - `DownloadsChart.tsx` — bar chart 30d en SVG inline. **Decisión**: NO añadir recharts/chart.js para mantener bundle bajo budget (CLAUDE.md §2.3). ~30 líneas de SVG con tooltip via `<title>`.
+   - `RecentDownloadsTable.tsx` — tabla shadcn con plugin/version/sitio/cuándo (formateo relativo).
+   - `TopPluginsTable.tsx` — tabla shadcn con plugin/versión/descargas (tabular-nums).
+   - `QuickActions.tsx` — botones a las pantallas legacy de Plugins / API Keys (links a `admin.php?page=…`).
+   - `DashboardPage.tsx` — composición vertical (header con botón "Actualizar" que invalida queries `['dashboard']`, KPIs, chart, grid 2 columnas con tablas, quick actions).
+   - `index.tsx` — entry-point con `QueryClientProvider`.
+8. **`src/lib/format.ts`** — helpers `formatNumber`, `formatDateTime`, `formatRelativeTime` con `Intl.*` y locale de `iaudConfig.locale`. Asume datetime de DB en UTC (ver "Limitación conocida" abajo).
+9. **`vite.config.ts`** — `__dirname` calculado vía `fileURLToPath(import.meta.url)` (ESM puro, no depende de polyfills de Vite).
+
+**Limitación conocida**: `formatDateTime` y `formatRelativeTime` interpretan los strings `downloaded_at` como UTC (`new Date(input + 'Z')`). Si el servidor MySQL no está en UTC, los timestamps mostrados estarán desplazados. WP recomienda UTC; revisar al cerrar Fase 5 con WP local.
+
+**Pendiente para 5.2 (API Keys)**: la primera pantalla con tabla grande activa el patrón de `useTanStackTable` shared hook + `<DataTable>` componente reutilizable. Los primitives `Table*` ya están listos para integrarse.
+
+**Verificación pendiente del usuario** (en WP local):
+
+- [ ] `cd imagina-updater-server/assets/admin && npm install && npm run build` — compila sin errores; genera `dashboard.{js,css,asset.php}` en `assets/dist/`.
+- [ ] Activar el plugin servidor; aparece la submenu "Dashboard (nuevo)".
+- [ ] Abrir esa pantalla — el bundle se carga, render del dashboard sin errores en consola, KPIs llegan, chart se dibuja.
+- [ ] Navegar a otra pantalla del plugin (ej. "Plugins" legacy) — el bundle SPA NO se carga (verificar en Network tab que `dashboard.js` no aparece).
+- [ ] Navegar a una pantalla NO del plugin (ej. "Posts") — verificar que ni el bundle SPA ni el CSS legacy del plugin se cargan ahí.
+- [ ] Subir plugin nuevo + descargar desde un sitio cliente; volver al dashboard y pulsar "Actualizar" — los contadores y la fila nueva aparecen.
+
+**Endpoints documentados (admin/v1)**:
 - `GET /admin/v1/dashboard/stats`
+- `GET /admin/v1/dashboard/downloads-30d`
 - `GET /admin/v1/dashboard/recent-downloads`
 - `GET /admin/v1/dashboard/top-plugins`
 

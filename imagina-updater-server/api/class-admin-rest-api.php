@@ -83,6 +83,36 @@ class Imagina_Updater_Server_Admin_REST_API {
                 'permission_callback' => array($this, 'check_admin_permissions'),
             )
         );
+
+        register_rest_route(
+            self::NAMESPACE,
+            '/dashboard/downloads-30d',
+            array(
+                'methods'             => WP_REST_Server::READABLE,
+                'callback'            => array($this, 'get_downloads_30d'),
+                'permission_callback' => array($this, 'check_admin_permissions'),
+            )
+        );
+
+        register_rest_route(
+            self::NAMESPACE,
+            '/dashboard/recent-downloads',
+            array(
+                'methods'             => WP_REST_Server::READABLE,
+                'callback'            => array($this, 'get_recent_downloads'),
+                'permission_callback' => array($this, 'check_admin_permissions'),
+            )
+        );
+
+        register_rest_route(
+            self::NAMESPACE,
+            '/dashboard/top-plugins',
+            array(
+                'methods'             => WP_REST_Server::READABLE,
+                'callback'            => array($this, 'get_top_plugins'),
+                'permission_callback' => array($this, 'check_admin_permissions'),
+            )
+        );
     }
 
     /**
@@ -129,5 +159,131 @@ class Imagina_Updater_Server_Admin_REST_API {
                 'downloads_24h'      => $downloads_24h,
             )
         );
+    }
+
+    /**
+     * GET /admin/v1/dashboard/downloads-30d
+     *
+     * Devuelve la serie diaria de descargas de los últimos 30 días,
+     * con días vacíos rellenados a 0 para que el chart no salte huecos.
+     *
+     * Formato: array<{ day: 'YYYY-MM-DD', count: int }> (30 entries).
+     */
+    public function get_downloads_30d(WP_REST_Request $request) {
+        global $wpdb;
+
+        unset($request);
+
+        $downloads_table = $wpdb->prefix . 'imagina_updater_downloads';
+        $start_unix      = time() - (29 * DAY_IN_SECONDS);
+        $start_date      = gmdate('Y-m-d 00:00:00', $start_unix);
+
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT DATE(downloaded_at) AS day, COUNT(*) AS count
+                 FROM {$downloads_table}
+                 WHERE downloaded_at >= %s
+                 GROUP BY DATE(downloaded_at)",
+                $start_date
+            ),
+            ARRAY_A
+        );
+
+        $by_day = array();
+        if (is_array($rows)) {
+            foreach ($rows as $row) {
+                $by_day[$row['day']] = (int) $row['count'];
+            }
+        }
+
+        $series = array();
+        for ($i = 0; $i < 30; $i++) {
+            $day            = gmdate('Y-m-d', $start_unix + ($i * DAY_IN_SECONDS));
+            $series[]       = array(
+                'day'   => $day,
+                'count' => isset($by_day[$day]) ? $by_day[$day] : 0,
+            );
+        }
+
+        return rest_ensure_response($series);
+    }
+
+    /**
+     * GET /admin/v1/dashboard/recent-downloads
+     *
+     * Últimas 10 descargas con plugin y sitio cliente para mostrar
+     * actividad reciente en el dashboard.
+     */
+    public function get_recent_downloads(WP_REST_Request $request) {
+        global $wpdb;
+
+        unset($request);
+
+        $downloads_table = $wpdb->prefix . 'imagina_updater_downloads';
+        $plugins_table   = $wpdb->prefix . 'imagina_updater_plugins';
+        $api_keys_table  = $wpdb->prefix . 'imagina_updater_api_keys';
+
+        $rows = $wpdb->get_results(
+            "SELECT d.id, d.version, d.ip_address, d.downloaded_at,
+                    p.slug AS plugin_slug,
+                    p.name AS plugin_name,
+                    ak.site_name
+             FROM {$downloads_table} d
+             LEFT JOIN {$plugins_table} p ON p.id = d.plugin_id
+             LEFT JOIN {$api_keys_table} ak ON ak.id = d.api_key_id
+             ORDER BY d.downloaded_at DESC
+             LIMIT 10",
+            ARRAY_A
+        );
+
+        if (!is_array($rows)) {
+            $rows = array();
+        }
+
+        // Cast numeric columns para que el frontend no tenga que
+        // adivinar tipos (PHP devuelve todo como string desde MySQL).
+        foreach ($rows as &$row) {
+            $row['id'] = (int) $row['id'];
+        }
+        unset($row);
+
+        return rest_ensure_response($rows);
+    }
+
+    /**
+     * GET /admin/v1/dashboard/top-plugins
+     *
+     * Top 5 plugins por descargas totales.
+     */
+    public function get_top_plugins(WP_REST_Request $request) {
+        global $wpdb;
+
+        unset($request);
+
+        $downloads_table = $wpdb->prefix . 'imagina_updater_downloads';
+        $plugins_table   = $wpdb->prefix . 'imagina_updater_plugins';
+
+        $rows = $wpdb->get_results(
+            "SELECT p.id, p.slug, p.name, p.current_version,
+                    COUNT(d.id) AS downloads
+             FROM {$plugins_table} p
+             LEFT JOIN {$downloads_table} d ON d.plugin_id = p.id
+             GROUP BY p.id, p.slug, p.name, p.current_version
+             ORDER BY downloads DESC, p.name ASC
+             LIMIT 5",
+            ARRAY_A
+        );
+
+        if (!is_array($rows)) {
+            $rows = array();
+        }
+
+        foreach ($rows as &$row) {
+            $row['id']        = (int) $row['id'];
+            $row['downloads'] = (int) $row['downloads'];
+        }
+        unset($row);
+
+        return rest_ensure_response($rows);
     }
 }

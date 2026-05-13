@@ -315,9 +315,16 @@ class Imagina_Updater_Server_Admin {
             $version,
             true
         );
+        // CSS compartido entre todas las pantallas SPA (Vite bundlea
+        // todo Tailwind en un único `iaud.css` con cssCodeSplit:false
+        // para no duplicar utilities por pantalla y mantener nombre
+        // estable). Usamos handle único `iaud-shared-style` para que
+        // wp_enqueue_style lo deduplique automáticamente si dos
+        // bundles se cargaran en la misma página (no debería pasar
+        // por el guard de $hook, pero defense in depth).
         wp_enqueue_style(
-            $handle,
-            $dist_url . $bundle . '.css',
+            'iaud-shared-style',
+            $dist_url . 'iaud.css',
             array(),
             $version
         );

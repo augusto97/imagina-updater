@@ -90,6 +90,27 @@ class Imagina_Updater_Server_Admin {
         add_action('admin_menu', array($this, 'add_menu_pages'));
         add_action('admin_enqueue_scripts', array($this, 'enqueue_scripts'));
         add_action('admin_init', array($this, 'handle_actions'));
+        // Vite emite ES modules (sentencias `import`); WP por defecto
+        // encolla `<script src=…>` SIN type="module" → "Cannot use
+        // import statement outside a module" en consola. Este filtro
+        // añade el atributo a los handles de la SPA.
+        add_filter('script_loader_tag', array($this, 'mark_spa_scripts_as_modules'), 10, 2);
+    }
+
+    /**
+     * Filtro `script_loader_tag`: añade `type="module"` al `<script>`
+     * generado por wp_enqueue_script para los handles SPA del
+     * servidor (prefijo `iaud-`).
+     */
+    public function mark_spa_scripts_as_modules($tag, $handle) {
+        if (0 !== strpos((string) $handle, 'iaud-')) {
+            return $tag;
+        }
+        if (false !== strpos($tag, ' type="module"') || false !== strpos($tag, " type='module'")) {
+            return $tag;
+        }
+        $tag = preg_replace('/\stype=("text\/javascript"|\'text\/javascript\')/i', '', $tag);
+        return preg_replace('/<script\b/', '<script type="module"', $tag, 1);
     }
 
     /**

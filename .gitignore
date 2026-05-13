@@ -1,0 +1,17 @@
+# Esta rama es huérfana y solo contiene los ZIPs instalables + README.
+# Si algún flujo de release deja artefactos de la rama main en el
+# working tree (carpetas fuente de los plugins, builds intermedios,
+# etc.), se ignoran para no contaminar el listado de cambios.
+
+imagina-updater-server/
+imagina-updater-client/
+imagina-updater-license-extension/
+diagnostico-licencias.php
+CLAUDE.md
+
+# Tooling
+node_modules/
+.vite/
+.cache/
+*.log
+.DS_Store

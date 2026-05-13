@@ -75,7 +75,14 @@ export default defineConfig({
     outDir: '../dist',
     emptyOutDir: true,
     sourcemap: false,
-    cssCodeSplit: true,
+    // Una sola hoja de estilos para TODAS las pantallas. Razón:
+    // todas importan `@/styles/globals.css` (Tailwind), así que la
+    // CSS real es idéntica. Con cssCodeSplit:true Vite la dedup-a a
+    // un chunk compartido con nombre derivado del chunk JS donde
+    // primero aparece, que es impredecible. Forzando false obtenemos
+    // un nombre estable `iaud.css` (ver assetFileNames) que el PHP
+    // puede enqueue de forma fiable.
+    cssCodeSplit: false,
     rollupOptions: {
       input: Object.fromEntries(
         PAGES.map((p) => [p, resolve(__dirname, `src/pages/${p}/index.tsx`)]),
@@ -84,10 +91,8 @@ export default defineConfig({
         entryFileNames: '[name].js',
         chunkFileNames: 'chunks/[name]-[hash].js',
         assetFileNames: (assetInfo) => {
-          // CSS toma el nombre de la entry para que el enqueue PHP lo
-          // localice como `<entry>.css` (no `style-<hash>.css`).
           if (assetInfo.name?.endsWith('.css')) {
-            return '[name].css';
+            return 'iaud.css';
           }
           return 'assets/[name]-[hash][extname]';
         },

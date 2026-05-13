@@ -53,6 +53,13 @@ class Imagina_Updater_Server_Admin {
     private $spa_plugin_groups_hook = '';
 
     /**
+     * Hook suffix de la pantalla SPA de Activations (Fase 5.5).
+     *
+     * @var string
+     */
+    private $spa_activations_hook = '';
+
+    /**
      * Obtener instancia
      */
     public static function get_instance() {
@@ -189,6 +196,16 @@ class Imagina_Updater_Server_Admin {
             'imagina-updater-plugin-groups-spa',
             array($this, 'render_spa_plugin_groups_page')
         );
+
+        // Pantalla SPA de Activations (Fase 5.5).
+        $this->spa_activations_hook = add_submenu_page(
+            'imagina-updater-server',
+            __('Activaciones (nuevo)', 'imagina-updater-server'),
+            __('Activaciones (nuevo)', 'imagina-updater-server'),
+            'manage_options',
+            'imagina-updater-activations-spa',
+            array($this, 'render_spa_activations_page')
+        );
     }
 
     /**
@@ -207,6 +224,7 @@ class Imagina_Updater_Server_Admin {
             $this->spa_api_keys_hook       => 'api-keys',
             $this->spa_plugins_hook        => 'plugins',
             $this->spa_plugin_groups_hook  => 'plugin-groups',
+            $this->spa_activations_hook    => 'activations',
         );
         foreach ($spa_pages as $spa_hook => $bundle) {
             if ('' !== $spa_hook && $hook === $spa_hook) {
@@ -355,6 +373,20 @@ class Imagina_Updater_Server_Admin {
         ?>
         <div class="wrap">
             <div id="iaud-plugin-groups"></div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Renderiza el contenedor de la SPA de Activations (Fase 5.5).
+     */
+    public function render_spa_activations_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Permisos insuficientes.', 'imagina-updater-server'));
+        }
+        ?>
+        <div class="wrap">
+            <div id="iaud-activations"></div>
         </div>
         <?php
     }

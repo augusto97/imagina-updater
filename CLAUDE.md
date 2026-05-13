@@ -1007,16 +1007,47 @@ Reemplazar `wp_schedule_event` del heartbeat por Action Scheduler. Diferida expl
 
 **Pendiente para 5.5 (Activations)**: tabla con dropdown de filtro por API key (consumirá `?lite=1` o un nuevo lite endpoint para api-keys), filtro por estado, búsqueda por dominio, acción "desactivar". Reusará todos los primitives.
 
-#### 5.5 Página: Activations
+#### 5.5 Página: Activations — RESUELTA
 
-**Contenido**:
-- Tabla de activaciones con: dominio, API key (link), token (mascarado), activada, última verificación, estado, acciones
-- Filtros: API key (dropdown), estado, búsqueda por dominio
-- Acciones: desactivar (con confirmación)
+> **Estado**: ✅ resuelta en `feat/admin-activations` (encadenada sobre `feat/admin-plugin-groups`).
 
-**Endpoints nuevos**:
-- `GET /admin/v1/activations`
-- `POST /admin/v1/activations/{id}/deactivate`
+**Acción ejecutada**:
+
+1. **Endpoints nuevos** en `Imagina_Updater_Server_Admin_REST_API`:
+   - `GET /admin/v1/activations?page=&per_page=&status=&api_key_id=&search=` — paginado con LEFT JOIN sobre api_keys para incluir `site_name` sin un round-trip extra. Filtros combinables: estado (active/inactive/all), api_key_id (0 = todas) y `search` por dominio (LIKE).
+   - `POST /admin/v1/activations/{id}/deactivate` — wrapper sobre `Imagina_Updater_Server_Activations::deactivate_site($id)`. Devuelve la fila actualizada serializada.
+   - **Nuevo modo dual** en `GET /admin/v1/api-keys`: `?lite=1` devuelve `[{id, site_name}]` para alimentar el dropdown filtro de esta pantalla. La forma paginada existente sigue funcional.
+2. **Helpers** privados nuevos: `mask_activation_token()` (formato `iat_••••aBcD`) y `serialize_activation()` (forma uniforme con `is_active` boolean, fechas como strings, token mascarado).
+3. **Wiring WP** (`admin/class-admin.php`):
+   - Submenu **"Activaciones (nuevo)"** convive con la legacy.
+   - Map de enqueue actualizado: `[hook → 'activations']`.
+   - `render_spa_activations_page()` = contenedor mínimo (`<div id="iaud-activations"></div>`).
+4. **Vite multi-entry** ampliado: `PAGES = ['dashboard', 'api-keys', 'plugins', 'plugin-groups', 'activations']`. Quinto bundle.
+5. **Página Activations** en `src/pages/activations/` (4 archivos):
+   - `types.ts` — `ActivationRow`, `ActivationsListResponse`, `ApiKeyOptionLite`.
+   - `api.ts` — 3 hooks: `useActivationsList` (con `placeholderData`), `useApiKeysOptions` (consume `?lite=1`), `useDeactivateActivation`. La mutación invalida `['activations']`, `['api-keys']` (porque `activations_used` cambia) y `['dashboard']`.
+   - `ActivationsPage.tsx` — composición: header, tabs Todas/Activas/Inactivas, dropdown nativo `<select>` con todas las API keys + opción "Todas las API keys", search por dominio. `<DataTable>` de 6 columnas (Dominio + sub-línea con site_name de la API key, Token mascarado, Estado badge, Activada, Última verificación, Acciones). Pager Anterior/Siguiente. La acción "Desactivar" solo aparece cuando `is_active=true`; cuando ya está inactiva, muestra el `deactivated_at` en relativa.
+   - `index.tsx` — entry-point.
+
+**Decisiones de scope (deliberadas)**:
+
+- **`<select>` nativo para el filtro de API key** — ~0 KB extra vs. instalar Radix Select. Se ve consistente con el resto de inputs gracias a las clases utility.
+- **No se permite "reactivar"** — la activación se cierra; el sitio cliente debe pedir una nueva (`POST /activate`) para volver. Coherente con el flujo del dominio (CLAUDE.md §1.6); si en el futuro se necesita "rehydrate", se añade endpoint dedicado.
+- **Sin acciones bulk** — el caso de uso típico es desactivar puntualmente por sitio comprometido o cliente que se baja. Si surge demanda real, columna 0 + barra flotante.
+- **Token mascarado, no copiable** — no se expone el token en claro nunca (mismo principio que API Keys §5.2). El admin no debería tener motivo legítimo para copiarlo.
+
+**Verificación pendiente del usuario** (en WP local):
+
+- [ ] `cd imagina-updater-server/assets/admin && npm run build` — compila los **cinco** bundles.
+- [ ] Submenu "Activaciones (nuevo)" carga; tabla pinta activaciones existentes con dominio, site_name de la API key, token mascarado, estado.
+- [ ] Tabs Todas/Activas/Inactivas filtran correctamente.
+- [ ] Dropdown de API key filtra por `api_key_id`.
+- [ ] Búsqueda por dominio (LIKE).
+- [ ] Acción Desactivar → confirm → fila pasa a "Inactiva", `activations_used` de la pantalla API Keys decrementa, KPI del Dashboard refleja el cambio.
+- [ ] Activación ya inactiva muestra "Desactivada hace X" en lugar de botón.
+- [ ] Network tab: `activations.js` solo se carga en su pantalla.
+
+**Pendiente para 5.6 (Logs)**: visor con virtual scroll (TanStack Virtual), filtros por nivel, search, clear/download. Es la única pantalla con dataset potencialmente muy grande, así que activamos virtualization aquí por primera vez.
 
 #### 5.6 Página: Logs
 

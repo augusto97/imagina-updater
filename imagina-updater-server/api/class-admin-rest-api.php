@@ -125,6 +125,7 @@ class Imagina_Updater_Server_Admin_REST_API {
                     'callback'            => array($this, 'list_api_keys'),
                     'permission_callback' => array($this, 'check_admin_permissions'),
                     'args'                => array(
+                        'lite'     => array('type' => 'boolean', 'default' => false),
                         'page'     => array('type' => 'integer', 'default' => 1, 'minimum' => 1),
                         'per_page' => array('type' => 'integer', 'default' => 20, 'minimum' => 1, 'maximum' => 100),
                         'status'   => array('type' => 'string', 'enum' => array('all', 'active', 'inactive'), 'default' => 'all'),
@@ -286,6 +287,35 @@ class Imagina_Updater_Server_Admin_REST_API {
             array(
                 'methods'             => WP_REST_Server::READABLE,
                 'callback'            => array($this, 'list_plugin_versions'),
+                'permission_callback' => array($this, 'check_admin_permissions'),
+            )
+        );
+
+        // ---- Fase 5.5: Activations ----------------------------------
+
+        register_rest_route(
+            self::NAMESPACE,
+            '/activations',
+            array(
+                'methods'             => WP_REST_Server::READABLE,
+                'callback'            => array($this, 'list_activations'),
+                'permission_callback' => array($this, 'check_admin_permissions'),
+                'args'                => array(
+                    'page'        => array('type' => 'integer', 'default' => 1, 'minimum' => 1),
+                    'per_page'    => array('type' => 'integer', 'default' => 20, 'minimum' => 1, 'maximum' => 100),
+                    'status'      => array('type' => 'string', 'enum' => array('all', 'active', 'inactive'), 'default' => 'all'),
+                    'api_key_id'  => array('type' => 'integer', 'default' => 0),
+                    'search'      => array('type' => 'string', 'default' => ''),
+                ),
+            )
+        );
+
+        register_rest_route(
+            self::NAMESPACE,
+            '/activations/(?P<id>\d+)/deactivate',
+            array(
+                'methods'             => WP_REST_Server::CREATABLE,
+                'callback'            => array($this, 'deactivate_activation'),
                 'permission_callback' => array($this, 'check_admin_permissions'),
             )
         );
@@ -519,12 +549,30 @@ class Imagina_Updater_Server_Admin_REST_API {
     /**
      * GET /admin/v1/api-keys
      *
-     * Listado paginado con filtros por estado y búsqueda libre. La
-     * columna `activations_used` se calcula con LEFT JOIN sobre
-     * activations (is_active=1) para evitar N+1.
+     * Modo dual:
+     *   - `?lite=1` → array `[{id, site_name}]` para dropdowns (Fase 5.5).
+     *   - Sin `lite` → paginado con filtros por estado y búsqueda libre.
+     *     La columna `activations_used` se calcula con LEFT JOIN sobre
+     *     activations (is_active=1) para evitar N+1.
      */
     public function list_api_keys(WP_REST_Request $request) {
         global $wpdb;
+
+        if ($request->get_param('lite')) {
+            $table = $wpdb->prefix . 'imagina_updater_api_keys';
+            $rows  = $wpdb->get_results(
+                "SELECT id, site_name FROM {$table} ORDER BY site_name ASC",
+                ARRAY_A
+            );
+            if (!is_array($rows)) {
+                $rows = array();
+            }
+            foreach ($rows as &$row) {
+                $row['id'] = (int) $row['id'];
+            }
+            unset($row);
+            return rest_ensure_response($rows);
+        }
 
         $page     = max(1, (int) $request->get_param('page'));
         $per_page = max(1, min(100, (int) $request->get_param('per_page')));
@@ -1600,5 +1648,143 @@ class Imagina_Updater_Server_Admin_REST_API {
         unset($row);
 
         return rest_ensure_response($rows);
+    }
+
+    // =========================================================
+    // Fase 5.5 — Activations
+    // =========================================================
+
+    /**
+     * Mascara el activation_token (formato `iat_` + 60 hex). Mismo
+     * patrón que las API keys: 4 primeros + 4 últimos.
+     */
+    private function mask_activation_token($token) {
+        if (!is_string($token) || strlen($token) < 8) {
+            return '';
+        }
+        return substr($token, 0, 4) . '••••' . substr($token, -4);
+    }
+
+    private function serialize_activation($row) {
+        return array(
+            'id'                  => (int) $row->id,
+            'api_key_id'          => (int) $row->api_key_id,
+            'site_name'           => $row->site_name ? (string) $row->site_name : null,
+            'site_domain'         => (string) $row->site_domain,
+            'token_masked'        => $this->mask_activation_token($row->activation_token),
+            'is_active'           => (int) $row->is_active === 1,
+            'activated_at'        => (string) $row->activated_at,
+            'last_verified'       => $row->last_verified ? (string) $row->last_verified : null,
+            'deactivated_at'      => $row->deactivated_at ? (string) $row->deactivated_at : null,
+        );
+    }
+
+    /**
+     * GET /admin/v1/activations
+     *
+     * Listado paginado con filtros por API key, estado y búsqueda
+     * libre por dominio. LEFT JOIN sobre api_keys para mostrar el
+     * site_name asociado sin un round-trip extra.
+     */
+    public function list_activations(WP_REST_Request $request) {
+        global $wpdb;
+
+        $page       = max(1, (int) $request->get_param('page'));
+        $per_page   = max(1, min(100, (int) $request->get_param('per_page')));
+        $status     = (string) $request->get_param('status');
+        $api_key_id = (int) $request->get_param('api_key_id');
+        $search     = trim((string) $request->get_param('search'));
+        $offset     = ($page - 1) * $per_page;
+
+        $activations_table = $wpdb->prefix . 'imagina_updater_activations';
+        $api_keys_table    = $wpdb->prefix . 'imagina_updater_api_keys';
+
+        $where      = array();
+        $where_args = array();
+        if ('active' === $status) {
+            $where[] = 'a.is_active = 1';
+        } elseif ('inactive' === $status) {
+            $where[] = 'a.is_active = 0';
+        }
+        if ($api_key_id > 0) {
+            $where[]      = 'a.api_key_id = %d';
+            $where_args[] = $api_key_id;
+        }
+        if ('' !== $search) {
+            $like         = '%' . $wpdb->esc_like($search) . '%';
+            $where[]      = 'a.site_domain LIKE %s';
+            $where_args[] = $like;
+        }
+        $where_sql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+
+        $count_sql = "SELECT COUNT(*) FROM {$activations_table} a {$where_sql}";
+        $total     = (int) ($where_args
+            ? $wpdb->get_var($wpdb->prepare($count_sql, $where_args))
+            : $wpdb->get_var($count_sql));
+
+        $list_sql = "SELECT a.id, a.api_key_id, a.site_domain, a.activation_token,
+                            a.is_active, a.activated_at, a.last_verified, a.deactivated_at,
+                            k.site_name
+                     FROM {$activations_table} a
+                     LEFT JOIN {$api_keys_table} k ON k.id = a.api_key_id
+                     {$where_sql}
+                     ORDER BY a.activated_at DESC
+                     LIMIT %d OFFSET %d";
+
+        $list_args = array_merge($where_args, array($per_page, $offset));
+        $rows      = $wpdb->get_results($wpdb->prepare($list_sql, $list_args));
+
+        $items = array();
+        if (is_array($rows)) {
+            foreach ($rows as $row) {
+                $items[] = $this->serialize_activation($row);
+            }
+        }
+
+        return rest_ensure_response(
+            array(
+                'items'    => $items,
+                'total'    => $total,
+                'page'     => $page,
+                'per_page' => $per_page,
+            )
+        );
+    }
+
+    /**
+     * POST /admin/v1/activations/{id}/deactivate
+     */
+    public function deactivate_activation(WP_REST_Request $request) {
+        global $wpdb;
+
+        if (!class_exists('Imagina_Updater_Server_Activations')) {
+            return new WP_Error('iaud_unavailable', __('Activations manager no disponible.', 'imagina-updater-server'), array('status' => 500));
+        }
+
+        $id = (int) $request['id'];
+        $ok = Imagina_Updater_Server_Activations::deactivate_site($id);
+        if (!$ok) {
+            return new WP_Error('iaud_deactivate_failed', __('No se pudo desactivar la activación.', 'imagina-updater-server'), array('status' => 500));
+        }
+
+        $activations_table = $wpdb->prefix . 'imagina_updater_activations';
+        $api_keys_table    = $wpdb->prefix . 'imagina_updater_api_keys';
+
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT a.id, a.api_key_id, a.site_domain, a.activation_token,
+                        a.is_active, a.activated_at, a.last_verified, a.deactivated_at,
+                        k.site_name
+                 FROM {$activations_table} a
+                 LEFT JOIN {$api_keys_table} k ON k.id = a.api_key_id
+                 WHERE a.id = %d",
+                $id
+            )
+        );
+        if (!$row) {
+            return new WP_Error('iaud_not_found', __('Activación no encontrada.', 'imagina-updater-server'), array('status' => 404));
+        }
+
+        return rest_ensure_response(array('item' => $this->serialize_activation($row)));
     }
 }

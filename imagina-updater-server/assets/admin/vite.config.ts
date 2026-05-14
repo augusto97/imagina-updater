@@ -86,8 +86,7 @@ export default defineConfig({
     // CSS real es idéntica. Con cssCodeSplit:true Vite la dedup-a a
     // un chunk compartido con nombre derivado del chunk JS donde
     // primero aparece, que es impredecible. Forzando false obtenemos
-    // un nombre estable `iaud.css` (ver assetFileNames) que el PHP
-    // puede enqueue de forma fiable.
+    // UN solo archivo CSS por build (ver assetFileNames).
     cssCodeSplit: false,
     rollupOptions: {
       input: Object.fromEntries(
@@ -98,7 +97,8 @@ export default defineConfig({
         chunkFileNames: 'chunks/[name]-[hash].js',
         assetFileNames: (assetInfo) => {
           if (assetInfo.name?.endsWith('.css')) {
-            return 'iaud.css';
+            // Hash en el nombre. PHP resuelve via manifest.
+            return 'iaud-[hash].css';
           }
           return 'assets/[name]-[hash][extname]';
         },

@@ -3,7 +3,7 @@
  * Plugin Name: Imagina Updater Server
  * Plugin URI: https://imaginawp.com/actualizador-de-plugins/
  * Description: Sistema central para gestionar y distribuir actualizaciones de plugins propios a sitios cliente
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: Imagina WP
  * Author URI: https://imaginawp.com
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Constantes del plugin
-define('IMAGINA_UPDATER_SERVER_VERSION', '1.0.0');
+define('IMAGINA_UPDATER_SERVER_VERSION', '1.1.0');
 define('IMAGINA_UPDATER_SERVER_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('IMAGINA_UPDATER_SERVER_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('IMAGINA_UPDATER_SERVER_PLUGIN_FILE', __FILE__);

@@ -77,31 +77,36 @@
     background-color: hsl(var(--iaud-background));
   }
 
-  .iaud-app *,
-  .iaud-app *::before,
-  .iaud-app *::after {
+  /*
+   * Reset scoped a `.iaud-app` — equivalente a Tailwind Preflight.
+   *
+   * IMPORTANTE: usamos `:where(.iaud-app)` para que el segmento de
+   * la clase NO sume especificidad. La especificidad final de cada
+   * regla queda en (0, 0, X) donde X es el número de elementos del
+   * selector interno. Esto garantiza que CUALQUIER utility class
+   * de Tailwind (`.iaud-bg-primary`, `.iaud-px-3`, etc., con
+   * especificidad (0,1,0)) gane sin necesidad de !important.
+   *
+   * Sin esto, una regla como `.iaud-app button { padding: 0 }`
+   * tendría especificidad (0,1,1) y pisaría a `.iaud-px-3` aunque
+   * Tailwind ponga la utility class después en el CSS.
+   *
+   * Se mantiene Tailwind con `preflight: false` para no contaminar
+   * el resto de wp-admin (CLAUDE.md §5).
+   */
+  :where(.iaud-app),
+  :where(.iaud-app *),
+  :where(.iaud-app *::before),
+  :where(.iaud-app *::after) {
     box-sizing: border-box;
     border-width: 0;
     border-style: solid;
     border-color: hsl(var(--iaud-border));
   }
 
-  /*
-   * Reset scoped — equivalente al Tailwind Preflight pero limitado a
-   * `.iaud-app`. Sin esto los estilos por defecto de wp-admin
-   * (`forms.css`, `buttons.css`, `list-tables.css`) y los del
-   * navegador (botones grises, listas con bullets, etc.) se filtran
-   * dentro de la SPA y rompen la consistencia visual.
-   *
-   * Se mantiene `preflight: false` en Tailwind para que NO reseteemos
-   * fuera de `.iaud-app` y no afectemos al resto de wp-admin.
-   */
-  .iaud-app button,
-  .iaud-app [type='button'],
-  .iaud-app [type='reset'],
-  .iaud-app [type='submit'] {
-    -webkit-appearance: none;
-    appearance: none;
+  :where(.iaud-app) :where(button, [type='button'], [type='reset'], [type='submit']) {
+    -webkit-appearance: button;
+    appearance: button;
     background-color: transparent;
     background-image: none;
     border-radius: 0;
@@ -117,13 +122,11 @@
     text-decoration: none;
     text-transform: none;
   }
-  .iaud-app button:focus {
+  :where(.iaud-app) :where(button:focus) {
     outline: none;
   }
 
-  .iaud-app input,
-  .iaud-app select,
-  .iaud-app textarea {
+  :where(.iaud-app) :where(input, select, textarea) {
     -webkit-appearance: none;
     appearance: none;
     background-color: transparent;
@@ -140,93 +143,69 @@
     padding: 0;
     text-transform: none;
   }
-  .iaud-app input[type='checkbox'],
-  .iaud-app input[type='radio'] {
-    /* Estos sí queremos el aspecto nativo del navegador (es bueno
-     * para accesibilidad y consistencia con el OS), pero forzamos
-     * que NO hereden tamaños de wp-admin. */
+  /* Mantén el aspecto nativo en checkbox / radio / select arrow. */
+  :where(.iaud-app) :where(input[type='checkbox'], input[type='radio']) {
     -webkit-appearance: auto;
     appearance: auto;
   }
-  .iaud-app select {
-    /* Restablecer el arrow nativo. */
+  :where(.iaud-app) :where(select) {
     -webkit-appearance: auto;
     appearance: auto;
   }
-  .iaud-app input::placeholder,
-  .iaud-app textarea::placeholder {
+  :where(.iaud-app) :where(input, textarea)::placeholder {
     color: hsl(var(--iaud-muted-foreground));
     opacity: 1;
   }
 
-  .iaud-app table {
+  :where(.iaud-app) :where(table) {
     border-collapse: collapse;
     border-spacing: 0;
     text-indent: 0;
   }
-  .iaud-app th,
-  .iaud-app td {
+  :where(.iaud-app) :where(th, td) {
     padding: 0;
     text-align: left;
     vertical-align: inherit;
   }
 
-  .iaud-app h1,
-  .iaud-app h2,
-  .iaud-app h3,
-  .iaud-app h4,
-  .iaud-app h5,
-  .iaud-app h6 {
+  :where(.iaud-app) :where(h1, h2, h3, h4, h5, h6) {
     font: inherit;
     font-weight: inherit;
     margin: 0;
   }
-  .iaud-app p,
-  .iaud-app pre,
-  .iaud-app figure,
-  .iaud-app blockquote,
-  .iaud-app dl,
-  .iaud-app dd {
+  :where(.iaud-app) :where(p, pre, figure, blockquote, dl, dd) {
     margin: 0;
   }
-  .iaud-app ul,
-  .iaud-app ol {
+  :where(.iaud-app) :where(ul, ol) {
     list-style: none;
     margin: 0;
     padding: 0;
   }
 
-  .iaud-app a {
+  :where(.iaud-app) :where(a) {
     background-color: transparent;
     color: inherit;
     text-decoration: inherit;
   }
-  .iaud-app a:hover,
-  .iaud-app a:focus {
+  :where(.iaud-app) :where(a:hover, a:focus) {
     color: inherit;
     text-decoration: none;
   }
 
-  .iaud-app code,
-  .iaud-app kbd,
-  .iaud-app samp,
-  .iaud-app pre {
+  :where(.iaud-app) :where(code, kbd, samp, pre) {
     font-family:
       ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
       'Liberation Mono', 'Courier New', monospace;
     font-size: 1em;
   }
 
-  .iaud-app img,
-  .iaud-app svg,
-  .iaud-app video,
-  .iaud-app canvas {
+  :where(.iaud-app) :where(img, svg, video, canvas) {
     display: block;
     max-width: 100%;
     height: auto;
   }
 
-  .iaud-app hr {
+  :where(.iaud-app) :where(hr) {
     border-top-width: 1px;
     color: inherit;
     height: 0;

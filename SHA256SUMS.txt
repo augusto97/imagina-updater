@@ -1,3 +1,3 @@
-719b838606565091c92b1184423acc35b1c6333771c66a6ff5cc4f7159bcf71e  imagina-updater-client-1.0.2.zip
-d9d15466923e52b495ccf1998760e490685fd2f0a1e3198ecd15e537171b1f0b  imagina-updater-license-extension-5.3.1.zip
-bb4e132f8e1c7e5f464474f0e59285421ea34c5c45a4449b7741d660eda0ce15  imagina-updater-server-1.1.0.zip
+43ef5c319e4bb3dabf57f08eb010a050fe291c4fbaa1d85d091b39b839978990  imagina-updater-client-1.0.2.zip
+281727f8cc8d1727ce547a44fe995c2bc8464609e04d4352d1eab14c46e1f2b9  imagina-updater-license-extension-5.3.1.zip
+596d638ec8648d5d0c521ee688e6b8d14596de65b803943f3b44b0758f49eb32  imagina-updater-server-1.1.1.zip

@@ -321,12 +321,12 @@ class Imagina_Updater_Server_Admin {
             return;
         }
 
-        $manifest = include $asset;
-        if (!is_array($manifest)) {
-            $manifest = array('dependencies' => array(), 'version' => IMAGINA_UPDATER_SERVER_VERSION);
+        $asset_manifest = include $asset;
+        if (!is_array($asset_manifest)) {
+            $asset_manifest = array('dependencies' => array(), 'version' => IMAGINA_UPDATER_SERVER_VERSION);
         }
-        $version = isset($manifest['version']) ? $manifest['version'] : IMAGINA_UPDATER_SERVER_VERSION;
-        $deps    = isset($manifest['dependencies']) ? $manifest['dependencies'] : array();
+        $version = isset($asset_manifest['version']) ? $asset_manifest['version'] : IMAGINA_UPDATER_SERVER_VERSION;
+        $deps    = isset($asset_manifest['dependencies']) ? $asset_manifest['dependencies'] : array();
 
         $handle = 'iaud-' . $bundle;
         wp_enqueue_script(
@@ -336,16 +336,17 @@ class Imagina_Updater_Server_Admin {
             $version,
             true
         );
-        // CSS compartido entre todas las pantallas SPA (Vite bundlea
-        // todo Tailwind en un único `iaud.css` con cssCodeSplit:false
-        // para no duplicar utilities por pantalla y mantener nombre
-        // estable). Usamos handle único `iaud-shared-style` para que
-        // wp_enqueue_style lo deduplique automáticamente si dos
-        // bundles se cargaran en la misma página (no debería pasar
-        // por el guard de $hook, pero defense in depth).
+
+        // CSS compartido entre todas las pantallas SPA. Vite emite un
+        // único archivo `iaud-[hash].css` (cssCodeSplit:false) y
+        // registra el filename real en `.vite/manifest.json`. PHP lo
+        // resuelve aquí. El hash en el nombre es cache-bust definitivo:
+        // si el contenido cambia, la URL completa cambia, y ningún
+        // caché (browser, host, CDN) puede servir el archivo viejo.
+        $css_file = $this->resolve_spa_css_filename($bundle);
         wp_enqueue_style(
             'iaud-shared-style',
-            $dist_url . 'iaud.css',
+            $dist_url . $css_file,
             array(),
             $version
         );
@@ -367,6 +368,54 @@ class Imagina_Updater_Server_Admin {
                 'licenseExtensionActive'  => class_exists('Imagina_License_SDK_Injector'),
             )
         );
+    }
+
+    /**
+     * Cache del nombre del CSS resuelto en disco para evitar globbing
+     * múltiple en la misma request.
+     *
+     * @var string|null
+     */
+    private $resolved_css_filename = null;
+
+    /**
+     * Localiza el archivo `iaud-[hash].css` que Vite emite en cada
+     * build (cssCodeSplit:false + assetFileNames). El hash en el
+     * nombre es cache-bust definitivo: cuando el contenido del CSS
+     * cambia, el filename cambia, y ningún proxy/CDN puede servir el
+     * archivo viejo aunque ignore el query string `?ver=`.
+     *
+     * Con `cssCodeSplit:false` Vite NO registra la CSS en
+     * `manifest.json` (es un asset shared, no asociado a entries), así
+     * que la resolución se hace por glob sobre el filesystem. Solo se
+     * ejecuta una vez por request.
+     *
+     * Fallback: si no encuentra ningún `iaud-*.css`, devuelve
+     * `iaud.css` — el enqueue dará 404, pero el resto del flujo
+     * sobrevive y el admin_notices de build-missing avisará.
+     *
+     * @param string $bundle Slug de la entry (reservado para futuro
+     *                       uso con cssCodeSplit:true).
+     * @return string Filename relativo a `assets/dist/`.
+     */
+    private function resolve_spa_css_filename($bundle) {
+        unset($bundle);
+        if (null !== $this->resolved_css_filename) {
+            return $this->resolved_css_filename;
+        }
+        $dist_dir = IMAGINA_UPDATER_SERVER_PLUGIN_DIR . 'assets/dist/';
+        $matches  = glob($dist_dir . 'iaud-*.css');
+        if (is_array($matches) && count($matches) > 0) {
+            // Tomamos el más reciente por si hubiera huérfanos de
+            // builds previos en el mismo directorio.
+            usort($matches, static function ($a, $b) {
+                return filemtime($b) <=> filemtime($a);
+            });
+            $this->resolved_css_filename = basename($matches[0]);
+            return $this->resolved_css_filename;
+        }
+        $this->resolved_css_filename = 'iaud.css';
+        return $this->resolved_css_filename;
     }
 
     /**

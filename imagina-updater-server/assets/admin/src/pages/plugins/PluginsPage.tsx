@@ -1,6 +1,11 @@
 import { useMemo, useState } from 'react';
-import { type ColumnDef } from '@tanstack/react-table';
 import {
+  getCoreRowModel,
+  useReactTable,
+  type ColumnDef,
+} from '@tanstack/react-table';
+import {
+  Download,
   History,
   Package,
   Pencil,
@@ -11,13 +16,16 @@ import {
   Trash2,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { DataTable } from '@/components/data-table';
+import { DataTableColumnsToggle } from '@/components/data-table-columns-toggle';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useColumnVisibility } from '@/hooks/useColumnVisibility';
 import { formatNumber, formatRelativeTime } from '@/lib/format';
 import {
+  getPluginDownloadUrl,
   useDeletePlugin,
   usePluginsList,
   useReinjectProtection,
@@ -29,6 +37,7 @@ import { VersionsDrawer } from './VersionsDrawer';
 import type { PluginRow } from './types';
 
 const PER_PAGE = 20;
+const COLS_STORAGE_KEY = 'iaud:plugins:cols';
 
 export function PluginsPage() {
   const [page, setPage] = useState(1);
@@ -36,6 +45,9 @@ export function PluginsPage() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editing, setEditing] = useState<PluginRow | undefined>(undefined);
   const [versionsFor, setVersionsFor] = useState<PluginRow | undefined>(undefined);
+  const [columnVisibility, setColumnVisibility] = useColumnVisibility(
+    COLS_STORAGE_KEY,
+  );
 
   const list = usePluginsList({ page, per_page: PER_PAGE, search });
   const deleteMutation = useDeletePlugin();
@@ -47,11 +59,14 @@ export function PluginsPage() {
     window.iaudConfig?.licenseExtensionActive ??
     false;
 
-  const columns = useMemo<ColumnDef<PluginRow>[]>(() => {
-    const cols: ColumnDef<PluginRow>[] = [
+  const columns = useMemo<ColumnDef<PluginRow>[]>(
+    () => [
       {
+        id: 'name',
         accessorKey: 'name',
         header: 'Plugin',
+        meta: { label: 'Plugin' },
+        enableHiding: false,
         cell: ({ row }) => {
           const p = row.original;
           return (
@@ -80,8 +95,10 @@ export function PluginsPage() {
         },
       },
       {
+        id: 'current_version',
         accessorKey: 'current_version',
         header: 'Versión',
+        meta: { label: 'Versión' },
         cell: ({ getValue }) => (
           <code className="iaud-rounded iaud-bg-muted iaud-px-1.5 iaud-py-0.5 iaud-font-mono iaud-text-xs">
             {String(getValue())}
@@ -89,8 +106,10 @@ export function PluginsPage() {
         ),
       },
       {
+        id: 'total_downloads',
         accessorKey: 'total_downloads',
         header: () => <span className="iaud-block iaud-text-right">Descargas</span>,
+        meta: { label: 'Descargas' },
         cell: ({ getValue }) => (
           <span className="iaud-block iaud-text-right iaud-tabular-nums iaud-text-sm">
             {formatNumber(Number(getValue()))}
@@ -98,8 +117,10 @@ export function PluginsPage() {
         ),
       },
       {
+        id: 'group_ids',
         accessorKey: 'group_ids',
         header: 'Grupos',
+        meta: { label: 'Grupos' },
         cell: ({ getValue }) => {
           const ids = getValue() as number[];
           return ids.length > 0 ? (
@@ -110,8 +131,10 @@ export function PluginsPage() {
         },
       },
       {
+        id: 'uploaded_at',
         accessorKey: 'uploaded_at',
         header: 'Última subida',
+        meta: { label: 'Última subida' },
         cell: ({ getValue }) => (
           <span className="iaud-text-xs iaud-text-muted-foreground">
             {formatRelativeTime(String(getValue()))}
@@ -121,10 +144,22 @@ export function PluginsPage() {
       {
         id: 'actions',
         header: () => <span className="iaud-sr-only">Acciones</span>,
+        enableHiding: false,
         cell: ({ row }) => {
           const p = row.original;
+          const downloadUrl = getPluginDownloadUrl(p.id);
           return (
             <div className="iaud-flex iaud-items-center iaud-justify-end iaud-gap-1">
+              {downloadUrl && (
+                <a
+                  href={downloadUrl}
+                  download
+                  title="Descargar ZIP"
+                  className={buttonVariants({ variant: 'ghost', size: 'icon' })}
+                >
+                  <Download className="iaud-h-4 iaud-w-4" />
+                </a>
+              )}
               <Button
                 variant="ghost"
                 size="icon"
@@ -209,9 +244,17 @@ export function PluginsPage() {
           );
         },
       },
-    ];
-    return cols;
-  }, [deleteMutation, licenseExtensionActive, reinject, togglePremium]);
+    ],
+    [deleteMutation, licenseExtensionActive, reinject, togglePremium],
+  );
+
+  const table = useReactTable({
+    data: list.data?.items ?? [],
+    columns,
+    state: { columnVisibility },
+    onColumnVisibilityChange: setColumnVisibility,
+    getCoreRowModel: getCoreRowModel(),
+  });
 
   const total = list.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
@@ -236,7 +279,8 @@ export function PluginsPage() {
 
       <Card>
         <CardContent className="iaud-p-0">
-          <div className="iaud-flex iaud-items-center iaud-justify-end iaud-border-b iaud-border-border iaud-p-3">
+          <div className="iaud-flex iaud-flex-col iaud-gap-3 iaud-border-b iaud-border-border iaud-p-3 sm:iaud-flex-row sm:iaud-items-center sm:iaud-justify-between">
+            <DataTableColumnsToggle table={table} pinnedIds={['name', 'actions']} />
             <div className="iaud-w-full sm:iaud-w-64">
               <Input
                 type="search"
@@ -262,8 +306,7 @@ export function PluginsPage() {
             </p>
           ) : (
             <DataTable
-              columns={columns}
-              data={list.data?.items ?? []}
+              table={table}
               emptyMessage={
                 search
                   ? 'Sin resultados con esa búsqueda.'

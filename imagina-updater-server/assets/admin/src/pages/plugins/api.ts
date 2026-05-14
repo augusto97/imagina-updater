@@ -135,3 +135,15 @@ export function useReinjectProtection() {
     },
   });
 }
+
+/**
+ * URL absoluta del endpoint de descarga del ZIP del plugin con el
+ * nonce admin en query string. Lista para usar como `href` de un
+ * anchor con `download`.
+ */
+export function getPluginDownloadUrl(id: number): string | null {
+  const cfg = window.iaudConfig;
+  if (!cfg) return null;
+  const base = cfg.adminUrl.replace(/\/$/, '');
+  return `${base}/plugins/${id}/download?_wpnonce=${encodeURIComponent(cfg.nonce)}`;
+}

@@ -1,12 +1,18 @@
 import { useMemo, useState } from 'react';
-import { type ColumnDef } from '@tanstack/react-table';
+import {
+  getCoreRowModel,
+  useReactTable,
+  type ColumnDef,
+} from '@tanstack/react-table';
 import { Globe2, Power } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { DataTable } from '@/components/data-table';
+import { DataTableColumnsToggle } from '@/components/data-table-columns-toggle';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useColumnVisibility } from '@/hooks/useColumnVisibility';
 import { cn } from '@/lib/utils';
 import { formatDateTime, formatRelativeTime } from '@/lib/format';
 import {
@@ -17,6 +23,7 @@ import {
 import type { ActivationRow, ActivationsStatusFilter } from './types';
 
 const PER_PAGE = 20;
+const COLS_STORAGE_KEY = 'iaud:activations:cols';
 
 const STATUS_TABS: Array<{ value: ActivationsStatusFilter; label: string }> = [
   { value: 'all', label: 'Todas' },
@@ -29,6 +36,7 @@ export function ActivationsPage() {
   const [status, setStatus] = useState<ActivationsStatusFilter>('all');
   const [apiKeyId, setApiKeyId] = useState(0);
   const [search, setSearch] = useState('');
+  const [columnVisibility, setColumnVisibility] = useColumnVisibility(COLS_STORAGE_KEY);
 
   const list = useActivationsList({
     page,
@@ -43,8 +51,11 @@ export function ActivationsPage() {
   const columns = useMemo<ColumnDef<ActivationRow>[]>(
     () => [
       {
+        id: 'site_domain',
         accessorKey: 'site_domain',
         header: 'Dominio',
+        meta: { label: 'Dominio' },
+        enableHiding: false,
         cell: ({ row }) => {
           const a = row.original;
           return (
@@ -60,8 +71,10 @@ export function ActivationsPage() {
         },
       },
       {
+        id: 'token_masked',
         accessorKey: 'token_masked',
         header: 'Token',
+        meta: { label: 'Token' },
         cell: ({ getValue }) => (
           <code className="iaud-rounded iaud-bg-muted iaud-px-1.5 iaud-py-0.5 iaud-font-mono iaud-text-xs">
             {String(getValue())}
@@ -69,8 +82,10 @@ export function ActivationsPage() {
         ),
       },
       {
+        id: 'is_active',
         accessorKey: 'is_active',
         header: 'Estado',
+        meta: { label: 'Estado' },
         cell: ({ row }) =>
           row.original.is_active ? (
             <Badge variant="success">Activa</Badge>
@@ -79,8 +94,10 @@ export function ActivationsPage() {
           ),
       },
       {
+        id: 'activated_at',
         accessorKey: 'activated_at',
         header: 'Activada',
+        meta: { label: 'Activada' },
         cell: ({ getValue }) => (
           <span className="iaud-text-xs iaud-text-muted-foreground">
             {formatDateTime(String(getValue()))}
@@ -88,8 +105,10 @@ export function ActivationsPage() {
         ),
       },
       {
+        id: 'last_verified',
         accessorKey: 'last_verified',
         header: 'Última verificación',
+        meta: { label: 'Última verificación' },
         cell: ({ getValue }) => {
           const v = getValue() as string | null;
           return v ? (
@@ -106,6 +125,7 @@ export function ActivationsPage() {
       },
       {
         id: 'actions',
+        enableHiding: false,
         header: () => <span className="iaud-sr-only">Acciones</span>,
         cell: ({ row }) => {
           const a = row.original;
@@ -144,6 +164,14 @@ export function ActivationsPage() {
     [deactivate],
   );
 
+  const table = useReactTable({
+    data: list.data?.items ?? [],
+    columns,
+    state: { columnVisibility },
+    onColumnVisibilityChange: setColumnVisibility,
+    getCoreRowModel: getCoreRowModel(),
+  });
+
   const total = list.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
 
@@ -178,6 +206,7 @@ export function ActivationsPage() {
               ))}
             </div>
             <div className="iaud-flex iaud-flex-col iaud-gap-2 sm:iaud-flex-row sm:iaud-items-center">
+              <DataTableColumnsToggle table={table} />
               <select
                 value={apiKeyId}
                 onChange={(e) => {
@@ -222,8 +251,7 @@ export function ActivationsPage() {
             </p>
           ) : (
             <DataTable
-              columns={columns}
-              data={list.data?.items ?? []}
+              table={table}
               emptyMessage={
                 search || status !== 'all' || apiKeyId > 0
                   ? 'Sin resultados con los filtros actuales.'

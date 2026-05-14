@@ -291,6 +291,16 @@ class Imagina_Updater_Server_Admin_REST_API {
             )
         );
 
+        register_rest_route(
+            self::NAMESPACE,
+            '/plugins/(?P<id>\d+)/download',
+            array(
+                'methods'             => WP_REST_Server::READABLE,
+                'callback'            => array($this, 'download_plugin_zip'),
+                'permission_callback' => array($this, 'check_admin_permissions'),
+            )
+        );
+
         // ---- Fase 5.5: Activations ----------------------------------
 
         register_rest_route(
@@ -1722,6 +1732,68 @@ class Imagina_Updater_Server_Admin_REST_API {
         unset($row);
 
         return rest_ensure_response($rows);
+    }
+
+    /**
+     * GET /admin/v1/plugins/{id}/download
+     *
+     * Streamea el ZIP actual del plugin con `Content-Disposition:
+     * attachment` para que el navegador dispare save-as. Mismo
+     * patrón de 8 KB-chunks que la descarga de logs (Fase 5.6) y
+     * que el endpoint público de Fase 3.3.
+     *
+     * Auth: cookie admin + nonce wp_rest. No expone tokens ni
+     * habilita acceso anónimo (eso es para el endpoint público
+     * `imagina-updater/v1/download/{slug}` con API key).
+     */
+    public function download_plugin_zip(WP_REST_Request $request) {
+        global $wpdb;
+
+        $id = (int) $request['id'];
+        $plugins_table = $wpdb->prefix . 'imagina_updater_plugins';
+
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT slug, slug_override, current_version, file_path
+                 FROM {$plugins_table} WHERE id = %d",
+                $id
+            )
+        );
+        if (!$row) {
+            return new WP_Error('iaud_not_found', __('Plugin no encontrado.', 'imagina-updater-server'), array('status' => 404));
+        }
+        if (empty($row->file_path) || !file_exists($row->file_path) || !is_readable($row->file_path)) {
+            return new WP_Error('iaud_zip_missing', __('El archivo ZIP del plugin no se encuentra en disco.', 'imagina-updater-server'), array('status' => 500));
+        }
+
+        $slug = !empty($row->slug_override) ? (string) $row->slug_override : (string) $row->slug;
+        $download_name = sanitize_file_name(
+            $slug . '-' . $row->current_version . '.zip'
+        );
+
+        if (function_exists('ob_get_level')) {
+            while (ob_get_level() > 0) {
+                ob_end_clean();
+            }
+        }
+
+        nocache_headers();
+        header('Content-Type: application/zip');
+        header('Content-Disposition: attachment; filename="' . $download_name . '"');
+        header('Content-Length: ' . (string) filesize($row->file_path));
+
+        $handle = fopen($row->file_path, 'rb');
+        if (false === $handle) {
+            return new WP_Error('iaud_read_failed', __('No se pudo abrir el ZIP del plugin.', 'imagina-updater-server'), array('status' => 500));
+        }
+        while (!feof($handle)) {
+            $chunk = fread($handle, 8192);
+            if (false === $chunk) break;
+            echo $chunk; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+            flush();
+        }
+        fclose($handle);
+        exit;
     }
 
     // =========================================================

@@ -1,5 +1,9 @@
 import { useMemo, useState } from 'react';
-import { type ColumnDef } from '@tanstack/react-table';
+import {
+  getCoreRowModel,
+  useReactTable,
+  type ColumnDef,
+} from '@tanstack/react-table';
 import {
   KeyRound,
   Pencil,
@@ -12,8 +16,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { DataTable } from '@/components/data-table';
+import { DataTableColumnsToggle } from '@/components/data-table-columns-toggle';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useColumnVisibility } from '@/hooks/useColumnVisibility';
 import { formatDateTime, formatRelativeTime } from '@/lib/format';
 import {
   useApiKeysList,
@@ -26,6 +32,7 @@ import { PlainKeyBanner } from './PlainKeyBanner';
 import type { ApiKey, StatusFilter } from './types';
 
 const PER_PAGE = 20;
+const COLS_STORAGE_KEY = 'iaud:api-keys:cols';
 
 const STATUS_TABS: Array<{ value: StatusFilter; label: string }> = [
   { value: 'all', label: 'Todas' },
@@ -46,6 +53,7 @@ export function ApiKeysPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editing, setEditing] = useState<ApiKey | undefined>(undefined);
   const [banner, setBanner] = useState<{ plainKey: string; siteName: string } | null>(null);
+  const [columnVisibility, setColumnVisibility] = useColumnVisibility(COLS_STORAGE_KEY);
 
   const list = useApiKeysList({ page, per_page: PER_PAGE, status, search });
   const deleteMutation = useDeleteApiKey();
@@ -55,8 +63,11 @@ export function ApiKeysPage() {
   const columns = useMemo<ColumnDef<ApiKey>[]>(
     () => [
       {
+        id: 'site_name',
         accessorKey: 'site_name',
         header: 'Sitio',
+        meta: { label: 'Sitio' },
+        enableHiding: false,
         cell: ({ row }) => {
           const k = row.original;
           return (
@@ -72,8 +83,10 @@ export function ApiKeysPage() {
         },
       },
       {
+        id: 'api_key_masked',
         accessorKey: 'api_key_masked',
         header: 'API key',
+        meta: { label: 'API key' },
         cell: ({ getValue }) => (
           <code className="iaud-rounded iaud-bg-muted iaud-px-1.5 iaud-py-0.5 iaud-font-mono iaud-text-xs">
             {String(getValue())}
@@ -81,8 +94,10 @@ export function ApiKeysPage() {
         ),
       },
       {
+        id: 'access_type',
         accessorKey: 'access_type',
         header: 'Acceso',
+        meta: { label: 'Acceso' },
         cell: ({ getValue }) => (
           <Badge variant="outline">
             {ACCESS_LABEL[getValue() as ApiKey['access_type']]}
@@ -92,6 +107,7 @@ export function ApiKeysPage() {
       {
         id: 'activations',
         header: 'Activaciones',
+        meta: { label: 'Activaciones' },
         cell: ({ row }) => {
           const k = row.original;
           const max = k.max_activations === 0 ? '∞' : k.max_activations;
@@ -103,8 +119,10 @@ export function ApiKeysPage() {
         },
       },
       {
+        id: 'is_active',
         accessorKey: 'is_active',
         header: 'Estado',
+        meta: { label: 'Estado' },
         cell: ({ row }) =>
           row.original.is_active ? (
             <Badge variant="success">Activa</Badge>
@@ -113,8 +131,10 @@ export function ApiKeysPage() {
           ),
       },
       {
+        id: 'last_used',
         accessorKey: 'last_used',
         header: 'Último uso',
+        meta: { label: 'Último uso' },
         cell: ({ getValue }) => {
           const v = getValue() as string | null;
           return v ? (
@@ -128,6 +148,7 @@ export function ApiKeysPage() {
       },
       {
         id: 'actions',
+        enableHiding: false,
         header: () => <span className="iaud-sr-only">Acciones</span>,
         cell: ({ row }) => {
           const k = row.original;
@@ -200,6 +221,14 @@ export function ApiKeysPage() {
     [deleteMutation, regenerateMutation, toggleMutation],
   );
 
+  const table = useReactTable({
+    data: list.data?.items ?? [],
+    columns,
+    state: { columnVisibility },
+    onColumnVisibilityChange: setColumnVisibility,
+    getCoreRowModel: getCoreRowModel(),
+  });
+
   const total = list.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
 
@@ -255,16 +284,19 @@ export function ApiKeysPage() {
                 </Button>
               ))}
             </div>
-            <div className="iaud-w-full sm:iaud-w-64">
-              <Input
-                type="search"
-                placeholder="Buscar por nombre o URL…"
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(1);
-                }}
-              />
+            <div className="iaud-flex iaud-w-full iaud-items-center iaud-gap-2 sm:iaud-w-auto">
+              <DataTableColumnsToggle table={table} />
+              <div className="iaud-w-full sm:iaud-w-64">
+                <Input
+                  type="search"
+                  placeholder="Buscar por nombre o URL…"
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setPage(1);
+                  }}
+                />
+              </div>
             </div>
           </div>
 
@@ -280,8 +312,7 @@ export function ApiKeysPage() {
             </p>
           ) : (
             <DataTable
-              columns={columns}
-              data={list.data?.items ?? []}
+              table={table}
               emptyMessage={
                 search || status !== 'all'
                   ? 'Sin resultados con los filtros actuales.'

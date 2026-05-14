@@ -1,19 +1,28 @@
 import { useMemo, useState } from 'react';
-import { type ColumnDef } from '@tanstack/react-table';
+import {
+  getCoreRowModel,
+  useReactTable,
+  type ColumnDef,
+} from '@tanstack/react-table';
 import { FolderTree, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { DataTable } from '@/components/data-table';
+import { DataTableColumnsToggle } from '@/components/data-table-columns-toggle';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useColumnVisibility } from '@/hooks/useColumnVisibility';
 import { formatDateTime } from '@/lib/format';
 import { useDeletePluginGroup, usePluginGroupsList } from './api';
 import { PluginGroupDrawer } from './PluginGroupDrawer';
 import type { PluginGroupRow } from './types';
 
+const COLS_STORAGE_KEY = 'iaud:plugin-groups:cols';
+
 export function PluginGroupsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editing, setEditing] = useState<PluginGroupRow | undefined>(undefined);
+  const [columnVisibility, setColumnVisibility] = useColumnVisibility(COLS_STORAGE_KEY);
 
   const list = usePluginGroupsList();
   const deleteMutation = useDeletePluginGroup();
@@ -21,8 +30,11 @@ export function PluginGroupsPage() {
   const columns = useMemo<ColumnDef<PluginGroupRow>[]>(
     () => [
       {
+        id: 'name',
         accessorKey: 'name',
         header: 'Nombre',
+        meta: { label: 'Nombre' },
+        enableHiding: false,
         cell: ({ row }) => {
           const g = row.original;
           return (
@@ -40,8 +52,10 @@ export function PluginGroupsPage() {
         },
       },
       {
+        id: 'plugin_count',
         accessorKey: 'plugin_count',
         header: () => <span className="iaud-block iaud-text-right">Plugins</span>,
+        meta: { label: 'Plugins' },
         cell: ({ getValue }) => (
           <span className="iaud-block iaud-text-right iaud-tabular-nums iaud-text-sm">
             {Number(getValue())}
@@ -49,8 +63,10 @@ export function PluginGroupsPage() {
         ),
       },
       {
+        id: 'linked_api_keys_count',
         accessorKey: 'linked_api_keys_count',
         header: 'API keys',
+        meta: { label: 'API keys vinculadas' },
         cell: ({ getValue }) => {
           const n = Number(getValue());
           return n > 0 ? (
@@ -61,8 +77,10 @@ export function PluginGroupsPage() {
         },
       },
       {
+        id: 'created_at',
         accessorKey: 'created_at',
         header: 'Creado',
+        meta: { label: 'Creado' },
         cell: ({ getValue }) => (
           <span className="iaud-text-xs iaud-text-muted-foreground">
             {formatDateTime(String(getValue()))}
@@ -71,6 +89,7 @@ export function PluginGroupsPage() {
       },
       {
         id: 'actions',
+        enableHiding: false,
         header: () => <span className="iaud-sr-only">Acciones</span>,
         cell: ({ row }) => {
           const g = row.original;
@@ -109,6 +128,14 @@ export function PluginGroupsPage() {
     [deleteMutation],
   );
 
+  const table = useReactTable({
+    data: list.data?.items ?? [],
+    columns,
+    state: { columnVisibility },
+    onColumnVisibilityChange: setColumnVisibility,
+    getCoreRowModel: getCoreRowModel(),
+  });
+
   return (
     <div className="iaud-app iaud-min-h-screen iaud-bg-background iaud-p-6">
       <header className="iaud-mb-6 iaud-flex iaud-items-start iaud-justify-between iaud-gap-4">
@@ -135,6 +162,10 @@ export function PluginGroupsPage() {
 
       <Card>
         <CardContent className="iaud-p-0">
+          <div className="iaud-flex iaud-items-center iaud-justify-end iaud-border-b iaud-border-border iaud-p-3">
+            <DataTableColumnsToggle table={table} />
+          </div>
+
           {list.isLoading ? (
             <div className="iaud-space-y-2 iaud-p-4">
               {Array.from({ length: 4 }).map((_, i) => (
@@ -148,8 +179,7 @@ export function PluginGroupsPage() {
             </p>
           ) : (
             <DataTable
-              columns={columns}
-              data={list.data?.items ?? []}
+              table={table}
               emptyMessage='Aún no hay grupos. Pulsa "Nuevo grupo" para crear el primero.'
             />
           )}

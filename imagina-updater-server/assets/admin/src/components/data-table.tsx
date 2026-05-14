@@ -1,9 +1,4 @@
-import {
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-  type ColumnDef,
-} from '@tanstack/react-table';
+import { flexRender, type Table as RTable } from '@tanstack/react-table';
 import {
   Table,
   TableBody,
@@ -19,30 +14,31 @@ import {
  *
  * Diseño deliberadamente plano: la paginación, el filtrado y el
  * ordering los maneja el servidor (REST `?page=&search=&status=`).
- * Ese trade-off mantiene los datasets grandes (logs, descargas)
- * eficientes y el componente sin estado interno complicado.
+ * Ese trade-off mantiene los datasets grandes eficientes y el
+ * componente sin estado interno complicado.
  *
- * Si una pantalla concreta necesita paginación/sorting client-side
- * (datasets <500 filas, pre-cargados), puede inicializar
- * useReactTable con `getPaginationRowModel`/`getSortedRowModel` por
- * su cuenta sin tener que rehacer este wrapper.
+ * El consumer crea la instancia con `useReactTable` y la pasa por
+ * prop. Eso permite cablear `state.columnVisibility` y otros
+ * estados controlados (sorting, etc.) directamente desde la página
+ * sin que DataTable tenga que reflejar cada feature como prop.
+ *
+ * Helper opcional `<DataTableColumnsToggle table={table} />` para
+ * exponer el dropdown de visibilidad de columnas.
  */
-interface DataTableProps<TData, TValue> {
-  columns: ColumnDef<TData, TValue>[];
-  data: TData[];
+interface DataTableProps<TData> {
+  table: RTable<TData>;
   emptyMessage?: string;
+  /** Número total de columnas (incluyendo ocultas) para el colspan. */
+  colSpan?: number;
 }
 
-export function DataTable<TData, TValue>({
-  columns,
-  data,
+export function DataTable<TData>({
+  table,
   emptyMessage = 'Sin resultados.',
-}: DataTableProps<TData, TValue>) {
-  const table = useReactTable({
-    data,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-  });
+  colSpan,
+}: DataTableProps<TData>) {
+  const visibleColumnCount =
+    colSpan ?? table.getVisibleLeafColumns().length;
 
   return (
     <Table>
@@ -66,7 +62,7 @@ export function DataTable<TData, TValue>({
         {table.getRowModel().rows.length === 0 ? (
           <TableRow>
             <TableCell
-              colSpan={columns.length}
+              colSpan={visibleColumnCount}
               className="iaud-py-6 iaud-text-center iaud-text-sm iaud-text-muted-foreground"
             >
               {emptyMessage}

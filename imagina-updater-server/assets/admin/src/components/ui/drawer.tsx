@@ -60,7 +60,7 @@ export function Drawer({
 
   return (
     <div
-      className="iaud-fixed iaud-inset-0 iaud-z-[10000] iaud-flex"
+      className="iaud-fixed iaud-inset-0 iaud-z-[100000] iaud-flex"
       role="dialog"
       aria-modal="true"
       aria-label={title}

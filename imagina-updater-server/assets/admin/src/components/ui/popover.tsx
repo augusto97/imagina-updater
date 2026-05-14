@@ -64,7 +64,7 @@ export function Popover({
         <div
           role="dialog"
           className={cn(
-            'iaud-absolute iaud-z-50 iaud-mt-1 iaud-min-w-[12rem] iaud-rounded-md iaud-border iaud-border-border iaud-bg-popover iaud-text-popover-foreground iaud-shadow-lg iaud-animate-in iaud-fade-in-0',
+            'iaud-absolute iaud-z-[100000] iaud-mt-1 iaud-min-w-[12rem] iaud-rounded-md iaud-border iaud-border-border iaud-bg-popover iaud-text-popover-foreground iaud-shadow-lg iaud-animate-in iaud-fade-in-0',
             align === 'end' ? 'iaud-right-0' : 'iaud-left-0',
             className,
           )}

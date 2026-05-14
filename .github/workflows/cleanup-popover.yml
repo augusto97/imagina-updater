@@ -1,0 +1,19 @@
+name: Cleanup fix/popover-z-index
+on:
+  push: { branches: [main], paths: [.github/workflows/cleanup-popover.yml] }
+permissions: { contents: write }
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { token: "${{ secrets.GITHUB_TOKEN }}" }
+      - env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        run: gh api --method DELETE "repos/${{ github.repository }}/git/refs/heads/fix/popover-z-index" 2>&1 || true
+      - env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/cleanup-popover.yml
+          git commit -m "chore: remove cleanup-popover workflow"
+          git push

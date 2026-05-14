@@ -1,0 +1,40 @@
+name: Cleanup fix branch (specificity + versions)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/cleanup-bump.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Delete merged fix branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          for b in fix/spa-reset-specificity-and-bump; do
+            if gh api --method DELETE "repos/${{ github.repository }}/git/refs/heads/$b" 2>&1; then
+              echo "✓ deleted $b"
+            else
+              echo "✗ skipped $b"
+            fi
+          done
+      - name: Self-delete this workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/cleanup-bump.yml
+          git commit -m "chore: remove cleanup-bump workflow"
+          git push

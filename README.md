@@ -8,7 +8,7 @@ Esta rama (`release`) contiene los **ZIPs instalables** de los plugins del ecosi
 
 | Plugin | Versión | Archivo |
 |---|---|---|
-| Imagina Updater Server | 1.1.1 | `imagina-updater-server-1.1.1.zip` |
+| Imagina Updater Server | 1.1.2 | `imagina-updater-server-1.1.2.zip` |
 | Imagina Updater Client | 1.0.2 | `imagina-updater-client-1.0.2.zip` |
 | Imagina Updater License Extension | 5.3.1 | `imagina-updater-license-extension-5.3.1.zip` |
 
@@ -23,14 +23,14 @@ sha256sum -c SHA256SUMS.txt
 Salida esperada:
 
 ```
-imagina-updater-server-1.1.1.zip: OK
+imagina-updater-server-1.1.2.zip: OK
 imagina-updater-client-1.0.2.zip: OK
 imagina-updater-license-extension-5.3.1.zip: OK
 ```
 
 ## Orden de instalación recomendado
 
-1. **Servidor** (`imagina-updater-server-1.1.1.zip`) en la instalación de WordPress que actuará como hub central.
+1. **Servidor** (`imagina-updater-server-1.1.2.zip`) en la instalación de WordPress que actuará como hub central.
 2. **License Extension** (`imagina-updater-license-extension-5.3.1.zip`) en la **misma** instalación del servidor (depende del plugin servidor, debe activarse después de él).
 3. **Cliente** (`imagina-updater-client-1.0.2.zip`) en cada sitio cliente que vaya a recibir actualizaciones.
 

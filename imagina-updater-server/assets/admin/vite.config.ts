@@ -68,6 +68,12 @@ function simpleHash(input: string): string {
 
 export default defineConfig({
   plugins: [react(), emitWordpressAssetFiles()],
+  // El bundle se sirve desde `wp-content/plugins/<slug>/assets/dist/`,
+  // NO desde la raíz del sitio. Con base:'/' (defecto) Vite mete URLs
+  // absolutas tipo `/assets/inter-XXX.woff2` en el CSS, que el navegador
+  // resuelve contra el dominio raíz y devuelve 404. base:'./' fuerza
+  // URLs relativas al propio `iaud.css`.
+  base: './',
   resolve: {
     alias: { '@': resolve(__dirname, 'src') },
   },
